@@ -119,10 +119,16 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+type createSandboxLifecycle struct {
+	OnTimeout string `json:"onTimeout"`
+}
+
 type createSandboxRequest struct {
-	TemplateID string `json:"templateID"`
-	Secure     *bool  `json:"secure,omitempty"`
-	Timeout    *int   `json:"timeout,omitempty"`
+	TemplateID string                  `json:"templateID"`
+	Secure     *bool                   `json:"secure,omitempty"`
+	Timeout    *int                    `json:"timeout,omitempty"`
+	AutoPause  *bool                   `json:"autoPause,omitempty"`
+	Lifecycle  *createSandboxLifecycle `json:"lifecycle,omitempty"`
 }
 
 type setSandboxTimeoutRequest struct {
@@ -173,6 +179,12 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	onTimeout, err := resolveCreateOnTimeout(req)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid lifecycle")
+		return
+	}
+
 	actorID, err := newActorID()
 	if err != nil {
 		s.logger.Error("generate actor id", "err", err)
@@ -195,6 +207,7 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		Template:  req.TemplateID,
 		CreatedAt: now,
 		ExpiresAt: expiresAt,
+		OnTimeout: onTimeout,
 		Status:    store.StatusRunning,
 	}); err != nil {
 		s.logger.Error("persist sandbox", "actor_id", actorID, "err", err)
@@ -382,6 +395,25 @@ func newActorID() (string, error) {
 		return "", fmt.Errorf("actor id too long")
 	}
 	return id, nil
+}
+
+// resolveCreateOnTimeout maps E2B create body to stored on_timeout (v0.0.4: kill only).
+func resolveCreateOnTimeout(req createSandboxRequest) (string, error) {
+	if req.AutoPause != nil && *req.AutoPause {
+		return "", store.ErrInvalidOnTimeout
+	}
+	onTimeout := ""
+	if req.Lifecycle != nil {
+		onTimeout = req.Lifecycle.OnTimeout
+	}
+	resolved, err := store.ResolveOnTimeout(onTimeout)
+	if err != nil {
+		return "", err
+	}
+	if resolved != store.OnTimeoutKill {
+		return "", store.ErrInvalidOnTimeout
+	}
+	return resolved, nil
 }
 
 // Ensure substrate.Client satisfies sandboxClient.

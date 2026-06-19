@@ -165,6 +165,9 @@ func TestCreateSandbox(t *testing.T) {
 	if !got.ExpiresAt.Equal(now.Add(300 * time.Second)) {
 		t.Fatalf("expires_at = %v, want %v", got.ExpiresAt, now.Add(300*time.Second))
 	}
+	if got.OnTimeout != store.OnTimeoutKill {
+		t.Fatalf("on_timeout = %q, want %q", got.OnTimeout, store.OnTimeoutKill)
+	}
 }
 
 func TestCreateSandboxWithTimeout(t *testing.T) {
@@ -192,6 +195,73 @@ func TestCreateSandboxWithTimeout(t *testing.T) {
 	got := st.records[resp.SandboxID]
 	if !got.ExpiresAt.Equal(now.Add(60 * time.Second)) {
 		t.Fatalf("expires_at = %v, want %v", got.ExpiresAt, now.Add(60*time.Second))
+	}
+}
+
+func TestCreateSandboxLifecycleKill(t *testing.T) {
+	t.Parallel()
+	actors := &fakeActors{}
+	st := newFakeStore()
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+
+	body := []byte(`{"templateID":"base","secure":false,"lifecycle":{"onTimeout":"kill"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if st.records[resp.SandboxID].OnTimeout != store.OnTimeoutKill {
+		t.Fatalf("on_timeout = %q, want kill", st.records[resp.SandboxID].OnTimeout)
+	}
+}
+
+func TestCreateSandboxLifecyclePauseRejected(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	body := []byte(`{"templateID":"base","lifecycle":{"onTimeout":"pause"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestCreateSandboxLifecycleUnknownRejected(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	body := []byte(`{"templateID":"base","lifecycle":{"onTimeout":"destroy"}}`)
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestCreateSandboxAutoPauseRejected(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	body := []byte(`{"templateID":"base","autoPause":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
 
