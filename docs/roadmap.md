@@ -30,11 +30,11 @@ Each release adds one capability layer. You should be able to demo the **Target*
 | [v0.0.1](releases/v0.0.1.md) | released | MVP |
 | [v0.0.2](releases/v0.0.2.md) | released | Visibility |
 | [v0.0.3](releases/v0.0.3.md) | released | Manual TTL |
-| [v0.0.4](releases/v0.0.4.md) | planned | |
+| [v0.0.4](releases/v0.0.4.md) | released | Auto cleanup |
 | [v0.0.5](releases/v0.0.5.md) | planned | |
 | [v0.1.0](releases/v0.1.0.md) | planned | Pilot |
 
-**Current focus:** [v0.0.4](releases/v0.0.4.md)
+**Current focus:** [v0.0.5](releases/v0.0.5.md)
 
 ## Release doc template
 
