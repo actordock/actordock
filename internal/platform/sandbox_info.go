@@ -26,7 +26,6 @@ const (
 	defaultCPUCount   = 2
 	defaultDiskSizeMB = 512
 	defaultMemoryMB   = 512
-	defaultSandboxTTL = 24 * time.Hour
 )
 
 type sandboxDetailResponse struct {
@@ -61,7 +60,7 @@ func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string) san
 		ClientID:    cfg.ClientID,
 		CPUCount:    defaultCPUCount,
 		DiskSizeMB:  defaultDiskSizeMB,
-		EndAt:       sb.CreatedAt.Add(defaultSandboxTTL).UTC().Format(time.RFC3339),
+		EndAt:       sandboxEndAt(cfg, sb),
 		EnvdVersion: cfg.EnvdVersion,
 		MemoryMB:    defaultMemoryMB,
 		SandboxID:   sb.SandboxID,
@@ -70,6 +69,14 @@ func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string) san
 		TemplateID:  sb.Template,
 		Domain:      cfg.Domain,
 	}
+}
+
+func sandboxEndAt(cfg config.Platform, sb store.Sandbox) string {
+	expiresAt := sb.ExpiresAt
+	if expiresAt.IsZero() {
+		expiresAt = store.ExpiresAt(sb.CreatedAt, cfg.DefaultSandboxTimeout)
+	}
+	return expiresAt.UTC().Format(time.RFC3339)
 }
 
 func listedFromDetail(d sandboxDetailResponse) listedSandboxResponse {

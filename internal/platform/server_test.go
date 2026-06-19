@@ -343,12 +343,14 @@ func TestCreateSandboxUnsupportedTemplate(t *testing.T) {
 func TestGetSandbox(t *testing.T) {
 	t.Parallel()
 	createdAt := time.Date(2026, 6, 19, 10, 0, 0, 0, time.UTC)
+	expiresAt := createdAt.Add(120 * time.Second)
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{
 		SandboxID: "sb-1",
 		ActorID:   "sb-1",
 		Template:  "base",
 		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
 		Status:    store.StatusRunning,
 	}
 	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
@@ -368,6 +370,9 @@ func TestGetSandbox(t *testing.T) {
 	}
 	if resp.SandboxID != "sb-1" || resp.State != "running" || resp.TemplateID != "base" {
 		t.Fatalf("resp = %+v", resp)
+	}
+	if resp.EndAt != expiresAt.Format(time.RFC3339) {
+		t.Fatalf("endAt = %q, want %q", resp.EndAt, expiresAt.Format(time.RFC3339))
 	}
 }
 
@@ -409,6 +414,49 @@ func TestGetSandboxResuming(t *testing.T) {
 	}
 }
 
+func TestGetSandboxEndAtAfterSetTimeout(t *testing.T) {
+	t.Parallel()
+	createdAt := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: createdAt,
+		ExpiresAt: createdAt.Add(60 * time.Second),
+		Status:    store.StatusRunning,
+	}
+	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+	extendAt := createdAt.Add(30 * time.Second)
+	srv.nowFunc = func() time.Time { return extendAt }
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/timeout", bytes.NewReader([]byte(`{"timeout":120}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("set timeout status = %d", rec.Code)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
+	getReq.Header.Set("X-API-KEY", "dev")
+	getRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, body = %s", getRec.Code, getRec.Body.String())
+	}
+	var resp sandboxDetailResponse
+	if err := json.NewDecoder(getRec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	wantEndAt := extendAt.Add(120 * time.Second).Format(time.RFC3339)
+	if resp.EndAt != wantEndAt {
+		t.Fatalf("endAt = %q, want %q", resp.EndAt, wantEndAt)
+	}
+}
+
 func TestGetSandboxNotFound(t *testing.T) {
 	t.Parallel()
 	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
@@ -442,10 +490,16 @@ func TestGetSandboxActorGone(t *testing.T) {
 
 func TestListSandboxes(t *testing.T) {
 	t.Parallel()
-	now := time.Now().UTC()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	st := newFakeStore()
-	st.records["a"] = store.Sandbox{SandboxID: "a", ActorID: "a", Template: "base", CreatedAt: now, Status: store.StatusRunning}
-	st.records["b"] = store.Sandbox{SandboxID: "b", ActorID: "b", Template: "base", CreatedAt: now, Status: store.StatusRunning}
+	st.records["a"] = store.Sandbox{
+		SandboxID: "a", ActorID: "a", Template: "base",
+		CreatedAt: now, ExpiresAt: now.Add(60 * time.Second), Status: store.StatusRunning,
+	}
+	st.records["b"] = store.Sandbox{
+		SandboxID: "b", ActorID: "b", Template: "base",
+		CreatedAt: now, ExpiresAt: now.Add(90 * time.Second), Status: store.StatusRunning,
+	}
 	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes", nil)
@@ -462,6 +516,16 @@ func TestListSandboxes(t *testing.T) {
 	}
 	if len(resp) != 2 {
 		t.Fatalf("len = %d, want 2", len(resp))
+	}
+	endAts := map[string]string{}
+	for _, item := range resp {
+		endAts[item.SandboxID] = item.EndAt
+	}
+	if endAts["a"] != now.Add(60*time.Second).Format(time.RFC3339) {
+		t.Fatalf("endAt for a = %q", endAts["a"])
+	}
+	if endAts["b"] != now.Add(90*time.Second).Format(time.RFC3339) {
+		t.Fatalf("endAt for b = %q", endAts["b"])
 	}
 }
 
