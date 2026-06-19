@@ -36,6 +36,18 @@ spec:
           env:
             - name: PLATFORM_LISTEN_ADDR
               value: ":8080"
+            - name: ACTORDOCK_API_KEY
+              value: "dev"
+            - name: ACTORDOCK_ATEAPI_ADDR
+              value: "api.ate-system.svc:443"
+            - name: ACTORDOCK_DOMAIN
+              value: "localhost"
+            - name: ACTORDOCK_TEMPLATE_NAMESPACE
+              value: "actordock"
+            - name: ACTORDOCK_TEMPLATE_NAME
+              value: "base"
+            - name: ACTORDOCK_ENVD_VERSION
+              value: "0.1.0"
           readinessProbe:
             httpGet:
               path: /health

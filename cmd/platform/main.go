@@ -20,8 +20,9 @@ import (
 	"os"
 
 	"github.com/actordock/actordock/internal/config"
-	"github.com/actordock/actordock/internal/httpserver"
 	"github.com/actordock/actordock/internal/log"
+	"github.com/actordock/actordock/internal/platform"
+	"github.com/actordock/actordock/internal/substrate"
 )
 
 func main() {
@@ -32,14 +33,17 @@ func main() {
 }
 
 func run(ctx context.Context) error {
-	cfg, err := config.ServerFromEnv("platform", ":8080")
+	cfg, err := config.PlatformFromEnv()
 	if err != nil {
 		return err
 	}
 	logger := log.New(cfg.LogLevel)
-	return httpserver.Run(ctx, httpserver.Options{
-		Service: "platform",
-		Addr:    cfg.ListenAddr,
-		Logger:  logger,
-	})
+
+	ate, err := substrate.Dial(cfg.ATEAPIAddr)
+	if err != nil {
+		return err
+	}
+	defer ate.Close()
+
+	return platform.NewServer(cfg, ate, logger).Run(ctx)
 }

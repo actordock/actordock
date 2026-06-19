@@ -1,0 +1,73 @@
+// Copyright 2026 The Actordock Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package substrate
+
+import (
+	"context"
+	"crypto/tls"
+	"fmt"
+
+	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
+)
+
+type Client struct {
+	conn *grpc.ClientConn
+	api  ateapipb.ControlClient
+}
+
+func Dial(addr string) (*Client, error) {
+	creds := credentials.NewTLS(&tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: true, //nolint:gosec // Kind dev cluster uses pod certs without public CA.
+	})
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(creds))
+	if err != nil {
+		return nil, fmt.Errorf("dial ateapi %s: %w", addr, err)
+	}
+	return &Client{
+		conn: conn,
+		api:  ateapipb.NewControlClient(conn),
+	}, nil
+}
+
+func (c *Client) Close() error {
+	if c.conn == nil {
+		return nil
+	}
+	return c.conn.Close()
+}
+
+func (c *Client) CreateAndResumeSandbox(
+	ctx context.Context,
+	actorID, templateNamespace, templateName string,
+) error {
+	_, err := c.api.CreateActor(ctx, &ateapipb.CreateActorRequest{
+		ActorId:                actorID,
+		ActorTemplateNamespace: templateNamespace,
+		ActorTemplateName:      templateName,
+	})
+	if err != nil {
+		return fmt.Errorf("create actor: %w", err)
+	}
+	_, err = c.api.ResumeActor(ctx, &ateapipb.ResumeActorRequest{
+		ActorId: actorID,
+	})
+	if err != nil {
+		return fmt.Errorf("resume actor: %w", err)
+	}
+	return nil
+}
