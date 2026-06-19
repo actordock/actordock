@@ -79,3 +79,66 @@ func TestProcessStartEchoHello(t *testing.T) {
 		t.Fatalf("stdout = %q, want %q", gotStdout, "hello\n")
 	}
 }
+
+func TestInitReturns204(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /init", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/init", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+}
+
+func TestProcessStartBashLoginEchoHello(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	path, handler := processv1connect.NewProcessHandler(&processService{})
+	mux.Handle(path, handler)
+
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	client := processv1connect.NewProcessClient(server.Client(), server.URL)
+	stream, err := client.Start(context.Background(), connect.NewRequest(&processv1.StartRequest{
+		Process: &processv1.ProcessConfig{
+			Cmd:  "/bin/bash",
+			Args: []string{"-l", "-c", "echo hello"},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	var gotStdout string
+	for stream.Receive() {
+		msg := stream.Msg()
+		if data := msg.GetEvent().GetData(); data != nil {
+			if stdout := data.GetStdout(); len(stdout) > 0 {
+				gotStdout += string(stdout)
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if gotStdout != "hello\n" {
+		t.Fatalf("stdout = %q, want %q", gotStdout, "hello\n")
+	}
+}
+
+func TestResolveCommandBashLogin(t *testing.T) {
+	t.Parallel()
+	cmd, args := resolveCommand("/bin/bash", []string{"-l", "-c", "echo hello"})
+	if cmd != "/bin/sh" || len(args) != 2 || args[0] != "-c" || args[1] != "echo hello" {
+		t.Fatalf("got %q %v", cmd, args)
+	}
+}
