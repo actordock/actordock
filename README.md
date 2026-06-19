@@ -8,7 +8,9 @@ Compatible with the [E2B SDK](https://e2b.dev/docs)—point it at your Actordock
 
 ```bash
 ./hack/install-local.sh
-helm install actordock ./charts/actordock-stack
+./hack/verify-local.sh
 ```
+
+See [Quickstart](docs/user/quickstart.md) for prerequisites, env vars, and troubleshooting.
 
 [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
