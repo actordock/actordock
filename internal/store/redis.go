@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	goredis "github.com/redis/go-redis/v9"
 )
@@ -93,4 +94,21 @@ func (r *Redis) Delete(ctx context.Context, sandboxID string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *Redis) List(ctx context.Context) ([]Sandbox, error) {
+	var sandboxes []Sandbox
+	iter := r.client.Scan(ctx, 0, sandboxKeyPrefix+"*", 100).Iterator()
+	for iter.Next(ctx) {
+		id := strings.TrimPrefix(iter.Val(), sandboxKeyPrefix)
+		sb, err := r.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		sandboxes = append(sandboxes, sb)
+	}
+	if err := iter.Err(); err != nil {
+		return nil, fmt.Errorf("redis scan sandboxes: %w", err)
+	}
+	return sandboxes, nil
 }

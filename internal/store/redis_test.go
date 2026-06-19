@@ -63,6 +63,39 @@ func TestRedisPutGetDelete(t *testing.T) {
 	}
 }
 
+func TestRedisList(t *testing.T) {
+	t.Parallel()
+
+	mr := miniredis.RunT(t)
+	s, err := NewRedis(mr.Addr())
+	if err != nil {
+		t.Fatalf("NewRedis: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+	for _, id := range []string{"a", "b"} {
+		if err := s.Put(ctx, Sandbox{
+			SandboxID: id,
+			ActorID:   id,
+			Template:  "base",
+			CreatedAt: now,
+			Status:    StatusRunning,
+		}); err != nil {
+			t.Fatalf("Put %s: %v", id, err)
+		}
+	}
+
+	list, err := s.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("List len = %d, want 2", len(list))
+	}
+}
+
 func TestRedisGetNotFound(t *testing.T) {
 	t.Parallel()
 

@@ -22,10 +22,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
+	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 )
 
 type fakeActors struct {
@@ -33,6 +35,9 @@ type fakeActors struct {
 	lastDeletedID string
 	createErr     error
 	deleteErr     error
+	getErr        error
+	actorStatuses map[string]ateapipb.Actor_Status
+	defaultStatus ateapipb.Actor_Status
 }
 
 func (f *fakeActors) CreateAndResumeSandbox(_ context.Context, actorID, _, _ string) error {
@@ -43,6 +48,21 @@ func (f *fakeActors) CreateAndResumeSandbox(_ context.Context, actorID, _, _ str
 func (f *fakeActors) DeleteSandbox(_ context.Context, actorID string) error {
 	f.lastDeletedID = actorID
 	return f.deleteErr
+}
+
+func (f *fakeActors) GetActor(_ context.Context, actorID string) (ateapipb.Actor_Status, error) {
+	if f.getErr != nil {
+		return ateapipb.Actor_STATUS_UNSPECIFIED, f.getErr
+	}
+	if f.actorStatuses != nil {
+		if status, ok := f.actorStatuses[actorID]; ok {
+			return status, nil
+		}
+	}
+	if f.defaultStatus != ateapipb.Actor_STATUS_UNSPECIFIED {
+		return f.defaultStatus, nil
+	}
+	return ateapipb.Actor_STATUS_RUNNING, nil
 }
 
 type fakeStore struct {
@@ -69,6 +89,22 @@ func (f *fakeStore) Delete(_ context.Context, sandboxID string) error {
 	}
 	delete(f.records, sandboxID)
 	return nil
+}
+
+func (f *fakeStore) Get(_ context.Context, sandboxID string) (store.Sandbox, error) {
+	sb, ok := f.records[sandboxID]
+	if !ok {
+		return store.Sandbox{}, store.ErrNotFound
+	}
+	return sb, nil
+}
+
+func (f *fakeStore) List(_ context.Context) ([]store.Sandbox, error) {
+	out := make([]store.Sandbox, 0, len(f.records))
+	for _, sb := range f.records {
+		out = append(out, sb)
+	}
+	return out, nil
 }
 
 func TestHealth(t *testing.T) {
@@ -195,6 +231,131 @@ func TestCreateSandboxUnsupportedTemplate(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestGetSandbox(t *testing.T) {
+	t.Parallel()
+	createdAt := time.Date(2026, 6, 19, 10, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: createdAt,
+		Status:    store.StatusRunning,
+	}
+	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxDetailResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.SandboxID != "sb-1" || resp.State != "running" || resp.TemplateID != "base" {
+		t.Fatalf("resp = %+v", resp)
+	}
+}
+
+func TestGetSandboxResuming(t *testing.T) {
+	t.Parallel()
+	createdAt := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: createdAt,
+		Status:    store.StatusRunning,
+	}
+	actors := &fakeActors{
+		actorStatuses: map[string]ateapipb.Actor_Status{
+			"sb-1": ateapipb.Actor_STATUS_RESUMING,
+		},
+	}
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxDetailResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.State != "running" {
+		t.Fatalf("state = %q, want running", resp.State)
+	}
+	if st.records["sb-1"].Status != store.StatusPending {
+		t.Fatalf("stored status = %q, want pending", st.records["sb-1"].Status)
+	}
+}
+
+func TestGetSandboxNotFound(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/missing", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestGetSandboxActorGone(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Template: "base", CreatedAt: time.Now()}
+	actors := &fakeActors{getErr: substrate.ErrNotFound}
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if _, ok := st.records["sb-1"]; ok {
+		t.Fatal("stale sandbox not purged from store")
+	}
+}
+
+func TestListSandboxes(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["a"] = store.Sandbox{SandboxID: "a", ActorID: "a", Template: "base", CreatedAt: now, Status: store.StatusRunning}
+	st.records["b"] = store.Sandbox{SandboxID: "b", ActorID: "b", Template: "base", CreatedAt: now, Status: store.StatusRunning}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp []listedSandboxResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 2 {
+		t.Fatalf("len = %d, want 2", len(resp))
 	}
 }
 

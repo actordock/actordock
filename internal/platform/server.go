@@ -30,17 +30,21 @@ import (
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
+	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"github.com/google/uuid"
 )
 
 type sandboxClient interface {
 	CreateAndResumeSandbox(ctx context.Context, actorID, templateNamespace, templateName string) error
 	DeleteSandbox(ctx context.Context, actorID string) error
+	GetActor(ctx context.Context, actorID string) (ateapipb.Actor_Status, error)
 }
 
 type sandboxStore interface {
 	Put(ctx context.Context, sb store.Sandbox) error
+	Get(ctx context.Context, sandboxID string) (store.Sandbox, error)
 	Delete(ctx context.Context, sandboxID string) error
+	List(ctx context.Context) ([]store.Sandbox, error)
 }
 
 type Server struct {
@@ -67,6 +71,8 @@ func NewServer(cfg config.Platform, actors sandboxClient, st sandboxStore, logge
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
+	mux.Handle("GET /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleListSandboxes)))
+	mux.Handle("GET /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleGetSandbox)))
 	mux.Handle("POST /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandbox)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
@@ -217,6 +223,84 @@ func (s *Server) handleDeleteSandbox(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("delete sandbox metadata", "sandbox_id", sandboxID, "err", err)
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleGetSandbox(w http.ResponseWriter, r *http.Request) {
+	sandboxID := r.PathValue("id")
+	if sandboxID == "" {
+		writeAPIError(w, http.StatusBadRequest, "sandbox id is required")
+		return
+	}
+
+	detail, err := s.resolveSandbox(r.Context(), sandboxID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeAPIError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("get sandbox", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to get sandbox")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(detail)
+}
+
+func (s *Server) handleListSandboxes(w http.ResponseWriter, r *http.Request) {
+	sandboxes, err := s.store.List(r.Context())
+	if err != nil {
+		s.logger.Error("list sandboxes", "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to list sandboxes")
+		return
+	}
+
+	result := make([]listedSandboxResponse, 0, len(sandboxes))
+	for _, sb := range sandboxes {
+		detail, err := s.syncSandboxRecord(r.Context(), sb)
+		if errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			s.logger.Error("sync sandbox for list", "sandbox_id", sb.SandboxID, "err", err)
+			continue
+		}
+		result = append(result, listedFromDetail(detail))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(result)
+}
+
+func (s *Server) resolveSandbox(ctx context.Context, sandboxID string) (sandboxDetailResponse, error) {
+	sb, err := s.store.Get(ctx, sandboxID)
+	if err != nil {
+		return sandboxDetailResponse{}, err
+	}
+	return s.syncSandboxRecord(ctx, sb)
+}
+
+func (s *Server) syncSandboxRecord(ctx context.Context, sb store.Sandbox) (sandboxDetailResponse, error) {
+	actorStatus, err := s.actors.GetActor(ctx, sb.ActorID)
+	if errors.Is(err, substrate.ErrNotFound) {
+		if delErr := s.store.Delete(ctx, sb.SandboxID); delErr != nil && !errors.Is(delErr, store.ErrNotFound) {
+			s.logger.Error("purge stale sandbox", "sandbox_id", sb.SandboxID, "err", delErr)
+		}
+		return sandboxDetailResponse{}, store.ErrNotFound
+	}
+	if err != nil {
+		return sandboxDetailResponse{}, err
+	}
+
+	storeStatus := storeStatusFromActor(actorStatus)
+	if sb.Status != storeStatus {
+		sb.Status = storeStatus
+		if err := s.store.Put(ctx, sb); err != nil {
+			s.logger.Error("update sandbox status", "sandbox_id", sb.SandboxID, "err", err)
+		}
+	}
+
+	return buildSandboxDetail(s.cfg, sb, substrate.ActorStateE2B(actorStatus)), nil
 }
 
 func (s *Server) requireAPIKey(next http.Handler) http.Handler {
