@@ -35,11 +35,13 @@ func TestRedisPutGetDelete(t *testing.T) {
 
 	ctx := context.Background()
 	createdAt := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	expiresAt := createdAt.Add(300 * time.Second)
 	sb := Sandbox{
 		SandboxID: "sb-1",
 		ActorID:   "sb-1",
 		Template:  "base",
 		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
 		Status:    StatusRunning,
 	}
 

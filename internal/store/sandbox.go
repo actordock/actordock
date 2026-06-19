@@ -22,11 +22,12 @@ const (
 	StatusFailed  = "failed"
 )
 
-// Sandbox is persisted sandbox metadata for v0.0.2 visibility APIs.
+// Sandbox is persisted sandbox metadata for v0.0.2+ visibility APIs.
 type Sandbox struct {
 	SandboxID string    `json:"sandbox_id"`
 	ActorID   string    `json:"actor_id"`
 	Template  string    `json:"template"`
 	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
 	Status    string    `json:"status"`
 }

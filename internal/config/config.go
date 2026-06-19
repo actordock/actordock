@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 type Server struct {
@@ -54,4 +55,16 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envIntOrDefault(key string, fallback int) (int, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return 0, fmt.Errorf("parse %q: %w", v, err)
+	}
+	return n, nil
 }

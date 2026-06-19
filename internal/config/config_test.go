@@ -72,3 +72,31 @@ func TestPlatformFromEnvRedisAddr(t *testing.T) {
 		t.Fatalf("RedisAddr = %q, want redis:6379", cfg.RedisAddr)
 	}
 }
+
+func TestPlatformFromEnvDefaultSandboxTimeout(t *testing.T) {
+	t.Setenv("PLATFORM_LISTEN_ADDR", "")
+	t.Setenv("ACTORDOCK_REDIS_ADDR", "")
+	t.Setenv("ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT", "")
+
+	cfg, err := PlatformFromEnv()
+	if err != nil {
+		t.Fatalf("PlatformFromEnv: %v", err)
+	}
+	if cfg.DefaultSandboxTimeout != 300 {
+		t.Fatalf("DefaultSandboxTimeout = %d, want 300", cfg.DefaultSandboxTimeout)
+	}
+
+	t.Setenv("ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT", "600")
+	cfg, err = PlatformFromEnv()
+	if err != nil {
+		t.Fatalf("PlatformFromEnv: %v", err)
+	}
+	if cfg.DefaultSandboxTimeout != 600 {
+		t.Fatalf("DefaultSandboxTimeout = %d, want 600", cfg.DefaultSandboxTimeout)
+	}
+
+	t.Setenv("ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT", "bad")
+	if _, err := PlatformFromEnv(); err == nil {
+		t.Fatal("expected error for invalid ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT")
+	}
+}

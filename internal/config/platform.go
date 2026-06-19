@@ -14,18 +14,23 @@
 
 package config
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/actordock/actordock/internal/store"
+)
 
 type Platform struct {
 	Server
-	APIKey            string
-	ATEAPIAddr        string
-	RedisAddr         string
-	Domain            string
-	TemplateNamespace string
-	TemplateName      string
-	EnvdVersion       string
-	ClientID          string
+	APIKey                string
+	ATEAPIAddr            string
+	RedisAddr             string
+	Domain                string
+	TemplateNamespace     string
+	TemplateName          string
+	EnvdVersion           string
+	ClientID              string
+	DefaultSandboxTimeout int
 }
 
 func PlatformFromEnv() (Platform, error) {
@@ -43,6 +48,14 @@ func PlatformFromEnv() (Platform, error) {
 		TemplateName:      envOrDefault("ACTORDOCK_TEMPLATE_NAME", "base"),
 		EnvdVersion:       envOrDefault("ACTORDOCK_ENVD_VERSION", "0.1.0"),
 		ClientID:          envOrDefault("ACTORDOCK_CLIENT_ID", "actordock"),
+	}
+	defaultTimeout, err := envIntOrDefault("ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT", 300)
+	if err != nil {
+		return Platform{}, fmt.Errorf("ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT: %w", err)
+	}
+	cfg.DefaultSandboxTimeout = defaultTimeout
+	if err := store.ValidateTimeout(cfg.DefaultSandboxTimeout); err != nil {
+		return Platform{}, fmt.Errorf("ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT: %w", err)
 	}
 	if cfg.TemplateName == "" {
 		return Platform{}, fmt.Errorf("ACTORDOCK_TEMPLATE_NAME is required")
