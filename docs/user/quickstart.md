@@ -1,4 +1,4 @@
-# Quickstart (v0.0.2)
+# Quickstart (v0.0.3)
 
 Run the E2B SDK against a local Actordock cluster on Kind.
 
@@ -41,7 +41,22 @@ Run the E2E demo (port-forward + E2B Python SDK):
 ./hack/verify-local.sh
 ```
 
-Covers `echo hello`, `Sandbox.get_info`, and `Sandbox.list`.
+Covers `echo hello`, `Sandbox.get_info`, `Sandbox.list`, and sandbox timeout (`timeout` on create / `set_timeout`).
+
+### Timeout
+
+Sandboxes accept an optional lifetime in seconds (E2B `timeout` field, default 300):
+
+```python
+from e2b import Sandbox
+
+sbx = Sandbox.create(template="base", secure=False, timeout=600)
+sbx.set_timeout(900)  # extend from now
+print(sbx.get_info().end_at)
+sbx.kill()
+```
+
+Expiry is stored and returned as `endAt` on GET/list. Auto-kill on expiry is not enabled yet (see [v0.0.4](../releases/v0.0.4.md)).
 
 Or manually:
 
@@ -64,4 +79,4 @@ cd e2e && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 - [Architecture](../architecture.md)
 - [Roadmap](../roadmap.md)
-- [v0.0.2 release notes](../releases/v0.0.2.md)
+- [v0.0.3 release notes](../releases/v0.0.3.md)
