@@ -16,6 +16,7 @@ package config
 
 import (
 	"testing"
+	"time"
 )
 
 func TestServerFromEnvDefaults(t *testing.T) {
@@ -98,5 +99,52 @@ func TestPlatformFromEnvDefaultSandboxTimeout(t *testing.T) {
 	t.Setenv("ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT", "bad")
 	if _, err := PlatformFromEnv(); err == nil {
 		t.Fatal("expected error for invalid ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT")
+	}
+}
+
+func TestSchedulerFromEnvDefaults(t *testing.T) {
+	t.Setenv("SCHEDULER_REDIS_ADDR", "")
+	t.Setenv("SCHEDULER_ATEAPI_ADDR", "")
+	t.Setenv("SCHEDULER_POLL_INTERVAL", "")
+
+	cfg, err := SchedulerFromEnv()
+	if err != nil {
+		t.Fatalf("SchedulerFromEnv: %v", err)
+	}
+	if cfg.RedisAddr != "redis.actordock.svc:6379" {
+		t.Fatalf("RedisAddr = %q", cfg.RedisAddr)
+	}
+	if cfg.ATEAPIAddr != "api.ate-system.svc:443" {
+		t.Fatalf("ATEAPIAddr = %q", cfg.ATEAPIAddr)
+	}
+	if cfg.PollInterval != defaultSchedulerPollInterval {
+		t.Fatalf("PollInterval = %v, want %v", cfg.PollInterval, defaultSchedulerPollInterval)
+	}
+}
+
+func TestSchedulerFromEnvOverrides(t *testing.T) {
+	t.Setenv("SCHEDULER_REDIS_ADDR", "redis:6379")
+	t.Setenv("SCHEDULER_ATEAPI_ADDR", "ateapi:443")
+	t.Setenv("SCHEDULER_POLL_INTERVAL", "10s")
+
+	cfg, err := SchedulerFromEnv()
+	if err != nil {
+		t.Fatalf("SchedulerFromEnv: %v", err)
+	}
+	if cfg.RedisAddr != "redis:6379" {
+		t.Fatalf("RedisAddr = %q", cfg.RedisAddr)
+	}
+	if cfg.ATEAPIAddr != "ateapi:443" {
+		t.Fatalf("ATEAPIAddr = %q", cfg.ATEAPIAddr)
+	}
+	if cfg.PollInterval != 10*time.Second {
+		t.Fatalf("PollInterval = %v", cfg.PollInterval)
+	}
+}
+
+func TestSchedulerFromEnvInvalidPollInterval(t *testing.T) {
+	t.Setenv("SCHEDULER_POLL_INTERVAL", "nope")
+	if _, err := SchedulerFromEnv(); err == nil {
+		t.Fatal("expected error for invalid SCHEDULER_POLL_INTERVAL")
 	}
 }

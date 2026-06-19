@@ -20,3 +20,4 @@ resources:
   - redis.yaml
   - platform.yaml
   - router.yaml
+  - scheduler.yaml

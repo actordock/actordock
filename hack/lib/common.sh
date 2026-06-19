@@ -123,7 +123,7 @@ deploy_actordock_images() {
     | (cd "${root}" && ko resolve -f -) \
     | kubectl_ctx apply -f -
 
-  log_step "Deploying Actordock platform and router"
+  log_step "Deploying Actordock platform, router, and scheduler"
   kubectl kustomize "${root}/manifests/local" --load-restrictor LoadRestrictionsNone \
     | (cd "${root}" && ko resolve -f -) \
     | kubectl_ctx apply -f -
@@ -132,6 +132,7 @@ deploy_actordock_images() {
   kubectl_ctx rollout status deployment/redis -n actordock --timeout=120s
   kubectl_ctx rollout status deployment/platform -n actordock --timeout=180s
   kubectl_ctx rollout status deployment/router -n actordock --timeout=180s
+  kubectl_ctx rollout status deployment/scheduler -n actordock --timeout=180s
 
   wait_actortemplate_base
 }

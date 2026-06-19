@@ -23,7 +23,7 @@ VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo d
 VERSION_PKG := github.com/actordock/actordock/internal/version
 LDFLAGS := -X=$(VERSION_PKG).Version=$(VERSION)
 
-BINARIES := platform router envd
+BINARIES := platform router envd scheduler
 
 .PHONY: all build build-images test fmt verify-fmt vet
 
@@ -40,7 +40,8 @@ build-images:
 	$(KO) build \
 		./cmd/platform \
 		./cmd/router \
-		./cmd/envd
+		./cmd/envd \
+		./cmd/scheduler
 
 test:
 	$(GO) test ./...
