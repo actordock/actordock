@@ -359,6 +359,30 @@ func TestListSandboxes(t *testing.T) {
 	}
 }
 
+func TestListSandboxesV2(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["a"] = store.Sandbox{SandboxID: "a", ActorID: "a", Template: "base", CreatedAt: now, Status: store.StatusRunning}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp []listedSandboxResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 1 || resp[0].SandboxID != "a" {
+		t.Fatalf("resp = %+v", resp)
+	}
+}
+
 func testConfig() config.Platform {
 	return config.Platform{
 		Server: config.Server{

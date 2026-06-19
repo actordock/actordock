@@ -1,4 +1,4 @@
-# Quickstart (v0.0.1)
+# Quickstart (v0.0.2)
 
 Run the E2B SDK against a local Actordock cluster on Kind.
 
@@ -35,11 +35,13 @@ Re-deploy Actordock only (cluster already exists):
 | `E2B_API_KEY` | `dev` |
 | `E2B_VALIDATE_API_KEY` | `false` |
 
-Run the E2E demo (port-forward + E2B Python SDK `echo hello`):
+Run the E2E demo (port-forward + E2B Python SDK):
 
 ```bash
 ./hack/verify-local.sh
 ```
+
+Covers `echo hello`, `Sandbox.get_info`, and `Sandbox.list`.
 
 Or manually:
 
@@ -62,4 +64,4 @@ cd e2e && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 - [Architecture](../architecture.md)
 - [Roadmap](../roadmap.md)
-- [v0.0.1 release notes](../releases/v0.0.1.md)
+- [v0.0.2 release notes](../releases/v0.0.2.md)

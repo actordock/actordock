@@ -72,6 +72,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.Handle("GET /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleListSandboxes)))
+	mux.Handle("GET /v2/sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleListSandboxes)))
 	mux.Handle("GET /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleGetSandbox)))
 	mux.Handle("POST /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandbox)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
