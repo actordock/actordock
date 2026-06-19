@@ -32,18 +32,19 @@ import (
 	"github.com/google/uuid"
 )
 
-type sandboxCreator interface {
+type sandboxClient interface {
 	CreateAndResumeSandbox(ctx context.Context, actorID, templateNamespace, templateName string) error
+	DeleteSandbox(ctx context.Context, actorID string) error
 }
 
 type Server struct {
 	cfg     config.Platform
-	actors  sandboxCreator
+	actors  sandboxClient
 	logger  *slog.Logger
 	nowFunc func() time.Time
 }
 
-func NewServer(cfg config.Platform, actors sandboxCreator, logger *slog.Logger) *Server {
+func NewServer(cfg config.Platform, actors sandboxClient, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -59,6 +60,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.Handle("POST /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandbox)))
+	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
 }
 
@@ -170,6 +172,26 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
+func (s *Server) handleDeleteSandbox(w http.ResponseWriter, r *http.Request) {
+	sandboxID := r.PathValue("id")
+	if sandboxID == "" {
+		writeAPIError(w, http.StatusBadRequest, "sandbox id is required")
+		return
+	}
+
+	ctx := r.Context()
+	if err := s.actors.DeleteSandbox(ctx, sandboxID); err != nil {
+		if errors.Is(err, substrate.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "sandbox not found")
+			return
+		}
+		s.logger.Error("delete sandbox", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to delete sandbox")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) requireAPIKey(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-API-KEY") != s.cfg.APIKey {
@@ -197,5 +219,5 @@ func newActorID() (string, error) {
 	return id, nil
 }
 
-// Ensure substrate.Client satisfies sandboxCreator.
-var _ sandboxCreator = (*substrate.Client)(nil)
+// Ensure substrate.Client satisfies sandboxClient.
+var _ sandboxClient = (*substrate.Client)(nil)

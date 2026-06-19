@@ -24,16 +24,24 @@ import (
 	"testing"
 
 	"github.com/actordock/actordock/internal/config"
+	"github.com/actordock/actordock/internal/substrate"
 )
 
 type fakeActors struct {
-	lastActorID string
-	err         error
+	lastActorID   string
+	lastDeletedID string
+	createErr     error
+	deleteErr     error
 }
 
 func (f *fakeActors) CreateAndResumeSandbox(_ context.Context, actorID, _, _ string) error {
 	f.lastActorID = actorID
-	return f.err
+	return f.createErr
+}
+
+func (f *fakeActors) DeleteSandbox(_ context.Context, actorID string) error {
+	f.lastDeletedID = actorID
+	return f.deleteErr
 }
 
 func TestHealth(t *testing.T) {
@@ -84,6 +92,50 @@ func TestCreateSandboxUnauthorized(t *testing.T) {
 	t.Parallel()
 	srv := NewServer(testConfig(), &fakeActors{}, slog.Default())
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader([]byte(`{"templateID":"base"}`)))
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestDeleteSandbox(t *testing.T) {
+	t.Parallel()
+	actors := &fakeActors{}
+	srv := NewServer(testConfig(), actors, slog.Default())
+
+	req := httptest.NewRequest(http.MethodDelete, "/sandboxes/abc-123", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if actors.lastDeletedID != "abc-123" {
+		t.Fatalf("deleted id = %q, want abc-123", actors.lastDeletedID)
+	}
+}
+
+func TestDeleteSandboxNotFound(t *testing.T) {
+	t.Parallel()
+	actors := &fakeActors{deleteErr: substrate.ErrNotFound}
+	srv := NewServer(testConfig(), actors, slog.Default())
+
+	req := httptest.NewRequest(http.MethodDelete, "/sandboxes/missing", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestDeleteSandboxUnauthorized(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, slog.Default())
+	req := httptest.NewRequest(http.MethodDelete, "/sandboxes/abc-123", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {

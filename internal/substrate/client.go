@@ -17,12 +17,17 @@ package substrate
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 )
+
+var ErrNotFound = errors.New("actor not found")
 
 type Client struct {
 	conn *grpc.ClientConn
@@ -68,6 +73,35 @@ func (c *Client) CreateAndResumeSandbox(
 	})
 	if err != nil {
 		return fmt.Errorf("resume actor: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) DeleteSandbox(ctx context.Context, actorID string) error {
+	resp, err := c.api.GetActor(ctx, &ateapipb.GetActorRequest{ActorId: actorID})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get actor: %w", err)
+	}
+
+	if resp.GetActor().GetStatus() != ateapipb.Actor_STATUS_SUSPENDED {
+		_, err = c.api.SuspendActor(ctx, &ateapipb.SuspendActorRequest{ActorId: actorID})
+		if err != nil {
+			if status.Code(err) == codes.NotFound {
+				return ErrNotFound
+			}
+			return fmt.Errorf("suspend actor: %w", err)
+		}
+	}
+
+	_, err = c.api.DeleteActor(ctx, &ateapipb.DeleteActorRequest{ActorId: actorID})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return ErrNotFound
+		}
+		return fmt.Errorf("delete actor: %w", err)
 	}
 	return nil
 }
