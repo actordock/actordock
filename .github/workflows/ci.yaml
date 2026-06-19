@@ -69,8 +69,5 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Setup Ko
-        uses: ko-build/setup-ko@v0.9
-
       - name: Install Kind cluster + Substrate + Actordock
         run: ./hack/install-local.sh

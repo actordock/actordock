@@ -104,7 +104,6 @@ deploy_actordock_images() {
   local substrate_root="$2"
 
   ensure_ko
-  export KO_DOCKER_REPO="${KO_DOCKER_REPO:-localhost:5001}"
   export KO_DEFAULTPLATFORMS="linux/$(go env GOARCH)"
 
   log_step "Ensuring actordock namespace"

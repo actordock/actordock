@@ -34,8 +34,9 @@ Options:
 
 Environment:
   SUBSTRATE_ROOT     Use a local Substrate checkout instead of cloning .substrate/
-  KO_DOCKER_REPO     Local registry (default: localhost:5001)
   BUCKET_NAME        Snapshot bucket for ActorTemplate (default: ate-snapshots)
+
+Images push to Kind's local registry (localhost:5001); external KO_DOCKER_REPO is ignored.
 EOF
 }
 
@@ -58,12 +59,14 @@ done
 require_cmd docker kubectl go git
 docker info >/dev/null 2>&1 || die "docker is not running"
 
+# Kind bundled registry (hack/create-kind-cluster.sh). Do not inherit setup-ko / ghcr.io.
+export KO_DOCKER_REPO=localhost:5001
+
 SUBSTRATE_ROOT="$(ensure_substrate_root "${ROOT}")"
 
 if [[ "${SKIP_SUBSTRATE}" == "false" ]]; then
   log_step "Creating Kind cluster '${KIND_CLUSTER_NAME}' and installing Substrate"
   export NO_DEV_ENV=true
-  export KO_DOCKER_REPO="${KO_DOCKER_REPO:-localhost:5001}"
   export KO_DEFAULTPLATFORMS="linux/$(go env GOARCH)"
   export ATE_INSTALL_KIND=true
   export BUCKET_NAME="${BUCKET_NAME:-ate-snapshots}"
