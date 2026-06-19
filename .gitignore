@@ -1,0 +1,5 @@
+/bin/
+/.ko/
+*.test
+*.out
+.DS_Store

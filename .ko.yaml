@@ -1,0 +1,8 @@
+defaultBaseImage: gcr.io/distroless/static-debian13
+
+defaultPlatforms:
+  - linux/amd64
+  - linux/arm64
+
+baseImageOverrides:
+  github.com/actordock/actordock/cmd/envd: alpine
