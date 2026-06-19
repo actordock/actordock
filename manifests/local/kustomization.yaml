@@ -17,5 +17,6 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
+  - redis.yaml
   - platform.yaml
   - router.yaml

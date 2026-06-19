@@ -48,6 +48,8 @@ spec:
               value: "base"
             - name: ACTORDOCK_ENVD_VERSION
               value: "0.1.0"
+            - name: ACTORDOCK_REDIS_ADDR
+              value: "redis.actordock.svc:6379"
           readinessProbe:
             httpGet:
               path: /health

@@ -129,6 +129,7 @@ deploy_actordock_images() {
     | kubectl_ctx apply -f -
 
   log_step "Waiting for Actordock workloads"
+  kubectl_ctx rollout status deployment/redis -n actordock --timeout=120s
   kubectl_ctx rollout status deployment/platform -n actordock --timeout=180s
   kubectl_ctx rollout status deployment/router -n actordock --timeout=180s
 

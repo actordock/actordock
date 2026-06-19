@@ -50,3 +50,25 @@ func TestServerFromEnvOverrides(t *testing.T) {
 		t.Fatalf("LogLevel = %q, want debug", cfg.LogLevel)
 	}
 }
+
+func TestPlatformFromEnvRedisAddr(t *testing.T) {
+	t.Setenv("PLATFORM_LISTEN_ADDR", "")
+	t.Setenv("ACTORDOCK_REDIS_ADDR", "")
+
+	cfg, err := PlatformFromEnv()
+	if err != nil {
+		t.Fatalf("PlatformFromEnv: %v", err)
+	}
+	if cfg.RedisAddr != "redis.actordock.svc:6379" {
+		t.Fatalf("RedisAddr = %q, want redis.actordock.svc:6379", cfg.RedisAddr)
+	}
+
+	t.Setenv("ACTORDOCK_REDIS_ADDR", "redis:6379")
+	cfg, err = PlatformFromEnv()
+	if err != nil {
+		t.Fatalf("PlatformFromEnv: %v", err)
+	}
+	if cfg.RedisAddr != "redis:6379" {
+		t.Fatalf("RedisAddr = %q, want redis:6379", cfg.RedisAddr)
+	}
+}

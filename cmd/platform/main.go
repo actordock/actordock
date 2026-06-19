@@ -18,10 +18,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/log"
 	"github.com/actordock/actordock/internal/platform"
+	"github.com/actordock/actordock/internal/redis"
 	"github.com/actordock/actordock/internal/substrate"
 )
 
@@ -44,6 +46,12 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer ate.Close()
+
+	waitCtx, waitCancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer waitCancel()
+	if err := redis.Wait(waitCtx, cfg.RedisAddr, logger); err != nil {
+		return fmt.Errorf("wait for redis: %w", err)
+	}
 
 	return platform.NewServer(cfg, ate, logger).Run(ctx)
 }

@@ -20,6 +20,7 @@ type Platform struct {
 	Server
 	APIKey            string
 	ATEAPIAddr        string
+	RedisAddr         string
 	Domain            string
 	TemplateNamespace string
 	TemplateName      string
@@ -36,6 +37,7 @@ func PlatformFromEnv() (Platform, error) {
 		Server:            server,
 		APIKey:            envOrDefault("ACTORDOCK_API_KEY", "dev"),
 		ATEAPIAddr:        envOrDefault("ACTORDOCK_ATEAPI_ADDR", "api.ate-system.svc:443"),
+		RedisAddr:         envOrDefault("ACTORDOCK_REDIS_ADDR", "redis.actordock.svc:6379"),
 		Domain:            envOrDefault("ACTORDOCK_DOMAIN", "localhost"),
 		TemplateNamespace: envOrDefault("ACTORDOCK_TEMPLATE_NAMESPACE", "actordock"),
 		TemplateName:      envOrDefault("ACTORDOCK_TEMPLATE_NAME", "base"),
