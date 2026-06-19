@@ -19,7 +19,7 @@ actordock_root() {
 }
 
 log_step() {
-  printf '\033[1;36m[step] %s\033[0m\n' "$1"
+  printf '\033[1;36m[step] %s\033[0m\n' "$1" >&2
 }
 
 die() {
@@ -59,7 +59,7 @@ ensure_substrate_root() {
   if [[ -n "${SUBSTRATE_ROOT:-}" ]]; then
     [[ -f "${SUBSTRATE_ROOT}/hack/install-ate-kind.sh" ]] \
       || die "SUBSTRATE_ROOT does not look like Agent Substrate: ${SUBSTRATE_ROOT}"
-    echo "${SUBSTRATE_ROOT}"
+    printf '%s\n' "${SUBSTRATE_ROOT}"
     return
   fi
 
@@ -67,13 +67,13 @@ ensure_substrate_root() {
   local checkout_dir="${root}/.substrate"
   if [[ ! -d "${checkout_dir}/.git" ]]; then
     log_step "Cloning Substrate (${SUBSTRATE_COMMIT})"
-    git clone "${SUBSTRATE_REPO}" "${checkout_dir}"
+    git -c advice.detachedHead=false clone "${SUBSTRATE_REPO}" "${checkout_dir}"
   fi
 
   log_step "Checking out Substrate ${SUBSTRATE_COMMIT}"
   git -C "${checkout_dir}" fetch origin --tags
   git -C "${checkout_dir}" checkout --force "${SUBSTRATE_COMMIT}"
-  echo "${checkout_dir}"
+  printf '%s\n' "${checkout_dir}"
 }
 
 ensure_ko() {
@@ -114,7 +114,11 @@ deploy_actordock_images() {
   (cd "${substrate_root}" && ko resolve -f "${root}/manifests/substrate/workerpool.yaml") \
     | kubectl_ctx apply -f -
 
-  log_step "Deploying ActorTemplate base (stub)"
+  log_step "Deploying ActorTemplate base"
+  kubectl_ctx delete actortemplate base -n actordock --ignore-not-found
+  if kubectl_ctx get actortemplate base -n actordock >/dev/null 2>&1; then
+    kubectl_ctx wait --for=delete actortemplate/base -n actordock --timeout=120s
+  fi
   sed "s|\${BUCKET_NAME}|${BUCKET_NAME:-ate-snapshots}|g" \
     "${root}/manifests/substrate/actortemplate-base.yaml.tmpl" \
     | (cd "${root}" && ko resolve -f -) \
@@ -128,6 +132,13 @@ deploy_actordock_images() {
   log_step "Waiting for Actordock workloads"
   kubectl_ctx rollout status deployment/platform -n actordock --timeout=180s
   kubectl_ctx rollout status deployment/router -n actordock --timeout=180s
+
+  wait_actortemplate_base
+}
+
+wait_actortemplate_base() {
+  log_step "Waiting for ActorTemplate base golden snapshot"
+  kubectl_ctx wait --for=condition=Ready actortemplate/base -n actordock --timeout=600s
 }
 
 write_env_local() {

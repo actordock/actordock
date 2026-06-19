@@ -20,7 +20,7 @@ import (
 	"os"
 
 	"github.com/actordock/actordock/internal/config"
-	"github.com/actordock/actordock/internal/httpserver"
+	"github.com/actordock/actordock/internal/envd"
 	"github.com/actordock/actordock/internal/log"
 )
 
@@ -37,9 +37,8 @@ func run(ctx context.Context) error {
 		return err
 	}
 	logger := log.New(cfg.LogLevel)
-	return httpserver.Run(ctx, httpserver.Options{
-		Service: "envd",
-		Addr:    cfg.ListenAddr,
-		Logger:  logger,
+	return envd.Run(ctx, envd.Options{
+		Addr:   cfg.ListenAddr,
+		Logger: logger,
 	})
 }
