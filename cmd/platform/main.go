@@ -24,6 +24,7 @@ import (
 	"github.com/actordock/actordock/internal/log"
 	"github.com/actordock/actordock/internal/platform"
 	"github.com/actordock/actordock/internal/redis"
+	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
 )
 
@@ -53,5 +54,11 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("wait for redis: %w", err)
 	}
 
-	return platform.NewServer(cfg, ate, logger).Run(ctx)
+	st, err := store.NewRedis(cfg.RedisAddr)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	return platform.NewServer(cfg, ate, st, logger).Run(ctx)
 }

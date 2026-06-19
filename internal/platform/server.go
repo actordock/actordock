@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/internal/config"
+	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
 	"github.com/google/uuid"
 )
@@ -37,20 +38,27 @@ type sandboxClient interface {
 	DeleteSandbox(ctx context.Context, actorID string) error
 }
 
+type sandboxStore interface {
+	Put(ctx context.Context, sb store.Sandbox) error
+	Delete(ctx context.Context, sandboxID string) error
+}
+
 type Server struct {
 	cfg     config.Platform
 	actors  sandboxClient
+	store   sandboxStore
 	logger  *slog.Logger
 	nowFunc func() time.Time
 }
 
-func NewServer(cfg config.Platform, actors sandboxClient, logger *slog.Logger) *Server {
+func NewServer(cfg config.Platform, actors sandboxClient, st sandboxStore, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Server{
 		cfg:     cfg,
 		actors:  actors,
+		store:   st,
 		logger:  logger,
 		nowFunc: time.Now,
 	}
@@ -160,6 +168,22 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	now := s.nowFunc()
+	if err := s.store.Put(ctx, store.Sandbox{
+		SandboxID: actorID,
+		ActorID:   actorID,
+		Template:  req.TemplateID,
+		CreatedAt: now,
+		Status:    store.StatusRunning,
+	}); err != nil {
+		s.logger.Error("persist sandbox", "actor_id", actorID, "err", err)
+		if delErr := s.actors.DeleteSandbox(ctx, actorID); delErr != nil {
+			s.logger.Error("rollback sandbox after store failure", "actor_id", actorID, "err", delErr)
+		}
+		writeAPIError(w, http.StatusInternalServerError, "failed to create sandbox")
+		return
+	}
+
 	resp := sandboxResponse{
 		ClientID:    s.cfg.ClientID,
 		EnvdVersion: s.cfg.EnvdVersion,
@@ -188,6 +212,9 @@ func (s *Server) handleDeleteSandbox(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("delete sandbox", "sandbox_id", sandboxID, "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to delete sandbox")
 		return
+	}
+	if err := s.store.Delete(ctx, sandboxID); err != nil && !errors.Is(err, store.ErrNotFound) {
+		s.logger.Error("delete sandbox metadata", "sandbox_id", sandboxID, "err", err)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -221,3 +248,6 @@ func newActorID() (string, error) {
 
 // Ensure substrate.Client satisfies sandboxClient.
 var _ sandboxClient = (*substrate.Client)(nil)
+
+// Ensure store.Redis satisfies sandboxStore.
+var _ sandboxStore = (*store.Redis)(nil)
