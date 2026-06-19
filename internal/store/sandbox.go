@@ -29,5 +29,6 @@ type Sandbox struct {
 	Template  string    `json:"template"`
 	CreatedAt time.Time `json:"created_at"`
 	ExpiresAt time.Time `json:"expires_at"`
+	OnTimeout string    `json:"on_timeout"`
 	Status    string    `json:"status"`
 }
