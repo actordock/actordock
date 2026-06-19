@@ -2,6 +2,9 @@
 /.ko/
 /.substrate/
 /hack/.env.local
+/e2e/.venv
+/e2e/**/__pycache__/
+/e2e/.pytest_cache/
 *.test
 *.out
 .DS_Store

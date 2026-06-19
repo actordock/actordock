@@ -71,3 +71,11 @@ jobs:
 
       - name: Install Kind cluster + Substrate + Actordock
         run: ./hack/install-local.sh
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: E2E verify (E2B SDK)
+        run: ./hack/verify-local.sh

@@ -97,4 +97,4 @@ echo ""
 echo "Actordock workloads:"
 kubectl_ctx get pods -n actordock
 echo ""
-echo "Next: source hack/.env.local and port-forward platform (:8080) and router (:8081) when ready."
+echo "Next: ./hack/verify-local.sh (or source hack/.env.local and port-forward manually)."
