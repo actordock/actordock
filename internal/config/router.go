@@ -12,38 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package config
 
 import (
-	"context"
 	"fmt"
-	"os"
-
-	"github.com/actordock/actordock/internal/config"
-	"github.com/actordock/actordock/internal/log"
-	"github.com/actordock/actordock/internal/router"
-	"github.com/actordock/actordock/internal/substrate"
+	"strconv"
 )
 
-func main() {
-	if err := run(context.Background()); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+type Router struct {
+	Server
+	ATEAPIAddr string
+	Domain     string
+	EnvdPort   int
 }
 
-func run(ctx context.Context) error {
-	cfg, err := config.RouterFromEnv()
+func RouterFromEnv() (Router, error) {
+	server, err := ServerFromEnv("router", ":8081")
 	if err != nil {
-		return err
+		return Router{}, err
 	}
-	logger := log.New(cfg.LogLevel)
-
-	ate, err := substrate.Dial(cfg.ATEAPIAddr)
-	if err != nil {
-		return err
+	envdPort, err := strconv.Atoi(envOrDefault("ACTORDOCK_ENVD_PORT", "80"))
+	if err != nil || envdPort <= 0 || envdPort > 65535 {
+		return Router{}, fmt.Errorf("ACTORDOCK_ENVD_PORT must be a valid port")
 	}
-	defer ate.Close()
-
-	return router.NewServer(cfg, ate, logger).Run(ctx)
+	return Router{
+		Server:     server,
+		ATEAPIAddr: envOrDefault("ACTORDOCK_ATEAPI_ADDR", "api.ate-system.svc:443"),
+		Domain:     envOrDefault("ACTORDOCK_DOMAIN", "localhost"),
+		EnvdPort:   envdPort,
+	}, nil
 }

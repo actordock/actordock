@@ -26,5 +26,8 @@ spec:
     - name: envd
       image: ko://github.com/actordock/actordock/cmd/envd
       command: ["/ko-app/envd"]
+      env:
+        - name: ENVD_LISTEN_ADDR
+          value: ":80"
   snapshotsConfig:
     location: gs://${BUCKET_NAME}/actordock/

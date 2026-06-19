@@ -36,6 +36,12 @@ spec:
           env:
             - name: ROUTER_LISTEN_ADDR
               value: ":8081"
+            - name: ACTORDOCK_ATEAPI_ADDR
+              value: "api.ate-system.svc:443"
+            - name: ACTORDOCK_DOMAIN
+              value: "localhost"
+            - name: ACTORDOCK_ENVD_PORT
+              value: "80"
           readinessProbe:
             httpGet:
               path: /health

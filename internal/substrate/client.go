@@ -19,6 +19,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
 
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 	"google.golang.org/grpc"
@@ -75,6 +77,24 @@ func (c *Client) CreateAndResumeSandbox(
 		return fmt.Errorf("resume actor: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) ResumeSandboxBackend(ctx context.Context, actorID string, envdPort int) (string, error) {
+	resp, err := c.api.ResumeActor(ctx, &ateapipb.ResumeActorRequest{
+		ActorId: actorID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("resume actor: %w", err)
+	}
+
+	ip := resp.GetActor().GetAteomPodIp()
+	if ip == "" {
+		return "", fmt.Errorf("actor %q has no worker assigned", actorID)
+	}
+	return net.JoinHostPort(ip, strconv.Itoa(envdPort)), nil
 }
 
 func (c *Client) DeleteSandbox(ctx context.Context, actorID string) error {
