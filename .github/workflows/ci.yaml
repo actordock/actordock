@@ -38,26 +38,8 @@ jobs:
       - name: Build binaries
         run: make build
 
-  build-images:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Setup Ko
-        uses: ko-build/setup-ko@v0.9
-
-      - name: Build container images (local, no push)
-        run: |
-          export KO_DOCKER_REPO=ko.local/actordock
-          ko build --local ./cmd/platform ./cmd/router ./cmd/envd
-
-  install-smoke:
+  e2e:
+    needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
