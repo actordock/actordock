@@ -75,6 +75,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /v2/sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleListSandboxes)))
 	mux.Handle("GET /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleGetSandbox)))
 	mux.Handle("POST /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandbox)))
+	mux.Handle("POST /sandboxes/{id}/timeout", s.requireAPIKey(http.HandlerFunc(s.handleSetSandboxTimeout)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
 }
@@ -121,6 +122,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 type createSandboxRequest struct {
 	TemplateID string `json:"templateID"`
 	Secure     *bool  `json:"secure,omitempty"`
+	Timeout    *int   `json:"timeout,omitempty"`
+}
+
+type setSandboxTimeoutRequest struct {
+	Timeout int `json:"timeout"`
 }
 
 type sandboxResponse struct {
@@ -161,6 +167,12 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	timeoutSeconds, err := store.ResolveTimeout(req.Timeout, s.cfg.DefaultSandboxTimeout)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid timeout")
+		return
+	}
+
 	actorID, err := newActorID()
 	if err != nil {
 		s.logger.Error("generate actor id", "err", err)
@@ -176,11 +188,13 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := s.nowFunc()
+	expiresAt := store.ExpiresAt(now, timeoutSeconds)
 	if err := s.store.Put(ctx, store.Sandbox{
 		SandboxID: actorID,
 		ActorID:   actorID,
 		Template:  req.TemplateID,
 		CreatedAt: now,
+		ExpiresAt: expiresAt,
 		Status:    store.StatusRunning,
 	}); err != nil {
 		s.logger.Error("persist sandbox", "actor_id", actorID, "err", err)
@@ -222,6 +236,45 @@ func (s *Server) handleDeleteSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.Delete(ctx, sandboxID); err != nil && !errors.Is(err, store.ErrNotFound) {
 		s.logger.Error("delete sandbox metadata", "sandbox_id", sandboxID, "err", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleSetSandboxTimeout(w http.ResponseWriter, r *http.Request) {
+	sandboxID := r.PathValue("id")
+	if sandboxID == "" {
+		writeAPIError(w, http.StatusBadRequest, "sandbox id is required")
+		return
+	}
+
+	var req setSandboxTimeoutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := store.ValidateTimeout(req.Timeout); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid timeout")
+		return
+	}
+
+	ctx := r.Context()
+	sb, err := s.store.Get(ctx, sandboxID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeAPIError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("get sandbox for timeout", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to set sandbox timeout")
+		return
+	}
+
+	now := s.nowFunc()
+	sb.ExpiresAt = store.ExpiresAt(now, req.Timeout)
+	if err := s.store.Put(ctx, sb); err != nil {
+		s.logger.Error("update sandbox timeout", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to set sandbox timeout")
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -122,7 +122,9 @@ func TestCreateSandbox(t *testing.T) {
 	t.Parallel()
 	actors := &fakeActors{}
 	st := newFakeStore()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
 	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
 
 	body := []byte(`{"templateID":"base","secure":false}`)
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
@@ -159,6 +161,110 @@ func TestCreateSandbox(t *testing.T) {
 	}
 	if got.CreatedAt.IsZero() {
 		t.Fatal("created_at is zero")
+	}
+	if !got.ExpiresAt.Equal(now.Add(300 * time.Second)) {
+		t.Fatalf("expires_at = %v, want %v", got.ExpiresAt, now.Add(300*time.Second))
+	}
+}
+
+func TestCreateSandboxWithTimeout(t *testing.T) {
+	t.Parallel()
+	actors := &fakeActors{}
+	st := newFakeStore()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	body := []byte(`{"templateID":"base","secure":false,"timeout":60}`)
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	got := st.records[resp.SandboxID]
+	if !got.ExpiresAt.Equal(now.Add(60 * time.Second)) {
+		t.Fatalf("expires_at = %v, want %v", got.ExpiresAt, now.Add(60*time.Second))
+	}
+}
+
+func TestCreateSandboxInvalidTimeout(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader([]byte(`{"templateID":"base","timeout":0}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestSetSandboxTimeout(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: now,
+		ExpiresAt: now.Add(60 * time.Second),
+		Status:    store.StatusRunning,
+	}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now.Add(30 * time.Second) }
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/timeout", bytes.NewReader([]byte(`{"timeout":120}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	want := now.Add(30 * time.Second).Add(120 * time.Second)
+	if !st.records["sb-1"].ExpiresAt.Equal(want) {
+		t.Fatalf("expires_at = %v, want %v", st.records["sb-1"].ExpiresAt, want)
+	}
+}
+
+func TestSetSandboxTimeoutNotFound(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/missing/timeout", bytes.NewReader([]byte(`{"timeout":120}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestSetSandboxTimeoutInvalid(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/timeout", bytes.NewReader([]byte(`{"timeout":1}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
 
@@ -389,11 +495,12 @@ func testConfig() config.Platform {
 			ListenAddr: ":8080",
 			LogLevel:   "info",
 		},
-		APIKey:            "dev",
-		Domain:            "localhost",
-		TemplateNamespace: "actordock",
-		TemplateName:      "base",
-		EnvdVersion:       "0.1.0",
-		ClientID:          "actordock",
+		APIKey:                "dev",
+		Domain:                "localhost",
+		TemplateNamespace:     "actordock",
+		TemplateName:          "base",
+		EnvdVersion:           "0.1.0",
+		ClientID:              "actordock",
+		DefaultSandboxTimeout: 300,
 	}
 }
