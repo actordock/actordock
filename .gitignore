@@ -1,5 +1,7 @@
 /bin/
 /.ko/
+/.substrate/
+/hack/.env.local
 *.test
 *.out
 .DS_Store

@@ -18,6 +18,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -55,3 +56,21 @@ jobs:
         run: |
           export KO_DOCKER_REPO=ko.local/actordock
           ko build --local ./cmd/platform ./cmd/router ./cmd/envd
+
+  install-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Ko
+        uses: ko-build/setup-ko@v0.9
+
+      - name: Install Kind cluster + Substrate + Actordock
+        run: ./hack/install-local.sh
