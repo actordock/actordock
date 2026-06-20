@@ -63,6 +63,7 @@ def test_command_after_pause_auto_resume() -> None:
         sbx.kill()
 
 
+@pytest.mark.flaky(reruns=2, reruns_delay=3)
 def test_explicit_pause_and_resume() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:

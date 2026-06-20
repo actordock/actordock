@@ -20,6 +20,13 @@ from e2b import Sandbox
 from support.env import ensure_e2b_env
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line(
+        "markers",
+        "flaky(reruns, reruns_delay): rerun test on failure (pytest-rerunfailures)",
+    )
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _e2b_env() -> None:
     ensure_e2b_env()
