@@ -24,7 +24,10 @@ const (
 	OnTimeoutPause = "pause"
 )
 
-var ErrInvalidOnTimeout = errors.New("invalid on_timeout")
+var (
+	ErrInvalidOnTimeout  = errors.New("invalid on_timeout")
+	ErrInvalidAutoResume = errors.New("invalid auto_resume")
+)
 
 // ValidateOnTimeout checks E2B lifecycle on_timeout values.
 func ValidateOnTimeout(onTimeout string) error {
@@ -45,4 +48,12 @@ func ResolveOnTimeout(onTimeout string) (string, error) {
 		return "", err
 	}
 	return onTimeout, nil
+}
+
+// ValidateAutoResume checks auto_resume is only enabled when on_timeout is pause.
+func ValidateAutoResume(onTimeout string, autoResume bool) error {
+	if autoResume && onTimeout != OnTimeoutPause {
+		return fmt.Errorf("%w: enabled only when on_timeout is %q", ErrInvalidAutoResume, OnTimeoutPause)
+	}
+	return nil
 }

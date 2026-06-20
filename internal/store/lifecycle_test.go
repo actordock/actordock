@@ -98,3 +98,56 @@ func TestRedisOnTimeoutRoundTrip(t *testing.T) {
 		t.Fatalf("OnTimeout = %q, want %q", got.OnTimeout, OnTimeoutPause)
 	}
 }
+
+func TestValidateAutoResume(t *testing.T) {
+	t.Parallel()
+
+	if err := ValidateAutoResume(OnTimeoutPause, true); err != nil {
+		t.Fatalf("ValidateAutoResume(pause, true) = %v, want nil", err)
+	}
+	if err := ValidateAutoResume(OnTimeoutPause, false); err != nil {
+		t.Fatalf("ValidateAutoResume(pause, false) = %v, want nil", err)
+	}
+	if err := ValidateAutoResume(OnTimeoutKill, false); err != nil {
+		t.Fatalf("ValidateAutoResume(kill, false) = %v, want nil", err)
+	}
+	if err := ValidateAutoResume(OnTimeoutKill, true); !errors.Is(err, ErrInvalidAutoResume) {
+		t.Fatalf("ValidateAutoResume(kill, true) = %v, want ErrInvalidAutoResume", err)
+	}
+}
+
+func TestRedisAutoResumeRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	mr := miniredis.RunT(t)
+	s, err := NewRedis(mr.Addr())
+	if err != nil {
+		t.Fatalf("NewRedis: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+	sb := Sandbox{
+		SandboxID:  "sb-1",
+		ActorID:    "sb-1",
+		Template:   "base",
+		CreatedAt:  now,
+		ExpiresAt:  now.Add(300 * time.Second),
+		Status:     StatusRunning,
+		OnTimeout:  OnTimeoutPause,
+		AutoResume: true,
+	}
+
+	if err := s.Put(ctx, sb); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	got, err := s.Get(ctx, "sb-1")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !got.AutoResume {
+		t.Fatal("AutoResume = false, want true")
+	}
+}

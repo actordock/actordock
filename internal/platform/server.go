@@ -119,16 +119,21 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
+type createSandboxAutoResume struct {
+	Enabled bool `json:"enabled"`
+}
+
 type createSandboxLifecycle struct {
 	OnTimeout string `json:"onTimeout"`
 }
 
 type createSandboxRequest struct {
-	TemplateID string                  `json:"templateID"`
-	Secure     *bool                   `json:"secure,omitempty"`
-	Timeout    *int                    `json:"timeout,omitempty"`
-	AutoPause  *bool                   `json:"autoPause,omitempty"`
-	Lifecycle  *createSandboxLifecycle `json:"lifecycle,omitempty"`
+	TemplateID string                   `json:"templateID"`
+	Secure     *bool                    `json:"secure,omitempty"`
+	Timeout    *int                     `json:"timeout,omitempty"`
+	AutoPause  *bool                    `json:"autoPause,omitempty"`
+	AutoResume *createSandboxAutoResume `json:"autoResume,omitempty"`
+	Lifecycle  *createSandboxLifecycle  `json:"lifecycle,omitempty"`
 }
 
 type setSandboxTimeoutRequest struct {
@@ -179,7 +184,7 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	onTimeout, err := resolveCreateOnTimeout(req)
+	onTimeout, autoResume, err := resolveCreateLifecycle(req)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "invalid lifecycle")
 		return
@@ -207,8 +212,9 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		Template:  req.TemplateID,
 		CreatedAt: now,
 		ExpiresAt: expiresAt,
-		OnTimeout: onTimeout,
-		Status:    store.StatusRunning,
+		OnTimeout:  onTimeout,
+		AutoResume: autoResume,
+		Status:     store.StatusRunning,
 	}); err != nil {
 		s.logger.Error("persist sandbox", "actor_id", actorID, "err", err)
 		if delErr := s.actors.DeleteSandbox(ctx, actorID); delErr != nil {
@@ -397,21 +403,45 @@ func newActorID() (string, error) {
 	return id, nil
 }
 
-// resolveCreateOnTimeout maps E2B create body to stored on_timeout (v0.0.4: kill only).
+// resolveCreateLifecycle maps E2B create body to stored on_timeout and auto_resume.
+func resolveCreateLifecycle(req createSandboxRequest) (string, bool, error) {
+	onTimeout, err := resolveCreateOnTimeout(req)
+	if err != nil {
+		return "", false, err
+	}
+	autoResume := false
+	if req.AutoResume != nil {
+		autoResume = req.AutoResume.Enabled
+	}
+	if err := store.ValidateAutoResume(onTimeout, autoResume); err != nil {
+		return "", false, err
+	}
+	return onTimeout, autoResume, nil
+}
+
+// resolveCreateOnTimeout maps E2B create body fields to stored on_timeout.
+// autoPause=true is equivalent to lifecycle.onTimeout=pause; conflicting values are rejected.
 func resolveCreateOnTimeout(req createSandboxRequest) (string, error) {
-	if req.AutoPause != nil && *req.AutoPause {
-		return "", store.ErrInvalidOnTimeout
-	}
-	onTimeout := ""
+	lifecycleOnTimeout := ""
 	if req.Lifecycle != nil {
-		onTimeout = req.Lifecycle.OnTimeout
+		lifecycleOnTimeout = req.Lifecycle.OnTimeout
 	}
-	resolved, err := store.ResolveOnTimeout(onTimeout)
+	resolved, err := store.ResolveOnTimeout(lifecycleOnTimeout)
 	if err != nil {
 		return "", err
 	}
-	if resolved != store.OnTimeoutKill {
-		return "", store.ErrInvalidOnTimeout
+
+	lifecycleExplicit := req.Lifecycle != nil && req.Lifecycle.OnTimeout != ""
+	if req.AutoPause != nil {
+		autoPause := *req.AutoPause
+		if lifecycleExplicit {
+			lifecyclePause := resolved == store.OnTimeoutPause
+			if lifecyclePause != autoPause {
+				return "", store.ErrInvalidOnTimeout
+			}
+		} else if autoPause {
+			resolved = store.OnTimeoutPause
+		}
 	}
 	return resolved, nil
 }
