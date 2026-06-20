@@ -20,6 +20,7 @@ const (
 	StatusRunning = "running"
 	StatusPending = "pending"
 	StatusFailed  = "failed"
+	StatusPaused  = "paused"
 )
 
 // Sandbox is persisted sandbox metadata for v0.0.2+ visibility APIs.

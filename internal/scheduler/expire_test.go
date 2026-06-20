@@ -46,6 +46,11 @@ func (f *fakeStore) Get(_ context.Context, sandboxID string) (store.Sandbox, err
 	return sb, nil
 }
 
+func (f *fakeStore) Put(_ context.Context, sb store.Sandbox) error {
+	f.records[sb.SandboxID] = sb
+	return nil
+}
+
 func (f *fakeStore) Delete(_ context.Context, sandboxID string) error {
 	if f.delErr != nil {
 		return f.delErr
@@ -56,8 +61,18 @@ func (f *fakeStore) Delete(_ context.Context, sandboxID string) error {
 }
 
 type fakeActors struct {
-	deleted []string
-	err     error
+	suspended []string
+	deleted   []string
+	suspendErr error
+	err        error
+}
+
+func (f *fakeActors) SuspendSandbox(_ context.Context, actorID string) error {
+	if f.suspendErr != nil {
+		return f.suspendErr
+	}
+	f.suspended = append(f.suspended, actorID)
+	return nil
 }
 
 func (f *fakeActors) DeleteSandbox(_ context.Context, actorID string) error {
@@ -111,7 +126,7 @@ func TestExpireSandboxMissing(t *testing.T) {
 	}
 }
 
-func TestExpireSandboxPauseSkipped(t *testing.T) {
+func TestExpireSandboxPause(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
@@ -121,6 +136,7 @@ func TestExpireSandboxPauseSkipped(t *testing.T) {
 		ActorID:   "sb-1",
 		ExpiresAt: now.Add(-time.Minute),
 		OnTimeout: store.OnTimeoutPause,
+		Status:    store.StatusRunning,
 	}
 	actors := &fakeActors{}
 	expirer := NewExpirer(st, actors)
@@ -128,11 +144,87 @@ func TestExpireSandboxPauseSkipped(t *testing.T) {
 	if err := expirer.ExpireSandbox(context.Background(), "sb-1"); err != nil {
 		t.Fatalf("ExpireSandbox: %v", err)
 	}
+	if len(actors.suspended) != 1 || actors.suspended[0] != "sb-1" {
+		t.Fatalf("suspended actors = %v", actors.suspended)
+	}
 	if len(actors.deleted) != 0 {
 		t.Fatalf("deleted actors = %v, want none", actors.deleted)
 	}
-	if _, ok := st.records["sb-1"]; !ok {
-		t.Fatal("pause sandbox should remain")
+	if len(st.deleted) != 0 {
+		t.Fatalf("deleted metadata = %v, want none", st.deleted)
+	}
+	got := st.records["sb-1"]
+	if got.Status != store.StatusPaused {
+		t.Fatalf("status = %q, want %q", got.Status, store.StatusPaused)
+	}
+}
+
+func TestExpireSandboxPauseAlreadyPaused(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		ExpiresAt: now.Add(-time.Minute),
+		OnTimeout: store.OnTimeoutPause,
+		Status:    store.StatusPaused,
+	}
+	actors := &fakeActors{}
+	expirer := NewExpirer(st, actors)
+
+	if err := expirer.ExpireSandbox(context.Background(), "sb-1"); err != nil {
+		t.Fatalf("ExpireSandbox: %v", err)
+	}
+	if len(actors.suspended) != 0 {
+		t.Fatalf("suspended actors = %v, want none", actors.suspended)
+	}
+}
+
+func TestExpireSandboxPauseActorMissing(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		ExpiresAt: now.Add(-time.Minute),
+		OnTimeout: store.OnTimeoutPause,
+		Status:    store.StatusRunning,
+	}
+	actors := &fakeActors{suspendErr: substrate.ErrNotFound}
+	expirer := NewExpirer(st, actors)
+
+	if err := expirer.ExpireSandbox(context.Background(), "sb-1"); err != nil {
+		t.Fatalf("ExpireSandbox: %v", err)
+	}
+	if len(st.deleted) != 1 {
+		t.Fatalf("deleted metadata = %v", st.deleted)
+	}
+}
+
+func TestExpireSandboxPauseActorError(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		ExpiresAt: now.Add(-time.Minute),
+		OnTimeout: store.OnTimeoutPause,
+		Status:    store.StatusRunning,
+	}
+	actors := &fakeActors{suspendErr: errors.New("boom")}
+	expirer := NewExpirer(st, actors)
+
+	if err := expirer.ExpireSandbox(context.Background(), "sb-1"); err == nil {
+		t.Fatal("ExpireSandbox = nil, want error")
+	}
+	if st.records["sb-1"].Status != store.StatusRunning {
+		t.Fatalf("status = %q, want running", st.records["sb-1"].Status)
 	}
 }
 
