@@ -23,49 +23,26 @@ import (
 	"time"
 )
 
-func TestProbeHealthImmediate(t *testing.T) {
+func TestWaitForReadyImmediate(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != HealthPath {
-			t.Fatalf("path = %q, want %q", r.URL.Path, HealthPath)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
+	srv := httptest.NewServer(NewStubHandler())
 	t.Cleanup(srv.Close)
 
-	if err := ProbeHealth(context.Background(), nil, srv.URL); err != nil {
-		t.Fatalf("ProbeHealth() = %v, want nil", err)
+	if err := WaitForReady(context.Background(), srv.URL, time.Second); err != nil {
+		t.Fatalf("WaitForReady() = %v, want nil", err)
 	}
 }
 
-func TestWaitForHealthImmediate(t *testing.T) {
-	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != HealthPath {
-			t.Fatalf("path = %q, want %q", r.URL.Path, HealthPath)
-		}
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	t.Cleanup(srv.Close)
-
-	if err := WaitForHealth(context.Background(), nil, srv.URL, time.Second); err != nil {
-		t.Fatalf("WaitForHealth() = %v, want nil", err)
-	}
-}
-
-func TestWaitForHealthEventually(t *testing.T) {
+func TestWaitForReadyEventually(t *testing.T) {
 	t.Parallel()
 	var ready atomic.Bool
+	stub := NewStubHandler()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != HealthPath {
-			w.WriteHeader(http.StatusNotFound)
+		if !ready.Load() {
+			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		if ready.Load() {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		w.WriteHeader(http.StatusServiceUnavailable)
+		stub.ServeHTTP(w, r)
 	}))
 	t.Cleanup(srv.Close)
 
@@ -74,20 +51,34 @@ func TestWaitForHealthEventually(t *testing.T) {
 		ready.Store(true)
 	}()
 
-	if err := WaitForHealth(context.Background(), nil, srv.URL, 2*time.Second); err != nil {
-		t.Fatalf("WaitForHealth() = %v, want nil", err)
+	if err := WaitForReady(context.Background(), srv.URL, 2*time.Second); err != nil {
+		t.Fatalf("WaitForReady() = %v, want nil", err)
 	}
 }
 
-func TestWaitForHealthTimeout(t *testing.T) {
+func TestWaitForReadyTimeout(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	t.Cleanup(srv.Close)
 
-	err := WaitForHealth(context.Background(), nil, srv.URL, 200*time.Millisecond)
+	err := WaitForReady(context.Background(), srv.URL, 200*time.Millisecond)
 	if err == nil {
-		t.Fatal("WaitForHealth() = nil, want error")
+		t.Fatal("WaitForReady() = nil, want error")
+	}
+}
+
+func TestWaitForBackendReady(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(NewStubHandler())
+	t.Cleanup(srv.Close)
+	addr := srv.Listener.Addr().String()
+
+	err := WaitForBackendReady(context.Background(), func(context.Context) (string, error) {
+		return addr, nil
+	}, time.Second)
+	if err != nil {
+		t.Fatalf("WaitForBackendReady() = %v, want nil", err)
 	}
 }

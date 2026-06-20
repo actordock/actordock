@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/actordock/actordock/internal/config"
+	"github.com/actordock/actordock/internal/envd"
 	"github.com/actordock/actordock/internal/substrate"
 )
 
@@ -85,9 +86,7 @@ func TestParseSandboxIDFromHeader(t *testing.T) {
 
 func TestProxyToEnvd(t *testing.T) {
 	t.Parallel()
-	envd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
+	envd := httptest.NewServer(envd.NewStubHandler())
 	t.Cleanup(envd.Close)
 
 	backendHost := envd.Listener.Addr().String()
@@ -111,17 +110,18 @@ func TestProxyToEnvd(t *testing.T) {
 
 func TestProxyResumesPausedSandbox(t *testing.T) {
 	t.Parallel()
-	envd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" {
-			w.WriteHeader(http.StatusNoContent)
+	stub := envd.NewStubHandler()
+	envdSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		stub.ServeHTTP(w, r)
 	}))
-	t.Cleanup(envd.Close)
+	t.Cleanup(envdSrv.Close)
 
-	actors := &fakeBackend{backend: envd.Listener.Addr().String(), waitEnvd: true}
+	actors := &fakeBackend{backend: envdSrv.Listener.Addr().String(), waitEnvd: true}
 	srv := NewServer(testConfig(), actors, slog.Default())
 	srv.envdTransport = http.DefaultTransport
 

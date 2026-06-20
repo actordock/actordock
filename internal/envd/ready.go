@@ -17,10 +17,12 @@ package envd
 import (
 	"context"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
+
+	"connectrpc.com/connect"
+	processv1 "github.com/actordock/actordock/pkg/envd/process"
+	"github.com/actordock/actordock/pkg/envd/process/processv1connect"
 )
 
 const (
@@ -29,39 +31,68 @@ const (
 	readyPollInterval   = 200 * time.Millisecond
 )
 
-// ProbeHealth checks GET /health once.
-func ProbeHealth(ctx context.Context, client *http.Client, baseURL string) error {
-	if client == nil {
-		client = http.DefaultClient
+// BackendAddrFunc resolves the host:port for a sandbox envd instance.
+type BackendAddrFunc func(ctx context.Context) (string, error)
+
+func normalizeBaseURL(baseURL string) string {
+	if !strings.HasPrefix(baseURL, "http://") && !strings.HasPrefix(baseURL, "https://") {
+		return "http://" + baseURL
 	}
-	healthURL := strings.TrimRight(baseURL, "/") + HealthPath
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
-	if resp.StatusCode == http.StatusNoContent {
-		return nil
-	}
-	return fmt.Errorf("envd health at %s returned %d", healthURL, resp.StatusCode)
+	return baseURL
 }
 
-// WaitForHealth polls GET /health on baseURL until envd responds with 204 No Content.
-func WaitForHealth(ctx context.Context, client *http.Client, baseURL string, timeout time.Duration) error {
+// probeProcess checks the envd process Connect API (same path as commands.run).
+func probeProcess(ctx context.Context, baseURL string) error {
+	client := processv1connect.NewProcessClient(newH2CHTTPClient(), normalizeBaseURL(baseURL))
+	_, err := client.List(ctx, connect.NewRequest(&processv1.ListRequest{}))
+	if err != nil {
+		return fmt.Errorf("envd process list: %w", err)
+	}
+	return nil
+}
+
+// WaitForReady polls until the envd process Connect API responds.
+func WaitForReady(ctx context.Context, baseURL string, timeout time.Duration) error {
 	if timeout <= 0 {
 		timeout = DefaultReadyTimeout
 	}
 	deadline := time.Now().Add(timeout)
+	var lastErr error
 	for {
-		if err := ProbeHealth(ctx, client, baseURL); err == nil {
+		if err := probeProcess(ctx, baseURL); err == nil {
 			return nil
-		} else if time.Now().After(deadline) {
-			return fmt.Errorf("timeout waiting for envd health at %s: %w", strings.TrimRight(baseURL, "/")+HealthPath, err)
+		} else {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for envd ready at %s: %w", normalizeBaseURL(baseURL), lastErr)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(readyPollInterval):
+		}
+	}
+}
+
+// WaitForBackendReady polls until backend resolves and envd process Connect API responds.
+func WaitForBackendReady(ctx context.Context, backend BackendAddrFunc, timeout time.Duration) error {
+	if timeout <= 0 {
+		timeout = DefaultReadyTimeout
+	}
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		addr, err := backend(ctx)
+		if err != nil {
+			lastErr = err
+		} else if err := probeProcess(ctx, "http://"+addr); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for envd backend: %v", lastErr)
 		}
 		select {
 		case <-ctx.Done():

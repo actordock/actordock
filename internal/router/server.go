@@ -135,7 +135,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if waitEnvd {
-		if err := envd.WaitForHealth(r.Context(), nil, "http://"+backend, envd.DefaultReadyTimeout); err != nil {
+		if err := envd.WaitForReady(r.Context(), "http://"+backend, envd.DefaultReadyTimeout); err != nil {
 			s.logger.Error("wait for envd", "sandbox_id", sandboxID, "backend", backend, "err", err)
 			writeAPIError(w, http.StatusBadGateway, "failed to reach sandbox")
 			return

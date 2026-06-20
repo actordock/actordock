@@ -160,8 +160,6 @@ type resumeSandboxRequest struct {
 
 const resumeDefaultTimeoutSeconds = 15
 
-const resumedEnvdPollInterval = 200 * time.Millisecond
-
 type sandboxResponse struct {
 	ClientID        string `json:"clientID"`
 	EnvdVersion     string `json:"envdVersion"`
@@ -345,7 +343,9 @@ func (s *Server) handleResumeSandbox(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
 		return
 	}
-	if err := waitForResumedEnvd(ctx, s.actors, sb.ActorID, s.cfg.EnvdPort, envd.DefaultReadyTimeout); err != nil {
+	if err := envd.WaitForBackendReady(ctx, func(ctx context.Context) (string, error) {
+		return s.actors.GetActorBackend(ctx, sb.ActorID, s.cfg.EnvdPort)
+	}, envd.DefaultReadyTimeout); err != nil {
 		s.logger.Error("wait for resumed sandbox", "sandbox_id", sandboxID, "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
 		return
@@ -677,29 +677,6 @@ func resolveResumeOnTimeout(currentOnTimeout string, req resumeSandboxRequest) (
 		return store.OnTimeoutPause, nil
 	}
 	return store.OnTimeoutKill, nil
-}
-
-func waitForResumedEnvd(ctx context.Context, actors sandboxClient, actorID string, envdPort int, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	var lastErr error
-	for {
-		backend, err := actors.GetActorBackend(ctx, actorID, envdPort)
-		if err != nil {
-			lastErr = err
-		} else if err := envd.ProbeHealth(ctx, nil, "http://"+backend); err == nil {
-			return nil
-		} else {
-			lastErr = err
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout waiting for sandbox %q envd: %v", actorID, lastErr)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(resumedEnvdPollInterval):
-		}
-	}
 }
 
 // Ensure substrate.Client satisfies sandboxClient.

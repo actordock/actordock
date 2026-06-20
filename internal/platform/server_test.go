@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/internal/config"
+	"github.com/actordock/actordock/internal/envd"
 	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -1184,13 +1185,5 @@ func testConfig() config.Platform {
 
 func testEnvdBackend(t *testing.T) string {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	t.Cleanup(srv.Close)
-	return srv.Listener.Addr().String()
+	return envd.StartStubTestBackend(t)
 }
