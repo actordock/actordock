@@ -1,10 +1,8 @@
 # actordock
 
-Self-hosted sandbox platform for AI agents on Kubernetes.
+**Pod-scale density for agent sandboxes.** Multiplex agents onto shared workers; idle sessions suspend to zero and wake on demand.
 
-Multiplex many sandboxes onto shared workers. Idle sessions suspend. Deploy with one command.
-
-Compatible with the [E2B SDK](https://e2b.dev/docs)—point it at your Actordock endpoint.
+Kubernetes-native. Self-hosted. One command to deploy. E2B SDK compatible—point it at your endpoint.
 
 ```bash
 ./hack/install-local.sh
