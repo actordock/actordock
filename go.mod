@@ -6,6 +6,7 @@ require (
 	connectrpc.com/connect v1.20.0
 	github.com/agent-substrate/substrate v0.0.0-20260618175834-9f8475493b6e
 	github.com/alicebob/miniredis/v2 v2.37.0
+	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
 	github.com/redis/go-redis/v9 v9.20.1
 	golang.org/x/net v0.56.0
