@@ -17,7 +17,7 @@ Count Platform REST only. envd RPC (commands, filesystem) is separate but requir
 
 ## Metrics
 
-| Metric | v0.0.6 (now) | v0.1.0 target |
+| Metric | v0.0.7 (now) | v0.1.0 target |
 |--------|--------------|---------------|
 | Operations | 14 / 56 (**25%**) | **≥34 / 56 (61%)** |
 | Fields (full-field ops only) | ~84 / ~220 (**~38%**) | **≥132 / ~220 (60%)** |
@@ -149,25 +149,25 @@ All 13 fields **done** in the release that completes list item schema — **v0.1
 
 | Field | Status |
 |-------|--------|
-| `sandboxes` map + all 9 `SandboxMetric` fields per entry | done (v0.0.6); real values [v0.0.7](v0.0.7.md) |
+| `sandboxes` map + all 9 `SandboxMetric` fields per entry | done (v0.0.7); cgroup-backed values |
 
 ### `GET /sandboxes/{id}/metrics`
 
 | Field | Status |
 |-------|--------|
-| `SandboxMetric[]` response (all 9 fields when non-empty) | done (v0.0.6); real samples [v0.0.7](v0.0.7.md) |
+| `SandboxMetric[]` response (all 9 fields when non-empty) | done (v0.0.7); real samples |
 
 ### `GET /sandboxes/{id}/logs` (`SandboxLogs`)
 
 | Field | Status |
 |-------|--------|
-| `logs`, `logEntries` arrays + nested schema fields | done (v0.0.6); real data [v0.0.7](v0.0.7.md) |
+| `logs`, `logEntries` arrays + nested schema fields | done (v0.0.7); command stdout/stderr |
 
 ### `GET /v2/sandboxes/{id}/logs` (`SandboxLogsV2Response`)
 
 | Field | Status |
 |-------|--------|
-| `logs` array + nested `SandboxLogEntry` fields | done (v0.0.6); real data [v0.0.7](v0.0.7.md) |
+| `logs` array + nested `SandboxLogEntry` fields | done (v0.0.7); structured command output |
 
 ### `POST …/refreshes`
 

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""E2B observability routes: metrics, logs, refreshes (v0.0.6)."""
+"""E2B observability routes: real logs, metrics, refreshes (v0.0.7)."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ import time
 from datetime import datetime, timezone
 
 import httpx
+import pytest
 from e2b import Sandbox
 
 METRIC_KEYS = (
@@ -56,7 +57,7 @@ def _seconds_until(end_at: datetime) -> float:
     return (end_at - now).total_seconds()
 
 
-func test_list_sandbox_metrics_returns_expected_keys() -> None:
+def test_list_sandbox_metrics_returns_real_values() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
         sbx.commands.run("echo metrics")
@@ -73,12 +74,13 @@ func test_list_sandbox_metrics_returns_expected_keys() -> None:
         for key in METRIC_KEYS:
             assert key in metric, f"missing metric key {key!r}"
         assert metric["memTotal"] > 0
+        assert metric["cpuCount"] >= 1
         assert metric["memUsed"] > 0 or metric["cpuUsedPct"] >= 0
     finally:
         sbx.kill()
 
 
-def test_per_sandbox_metrics_returns_200() -> None:
+def test_per_sandbox_metrics_returns_samples() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
         sbx.commands.run("echo metrics")
@@ -92,11 +94,12 @@ def test_per_sandbox_metrics_returns_200() -> None:
         assert isinstance(samples, list)
         assert len(samples) >= 1
         assert samples[0]["memTotal"] > 0
+        assert samples[0]["cpuCount"] >= 1
     finally:
         sbx.kill()
 
 
-def test_sandbox_logs_v1_returns_expected_keys() -> None:
+def test_sandbox_logs_v1_contain_command_output() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
         sbx.commands.run("echo hello")
@@ -119,7 +122,7 @@ def test_sandbox_logs_v1_returns_expected_keys() -> None:
         sbx.kill()
 
 
-def test_sandbox_logs_v2_returns_expected_keys() -> None:
+def test_sandbox_logs_v2_contain_command_output() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
         sbx.commands.run("echo hello")
@@ -135,6 +138,37 @@ def test_sandbox_logs_v2_returns_expected_keys() -> None:
         assert isinstance(body["logs"], list)
         assert any("hello" in e.get("message", "") for e in body["logs"])
         assert any(e.get("level") == "info" for e in body["logs"])
+    finally:
+        sbx.kill()
+
+
+@pytest.mark.flaky(reruns=2, reruns_delay=3)
+def test_logs_retrievable_after_pause_and_resume() -> None:
+    sbx = Sandbox.create(template="base", secure=False, timeout=120)
+    try:
+        sbx.commands.run("echo before-pause")
+        assert sbx.pause() is True
+        resp = httpx.post(
+            f"{_api_url()}/sandboxes/{sbx.sandbox_id}/resume",
+            headers=_api_headers(),
+            json={"timeout": 120, "autoPause": True},
+            timeout=30.0,
+        )
+        assert resp.status_code == 201
+        sbx.commands.run("echo after-resume")
+
+        log_resp = httpx.get(
+            f"{_api_url()}/sandboxes/{sbx.sandbox_id}/logs",
+            params={"start": 0, "limit": 100},
+            headers={"X-API-KEY": os.environ["E2B_API_KEY"]},
+            timeout=30.0,
+        )
+        assert log_resp.status_code == 200
+        body = log_resp.json()
+        texts = [e.get("line", "") for e in body["logs"]] + [
+            e.get("message", "") for e in body["logEntries"]
+        ]
+        assert any("before-pause" in t or "after-resume" in t for t in texts)
     finally:
         sbx.kill()
 

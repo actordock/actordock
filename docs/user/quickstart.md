@@ -77,7 +77,7 @@ Explicit pause/resume REST routes: `POST /sandboxes/{id}/pause` (204) and `POST 
 
 ### Observability (metrics, logs, refreshes)
 
-Platform exposes E2B-compatible observability routes. Logs and per-sandbox metrics may return empty stub payloads in v0.0.6 until envd log collection lands.
+Platform exposes E2B-compatible observability routes. As of v0.0.7, logs and metrics return **real data** from envd: command stdout/stderr in logs; cgroup-backed CPU/memory/disk in metrics.
 
 ```python
 import httpx
@@ -89,13 +89,19 @@ headers = {"X-API-KEY": os.environ["E2B_API_KEY"]}
 
 sbx = Sandbox.create(template="base", secure=False, timeout=60)
 try:
-    # List metrics (map sandbox id -> SandboxMetric)
-    httpx.get(f"{api}/sandboxes/metrics", params={"sandbox_ids": sbx.sandbox_id}, headers=headers).raise_for_status()
-    # Per-sandbox metrics (array of SandboxMetric; may be empty)
+    sbx.commands.run("echo hello")
+    # List metrics (map sandbox id -> SandboxMetric; cgroup-backed values)
+    metrics = httpx.get(
+        f"{api}/sandboxes/metrics",
+        params={"sandbox_ids": sbx.sandbox_id},
+        headers=headers,
+    ).json()["sandboxes"][sbx.sandbox_id]
+    assert metrics["memTotal"] > 0
+    # Per-sandbox metrics (array of SandboxMetric; at least latest sample)
     httpx.get(f"{api}/sandboxes/{sbx.sandbox_id}/metrics", headers=headers).raise_for_status()
-    # Logs v1: {"logs": [...], "logEntries": [...]}
-    httpx.get(f"{api}/sandboxes/{sbx.sandbox_id}/logs", headers=headers).raise_for_status()
-    # Logs v2: {"logs": [...]}
+    # Logs v1: {"logs": [...], "logEntries": [...]} — includes command output
+    logs = httpx.get(f"{api}/sandboxes/{sbx.sandbox_id}/logs", headers=headers).json()
+    # Logs v2: {"logs": [...]} — structured entries with level/fields
     httpx.get(f"{api}/v2/sandboxes/{sbx.sandbox_id}/logs", headers=headers).raise_for_status()
     # Extend TTL without set_timeout (204)
     httpx.post(f"{api}/sandboxes/{sbx.sandbox_id}/refreshes", headers=headers, json={"duration": 120}).raise_for_status()
