@@ -31,13 +31,17 @@ import (
 )
 
 type fakeActors struct {
-	lastActorID   string
-	lastDeletedID string
-	createErr     error
-	deleteErr     error
-	getErr        error
-	actorStatuses map[string]ateapipb.Actor_Status
-	defaultStatus ateapipb.Actor_Status
+	lastActorID    string
+	lastDeletedID  string
+	lastSuspended  string
+	lastResumed    string
+	createErr      error
+	deleteErr      error
+	suspendErr     error
+	resumeErr      error
+	getErr         error
+	actorStatuses  map[string]ateapipb.Actor_Status
+	defaultStatus  ateapipb.Actor_Status
 }
 
 func (f *fakeActors) CreateAndResumeSandbox(_ context.Context, actorID, _, _ string) error {
@@ -48,6 +52,16 @@ func (f *fakeActors) CreateAndResumeSandbox(_ context.Context, actorID, _, _ str
 func (f *fakeActors) DeleteSandbox(_ context.Context, actorID string) error {
 	f.lastDeletedID = actorID
 	return f.deleteErr
+}
+
+func (f *fakeActors) SuspendSandbox(_ context.Context, actorID string) error {
+	f.lastSuspended = actorID
+	return f.suspendErr
+}
+
+func (f *fakeActors) ResumeSandbox(_ context.Context, actorID string) error {
+	f.lastResumed = actorID
+	return f.resumeErr
 }
 
 func (f *fakeActors) GetActor(_ context.Context, actorID string) (ateapipb.Actor_Status, error) {
@@ -526,6 +540,201 @@ func TestGetSandbox(t *testing.T) {
 	}
 	if resp.EndAt != expiresAt.Format(time.RFC3339) {
 		t.Fatalf("endAt = %q, want %q", resp.EndAt, expiresAt.Format(time.RFC3339))
+	}
+	if resp.Lifecycle.OnTimeout != store.OnTimeoutKill || resp.Lifecycle.AutoResume {
+		t.Fatalf("lifecycle = %+v", resp.Lifecycle)
+	}
+}
+
+func TestGetSandboxPaused(t *testing.T) {
+	t.Parallel()
+	createdAt := time.Date(2026, 6, 19, 10, 0, 0, 0, time.UTC)
+	expiresAt := createdAt.Add(120 * time.Second)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID:  "sb-1",
+		ActorID:    "sb-1",
+		Template:   "base",
+		CreatedAt:  createdAt,
+		ExpiresAt:  expiresAt,
+		OnTimeout:  store.OnTimeoutPause,
+		AutoResume: true,
+		Status:     store.StatusPaused,
+	}
+	actors := &fakeActors{
+		actorStatuses: map[string]ateapipb.Actor_Status{
+			"sb-1": ateapipb.Actor_STATUS_SUSPENDED,
+		},
+	}
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxDetailResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.State != "paused" {
+		t.Fatalf("state = %q, want paused", resp.State)
+	}
+	if resp.Lifecycle.OnTimeout != store.OnTimeoutPause || !resp.Lifecycle.AutoResume {
+		t.Fatalf("lifecycle = %+v", resp.Lifecycle)
+	}
+}
+
+func TestPauseSandbox(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		Status:    store.StatusRunning,
+	}
+	actors := &fakeActors{}
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/pause", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if actors.lastSuspended != "sb-1" {
+		t.Fatalf("suspended = %q", actors.lastSuspended)
+	}
+	if st.records["sb-1"].Status != store.StatusPaused {
+		t.Fatalf("status = %q, want paused", st.records["sb-1"].Status)
+	}
+}
+
+func TestPauseSandboxNotFound(t *testing.T) {
+	t.Parallel()
+	actors := &fakeActors{suspendErr: substrate.ErrNotFound}
+	srv := NewServer(testConfig(), actors, newFakeStore(), slog.Default())
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/missing/pause", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestResumeSandbox(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID:  "sb-1",
+		ActorID:    "sb-1",
+		Template:   "base",
+		CreatedAt:  now,
+		OnTimeout:  store.OnTimeoutPause,
+		AutoResume: true,
+		Status:     store.StatusPaused,
+	}
+	actors := &fakeActors{}
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	body := []byte(`{"timeout":60,"autoPause":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/resume", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.SandboxID != "sb-1" || resp.TemplateID != "base" || resp.Domain != "localhost" {
+		t.Fatalf("resp = %+v", resp)
+	}
+	if resp.ClientID != "actordock" || resp.EnvdVersion != "0.1.0" {
+		t.Fatalf("resp = %+v", resp)
+	}
+	if actors.lastResumed != "sb-1" {
+		t.Fatalf("resumed = %q", actors.lastResumed)
+	}
+	got := st.records["sb-1"]
+	if got.Status != store.StatusRunning {
+		t.Fatalf("status = %q, want running", got.Status)
+	}
+	if !got.ExpiresAt.Equal(now.Add(60 * time.Second)) {
+		t.Fatalf("expires_at = %v", got.ExpiresAt)
+	}
+	if got.OnTimeout != store.OnTimeoutPause || !got.AutoResume {
+		t.Fatalf("lifecycle fields = %+v", got)
+	}
+}
+
+func TestResumeSandboxDefaultTimeout(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		Status:    store.StatusPaused,
+	}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/resume", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !st.records["sb-1"].ExpiresAt.Equal(now.Add(15 * time.Second)) {
+		t.Fatalf("expires_at = %v, want +15s", st.records["sb-1"].ExpiresAt)
+	}
+}
+
+func TestResumeSandboxAutoPauseKill(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID:  "sb-1",
+		ActorID:    "sb-1",
+		Template:   "base",
+		OnTimeout:  store.OnTimeoutPause,
+		AutoResume: true,
+		Status:     store.StatusPaused,
+	}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	body := []byte(`{"timeout":60,"autoPause":false}`)
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/resume", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	got := st.records["sb-1"]
+	if got.OnTimeout != store.OnTimeoutKill || got.AutoResume {
+		t.Fatalf("on_timeout = %q auto_resume = %v", got.OnTimeout, got.AutoResume)
 	}
 }
 

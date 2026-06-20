@@ -38,6 +38,8 @@ type sandboxClient interface {
 	CreateAndResumeSandbox(ctx context.Context, actorID, templateNamespace, templateName string) error
 	DeleteSandbox(ctx context.Context, actorID string) error
 	GetActor(ctx context.Context, actorID string) (ateapipb.Actor_Status, error)
+	SuspendSandbox(ctx context.Context, actorID string) error
+	ResumeSandbox(ctx context.Context, actorID string) error
 }
 
 type sandboxStore interface {
@@ -76,6 +78,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleGetSandbox)))
 	mux.Handle("POST /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandbox)))
 	mux.Handle("POST /sandboxes/{id}/timeout", s.requireAPIKey(http.HandlerFunc(s.handleSetSandboxTimeout)))
+	mux.Handle("POST /sandboxes/{id}/pause", s.requireAPIKey(http.HandlerFunc(s.handlePauseSandbox)))
+	mux.Handle("POST /sandboxes/{id}/resume", s.requireAPIKey(http.HandlerFunc(s.handleResumeSandbox)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
 }
@@ -139,6 +143,13 @@ type createSandboxRequest struct {
 type setSandboxTimeoutRequest struct {
 	Timeout int `json:"timeout"`
 }
+
+type resumeSandboxRequest struct {
+	Timeout   *int  `json:"timeout,omitempty"`
+	AutoPause *bool `json:"autoPause,omitempty"`
+}
+
+const resumeDefaultTimeoutSeconds = 15
 
 type sandboxResponse struct {
 	ClientID        string `json:"clientID"`
@@ -224,13 +235,117 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := sandboxResponse{
-		ClientID:    s.cfg.ClientID,
-		EnvdVersion: s.cfg.EnvdVersion,
-		SandboxID:   actorID,
-		TemplateID:  req.TemplateID,
-		Domain:      s.cfg.Domain,
+	resp := buildSandboxResponse(s.cfg, store.Sandbox{
+		SandboxID: actorID,
+		Template:  req.TemplateID,
+	})
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handlePauseSandbox(w http.ResponseWriter, r *http.Request) {
+	sandboxID := r.PathValue("id")
+	if sandboxID == "" {
+		writeAPIError(w, http.StatusBadRequest, "sandbox id is required")
+		return
 	}
+
+	ctx := r.Context()
+	sb, err := s.store.Get(ctx, sandboxID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeAPIError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("get sandbox for pause", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to pause sandbox")
+		return
+	}
+
+	if err := s.actors.SuspendSandbox(ctx, sb.ActorID); err != nil {
+		if errors.Is(err, substrate.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "sandbox not found")
+			return
+		}
+		s.logger.Error("pause sandbox", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to pause sandbox")
+		return
+	}
+
+	sb.Status = store.StatusPaused
+	if err := s.store.Put(ctx, sb); err != nil {
+		s.logger.Error("persist paused sandbox", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to pause sandbox")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleResumeSandbox(w http.ResponseWriter, r *http.Request) {
+	sandboxID := r.PathValue("id")
+	if sandboxID == "" {
+		writeAPIError(w, http.StatusBadRequest, "sandbox id is required")
+		return
+	}
+
+	var req resumeSandboxRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	timeoutSeconds, err := store.ResolveTimeout(req.Timeout, resumeDefaultTimeoutSeconds)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid timeout")
+		return
+	}
+
+	ctx := r.Context()
+	sb, err := s.store.Get(ctx, sandboxID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeAPIError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("get sandbox for resume", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
+		return
+	}
+
+	onTimeout, err := resolveResumeOnTimeout(sb.OnTimeout, req)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid lifecycle")
+		return
+	}
+	if onTimeout == store.OnTimeoutKill {
+		sb.AutoResume = false
+	} else if err := store.ValidateAutoResume(onTimeout, sb.AutoResume); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid lifecycle")
+		return
+	}
+
+	if err := s.actors.ResumeSandbox(ctx, sb.ActorID); err != nil {
+		if errors.Is(err, substrate.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "sandbox not found")
+			return
+		}
+		s.logger.Error("resume sandbox", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
+		return
+	}
+
+	now := s.nowFunc()
+	sb.ExpiresAt = store.ExpiresAt(now, timeoutSeconds)
+	sb.OnTimeout = onTimeout
+	sb.Status = store.StatusRunning
+	if err := s.store.Put(ctx, sb); err != nil {
+		s.logger.Error("persist resumed sandbox", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
+		return
+	}
+
+	resp := buildSandboxResponse(s.cfg, sb)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
@@ -444,6 +559,16 @@ func resolveCreateOnTimeout(req createSandboxRequest) (string, error) {
 		}
 	}
 	return resolved, nil
+}
+
+func resolveResumeOnTimeout(currentOnTimeout string, req resumeSandboxRequest) (string, error) {
+	if req.AutoPause == nil {
+		return store.ResolveOnTimeout(currentOnTimeout)
+	}
+	if *req.AutoPause {
+		return store.OnTimeoutPause, nil
+	}
+	return store.OnTimeoutKill, nil
 }
 
 // Ensure substrate.Client satisfies sandboxClient.

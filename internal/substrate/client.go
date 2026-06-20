@@ -97,6 +97,19 @@ func (c *Client) ResumeSandboxBackend(ctx context.Context, actorID string, envdP
 	return net.JoinHostPort(ip, strconv.Itoa(envdPort)), nil
 }
 
+func (c *Client) ResumeSandbox(ctx context.Context, actorID string) error {
+	_, err := c.api.ResumeActor(ctx, &ateapipb.ResumeActorRequest{
+		ActorId: actorID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return ErrNotFound
+		}
+		return fmt.Errorf("resume actor: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) SuspendSandbox(ctx context.Context, actorID string) error {
 	resp, err := c.api.GetActor(ctx, &ateapipb.GetActorRequest{ActorId: actorID})
 	if err != nil {

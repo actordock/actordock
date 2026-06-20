@@ -34,6 +34,7 @@ type fakeControl struct {
 	getErr       error
 	suspendCalls int
 	suspendErr   error
+	resumeErr    error
 	deleteCalls  int
 	deleteErr    error
 }
@@ -63,6 +64,18 @@ func (f *fakeControl) SuspendActor(_ context.Context, req *ateapipb.SuspendActor
 	}, nil
 }
 
+func (f *fakeControl) ResumeActor(_ context.Context, req *ateapipb.ResumeActorRequest, _ ...grpc.CallOption) (*ateapipb.ResumeActorResponse, error) {
+	if f.resumeErr != nil {
+		return nil, f.resumeErr
+	}
+	return &ateapipb.ResumeActorResponse{
+		Actor: &ateapipb.Actor{
+			ActorId: req.GetActorId(),
+			Status:  ateapipb.Actor_STATUS_RUNNING,
+		},
+	}, nil
+}
+
 func (f *fakeControl) DeleteActor(_ context.Context, _ *ateapipb.DeleteActorRequest, _ ...grpc.CallOption) (*ateapipb.DeleteActorResponse, error) {
 	f.deleteCalls++
 	if f.deleteErr != nil {
@@ -83,10 +96,6 @@ func (f *fakeControl) PauseActor(context.Context, *ateapipb.PauseActorRequest, .
 	return nil, status.Error(codes.Unimplemented, "PauseActor")
 }
 
-func (f *fakeControl) ResumeActor(context.Context, *ateapipb.ResumeActorRequest, ...grpc.CallOption) (*ateapipb.ResumeActorResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "ResumeActor")
-}
-
 func (f *fakeControl) ListWorkers(context.Context, *ateapipb.ListWorkersRequest, ...grpc.CallOption) (*ateapipb.ListWorkersResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "ListWorkers")
 }
@@ -97,6 +106,31 @@ func (f *fakeControl) ListActors(context.Context, *ateapipb.ListActorsRequest, .
 
 func (f *fakeControl) DebugClear(context.Context, *ateapipb.DebugClearRequest, ...grpc.CallOption) (*ateapipb.DebugClearResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "DebugClear")
+}
+
+func TestResumeSandbox(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeControl{getStatus: ateapipb.Actor_STATUS_SUSPENDED}
+	client := newTestClient(fake)
+
+	if err := client.ResumeSandbox(context.Background(), "actor-1"); err != nil {
+		t.Fatalf("ResumeSandbox() = %v, want nil", err)
+	}
+}
+
+func TestResumeSandboxNotFound(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeControl{
+		resumeErr: status.Error(codes.NotFound, "actor not found"),
+	}
+	client := newTestClient(fake)
+
+	err := client.ResumeSandbox(context.Background(), "missing")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("ResumeSandbox() = %v, want ErrNotFound", err)
+	}
 }
 
 func TestSuspendSandbox(t *testing.T) {

@@ -28,31 +28,38 @@ const (
 	defaultMemoryMB   = 512
 )
 
+type sandboxLifecycleResponse struct {
+	OnTimeout  string `json:"onTimeout"`
+	AutoResume bool   `json:"autoResume"`
+}
+
 type sandboxDetailResponse struct {
-	ClientID    string `json:"clientID"`
-	CPUCount    int    `json:"cpuCount"`
-	DiskSizeMB  int    `json:"diskSizeMB"`
-	EndAt       string `json:"endAt"`
-	EnvdVersion string `json:"envdVersion"`
-	MemoryMB    int    `json:"memoryMB"`
-	SandboxID   string `json:"sandboxID"`
-	StartedAt   string `json:"startedAt"`
-	State       string `json:"state"`
-	TemplateID  string `json:"templateID"`
-	Domain      string `json:"domain,omitempty"`
+	ClientID    string                   `json:"clientID"`
+	CPUCount    int                      `json:"cpuCount"`
+	DiskSizeMB  int                      `json:"diskSizeMB"`
+	EndAt       string                   `json:"endAt"`
+	EnvdVersion string                   `json:"envdVersion"`
+	MemoryMB    int                      `json:"memoryMB"`
+	SandboxID   string                   `json:"sandboxID"`
+	StartedAt   string                   `json:"startedAt"`
+	State       string                   `json:"state"`
+	TemplateID  string                   `json:"templateID"`
+	Domain      string                   `json:"domain,omitempty"`
+	Lifecycle   sandboxLifecycleResponse `json:"lifecycle"`
 }
 
 type listedSandboxResponse struct {
-	ClientID    string `json:"clientID"`
-	CPUCount    int    `json:"cpuCount"`
-	DiskSizeMB  int    `json:"diskSizeMB"`
-	EndAt       string `json:"endAt"`
-	EnvdVersion string `json:"envdVersion"`
-	MemoryMB    int    `json:"memoryMB"`
-	SandboxID   string `json:"sandboxID"`
-	StartedAt   string `json:"startedAt"`
-	State       string `json:"state"`
-	TemplateID  string `json:"templateID"`
+	ClientID    string                   `json:"clientID"`
+	CPUCount    int                      `json:"cpuCount"`
+	DiskSizeMB  int                      `json:"diskSizeMB"`
+	EndAt       string                   `json:"endAt"`
+	EnvdVersion string                   `json:"envdVersion"`
+	MemoryMB    int                      `json:"memoryMB"`
+	SandboxID   string                   `json:"sandboxID"`
+	StartedAt   string                   `json:"startedAt"`
+	State       string                   `json:"state"`
+	TemplateID  string                   `json:"templateID"`
+	Lifecycle   sandboxLifecycleResponse `json:"lifecycle"`
 }
 
 func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string) sandboxDetailResponse {
@@ -66,6 +73,25 @@ func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string) san
 		SandboxID:   sb.SandboxID,
 		StartedAt:   sb.CreatedAt.UTC().Format(time.RFC3339),
 		State:       state,
+		TemplateID:  sb.Template,
+		Domain:      cfg.Domain,
+		Lifecycle:   buildSandboxLifecycle(sb),
+	}
+}
+
+func buildSandboxLifecycle(sb store.Sandbox) sandboxLifecycleResponse {
+	onTimeout, _ := store.ResolveOnTimeout(sb.OnTimeout)
+	return sandboxLifecycleResponse{
+		OnTimeout:  onTimeout,
+		AutoResume: sb.AutoResume,
+	}
+}
+
+func buildSandboxResponse(cfg config.Platform, sb store.Sandbox) sandboxResponse {
+	return sandboxResponse{
+		ClientID:    cfg.ClientID,
+		EnvdVersion: cfg.EnvdVersion,
+		SandboxID:   sb.SandboxID,
 		TemplateID:  sb.Template,
 		Domain:      cfg.Domain,
 	}
@@ -91,6 +117,7 @@ func listedFromDetail(d sandboxDetailResponse) listedSandboxResponse {
 		StartedAt:   d.StartedAt,
 		State:       d.State,
 		TemplateID:  d.TemplateID,
+		Lifecycle:   d.Lifecycle,
 	}
 }
 
@@ -100,6 +127,11 @@ func storeStatusFromActor(status ateapipb.Actor_Status) string {
 		return store.StatusPending
 	case ateapipb.Actor_STATUS_RUNNING:
 		return store.StatusRunning
+	case ateapipb.Actor_STATUS_SUSPENDED,
+		ateapipb.Actor_STATUS_PAUSED,
+		ateapipb.Actor_STATUS_SUSPENDING,
+		ateapipb.Actor_STATUS_PAUSING:
+		return store.StatusPaused
 	default:
 		return store.StatusRunning
 	}
