@@ -1,4 +1,4 @@
-# Quickstart (v0.0.5)
+# Quickstart (v0.0.6)
 
 Run the E2B SDK against a local Actordock cluster on Kind.
 
@@ -41,7 +41,7 @@ Run the E2E demo (port-forward + E2B Python SDK):
 ./hack/verify-local.sh
 ```
 
-Covers commands, visibility, timeout metadata, scheduler auto-cleanup, and idle suspend (pause lifecycle + router auto-resume).
+Covers commands, visibility, timeout metadata, scheduler auto-cleanup, idle suspend (pause lifecycle + router auto-resume), and observability routes (metrics, logs, refreshes).
 
 ### Timeout
 
@@ -75,6 +75,34 @@ sbx.kill()
 
 Explicit pause/resume REST routes: `POST /sandboxes/{id}/pause` (204) and `POST /sandboxes/{id}/resume` (201). The SDK exposes `sandbox.pause()`; resume can be called via HTTP or by sending traffic when `auto_resume=True`.
 
+### Observability (metrics, logs, refreshes)
+
+Platform exposes E2B-compatible observability routes. Logs and per-sandbox metrics may return empty stub payloads in v0.0.6 until envd log collection lands.
+
+```python
+import httpx
+import os
+from e2b import Sandbox
+
+api = os.environ["E2B_API_URL"].rstrip("/")
+headers = {"X-API-KEY": os.environ["E2B_API_KEY"]}
+
+sbx = Sandbox.create(template="base", secure=False, timeout=60)
+try:
+    # List metrics (map sandbox id -> SandboxMetric)
+    httpx.get(f"{api}/sandboxes/metrics", params={"sandbox_ids": sbx.sandbox_id}, headers=headers).raise_for_status()
+    # Per-sandbox metrics (array of SandboxMetric; may be empty)
+    httpx.get(f"{api}/sandboxes/{sbx.sandbox_id}/metrics", headers=headers).raise_for_status()
+    # Logs v1: {"logs": [...], "logEntries": [...]}
+    httpx.get(f"{api}/sandboxes/{sbx.sandbox_id}/logs", headers=headers).raise_for_status()
+    # Logs v2: {"logs": [...]}
+    httpx.get(f"{api}/v2/sandboxes/{sbx.sandbox_id}/logs", headers=headers).raise_for_status()
+    # Extend TTL without set_timeout (204)
+    httpx.post(f"{api}/sandboxes/{sbx.sandbox_id}/refreshes", headers=headers, json={"duration": 120}).raise_for_status()
+finally:
+    sbx.kill()
+```
+
 Or manually:
 
 ```bash
@@ -96,4 +124,4 @@ cd e2e && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 - [Architecture](../architecture.md)
 - [Roadmap](../roadmap.md)
-- [v0.0.5 release notes](../releases/v0.0.5.md)
+- [v0.0.6 release notes](../releases/v0.0.6.md)

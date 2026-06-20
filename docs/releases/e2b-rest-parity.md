@@ -17,10 +17,10 @@ Count Platform REST only. envd RPC (commands, filesystem) is separate but requir
 
 ## Metrics
 
-| Metric | v0.0.4 (now) | v0.1.0 target |
+| Metric | v0.0.6 (now) | v0.1.0 target |
 |--------|--------------|---------------|
-| Operations | 7 / 56 (**13%**) | **≥34 / 56 (61%)** |
-| Fields (full-field ops only) | ~45 / ~220 (**~20%**) | **≥132 / ~220 (60%)** |
+| Operations | 14 / 56 (**25%**) | **≥34 / 56 (61%)** |
+| Fields (full-field ops only) | ~84 / ~220 (**~38%**) | **≥132 / ~220 (60%)** |
 
 Field % = sum of fields in **fully implemented** operations ÷ total fields across all 56 operations.
 
@@ -44,18 +44,18 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 5 | GET | `/sandboxes` | partial → done v0.1.0 |
 | 6 | POST | `/sandboxes` | partial → done v0.1.0 |
 | 7 | GET | `/v2/sandboxes` | partial → done v0.1.0 |
-| 8 | GET | `/sandboxes/metrics` | v0.0.6 |
-| 9 | GET | `/sandboxes/{sandboxID}/logs` | v0.0.6 |
-| 10 | GET | `/v2/sandboxes/{sandboxID}/logs` | v0.0.6 |
+| 8 | GET | `/sandboxes/metrics` | done (v0.0.6) |
+| 9 | GET | `/sandboxes/{sandboxID}/logs` | done (v0.0.6) |
+| 10 | GET | `/v2/sandboxes/{sandboxID}/logs` | done (v0.0.6) |
 | 11 | GET | `/sandboxes/{sandboxID}` | partial → done v0.1.0 |
 | 12 | DELETE | `/sandboxes/{sandboxID}` | done (v0.0.1) |
-| 13 | GET | `/sandboxes/{sandboxID}/metrics` | v0.0.6 |
+| 13 | GET | `/sandboxes/{sandboxID}/metrics` | done (v0.0.6) |
 | 14 | POST | `/sandboxes/{sandboxID}/pause` | done (v0.0.5) |
 | 15 | POST | `/sandboxes/{sandboxID}/resume` | done (v0.0.5) |
 | 16 | POST | `/sandboxes/{sandboxID}/connect` | v0.0.7 |
 | 17 | POST | `/sandboxes/{sandboxID}/timeout` | done (v0.0.3) |
 | 18 | PUT | `/sandboxes/{sandboxID}/network` | v0.0.7 |
-| 19 | POST | `/sandboxes/{sandboxID}/refreshes` | v0.0.6 |
+| 19 | POST | `/sandboxes/{sandboxID}/refreshes` | done (v0.0.6) |
 | 20 | POST | `/sandboxes/{sandboxID}/snapshots` | v0.0.7 |
 | 21 | GET | `/snapshots` | v0.0.7 |
 | 22 | POST | `/v3/templates` | defer |
@@ -144,6 +144,37 @@ All 13 fields **done** in the release that completes list item schema — **v0.1
 | Request: `timeout`, `autoPause` | done (v0.0.5) |
 | Response: core `Sandbox` fields (`clientID`, `envdVersion`, `sandboxID`, `templateID`, `domain`) | done (v0.0.5) |
 | Response: `alias`, `envdAccessToken`, `trafficAccessToken` | partial (v0.1.0) |
+
+### `GET /sandboxes/metrics` (`SandboxesWithMetrics`)
+
+| Field | Status |
+|-------|--------|
+| `sandboxes` map + all 9 `SandboxMetric` fields per entry | done (v0.0.6; stub zeros OK) |
+
+### `GET /sandboxes/{id}/metrics`
+
+| Field | Status |
+|-------|--------|
+| `SandboxMetric[]` response (all 9 fields when non-empty) | done (v0.0.6; empty array OK) |
+
+### `GET /sandboxes/{id}/logs` (`SandboxLogs`)
+
+| Field | Status |
+|-------|--------|
+| `logs`, `logEntries` arrays + nested schema fields | done (v0.0.6; empty arrays OK) |
+
+### `GET /v2/sandboxes/{id}/logs` (`SandboxLogsV2Response`)
+
+| Field | Status |
+|-------|--------|
+| `logs` array + nested `SandboxLogEntry` fields | done (v0.0.6; empty array OK) |
+
+### `POST …/refreshes`
+
+| Field | Status |
+|-------|--------|
+| Request: optional `duration` | done (v0.0.6) |
+| Response: 204 | done (v0.0.6) |
 
 ## Cumulative by release
 
