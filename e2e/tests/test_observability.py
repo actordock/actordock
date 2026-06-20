@@ -21,8 +21,9 @@ import time
 from datetime import datetime, timezone
 
 import httpx
-import pytest
 from e2b import Sandbox
+
+from support.commands import run_command
 
 METRIC_KEYS = (
     "timestamp",
@@ -60,7 +61,7 @@ def _seconds_until(end_at: datetime) -> float:
 def test_list_sandbox_metrics_returns_real_values() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
-        sbx.commands.run("echo metrics")
+        run_command(sbx, "echo metrics")
         resp = httpx.get(
             f"{_api_url()}/sandboxes/metrics",
             params={"sandbox_ids": sbx.sandbox_id},
@@ -83,7 +84,7 @@ def test_list_sandbox_metrics_returns_real_values() -> None:
 def test_per_sandbox_metrics_returns_samples() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
-        sbx.commands.run("echo metrics")
+        run_command(sbx, "echo metrics")
         resp = httpx.get(
             f"{_api_url()}/sandboxes/{sbx.sandbox_id}/metrics",
             headers={"X-API-KEY": os.environ["E2B_API_KEY"]},
@@ -102,7 +103,7 @@ def test_per_sandbox_metrics_returns_samples() -> None:
 def test_sandbox_logs_v1_contain_command_output() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
-        sbx.commands.run("echo hello")
+        run_command(sbx, "echo hello")
         resp = httpx.get(
             f"{_api_url()}/sandboxes/{sbx.sandbox_id}/logs",
             params={"start": 0, "limit": 100},
@@ -125,7 +126,7 @@ def test_sandbox_logs_v1_contain_command_output() -> None:
 def test_sandbox_logs_v2_contain_command_output() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
-        sbx.commands.run("echo hello")
+        run_command(sbx, "echo hello")
         resp = httpx.get(
             f"{_api_url()}/v2/sandboxes/{sbx.sandbox_id}/logs",
             params={"cursor": 0, "limit": 50, "direction": "forward", "level": "info"},
@@ -142,11 +143,10 @@ def test_sandbox_logs_v2_contain_command_output() -> None:
         sbx.kill()
 
 
-@pytest.mark.flaky(reruns=2, reruns_delay=3)
 def test_logs_retrievable_after_pause_and_resume() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
-        sbx.commands.run("echo before-pause")
+        run_command(sbx, "echo before-pause")
         assert sbx.pause() is True
         resp = httpx.post(
             f"{_api_url()}/sandboxes/{sbx.sandbox_id}/resume",
@@ -155,7 +155,7 @@ def test_logs_retrievable_after_pause_and_resume() -> None:
             timeout=30.0,
         )
         assert resp.status_code == 201
-        sbx.commands.run("echo after-resume")
+        run_command(sbx, "echo after-resume")
 
         log_resp = httpx.get(
             f"{_api_url()}/sandboxes/{sbx.sandbox_id}/logs",

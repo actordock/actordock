@@ -18,7 +18,9 @@ from __future__ import annotations
 
 from e2b import Sandbox
 
+from support.commands import run_command
+
 
 def test_echo_hello(sandbox: Sandbox) -> None:
-    result = sandbox.commands.run("echo hello")
+    result = run_command(sandbox, "echo hello")
     assert result.stdout == "hello\n"

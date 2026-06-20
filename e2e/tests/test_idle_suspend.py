@@ -24,6 +24,8 @@ import pytest
 from e2b import Sandbox, SandboxState
 from e2b.exceptions import SandboxNotFoundException
 
+from support.commands import run_command
+
 # Min platform timeout (15s) + scheduler poll (~5s) + small margin.
 PAUSE_TEST_TIMEOUT = 15
 PAUSE_TEST_WAIT = 22
@@ -56,14 +58,13 @@ def test_command_after_pause_auto_resume() -> None:
     try:
         time.sleep(PAUSE_TEST_WAIT)
         assert sbx.get_info().state == SandboxState.PAUSED
-        result = sbx.commands.run("echo back")
+        result = run_command(sbx, "echo back")
         assert result.stdout == "back\n"
         assert sbx.get_info().state == SandboxState.RUNNING
     finally:
         sbx.kill()
 
 
-@pytest.mark.flaky(reruns=2, reruns_delay=3)
 def test_explicit_pause_and_resume() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
@@ -83,7 +84,7 @@ def test_explicit_pause_and_resume() -> None:
         assert body["sandboxID"] == sbx.sandbox_id
         assert body["templateID"] == "base"
 
-        result = sbx.commands.run("echo resumed")
+        result = run_command(sbx, "echo resumed")
         assert result.stdout == "resumed\n"
         assert sbx.get_info().state == SandboxState.RUNNING
     finally:
