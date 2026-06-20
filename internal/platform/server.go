@@ -481,8 +481,16 @@ func (s *Server) syncSandboxRecord(ctx context.Context, sb store.Sandbox) (sandb
 	}
 
 	storeStatus := storeStatusFromActor(actorStatus)
-	if sb.Status != storeStatus {
-		sb.Status = storeStatus
+	wasPaused := sb.Status == store.StatusPaused
+	origStatus := sb.Status
+	origExpiresAt := sb.ExpiresAt
+
+	sb.Status = storeStatus
+	if wasPaused && storeStatus == store.StatusRunning && store.IsExpired(sb, s.nowFunc()) {
+		sb.ExpiresAt = store.ExpiresAt(s.nowFunc(), s.cfg.DefaultSandboxTimeout)
+	}
+
+	if sb.Status != origStatus || !sb.ExpiresAt.Equal(origExpiresAt) {
 		if err := s.store.Put(ctx, sb); err != nil {
 			s.logger.Error("update sandbox status", "sandbox_id", sb.SandboxID, "err", err)
 		}

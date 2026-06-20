@@ -738,6 +738,42 @@ func TestResumeSandboxAutoPauseKill(t *testing.T) {
 	}
 }
 
+func TestGetSandboxSyncsAfterAutoResume(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	createdAt := now.Add(-time.Hour)
+	expiresAt := now.Add(-time.Minute)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
+		OnTimeout: store.OnTimeoutPause,
+		Status:    store.StatusPaused,
+	}
+	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	got := st.records["sb-1"]
+	if got.Status != store.StatusRunning {
+		t.Fatalf("status = %q, want running", got.Status)
+	}
+	if !got.ExpiresAt.Equal(now.Add(300 * time.Second)) {
+		t.Fatalf("expires_at = %v, want %v", got.ExpiresAt, now.Add(300*time.Second))
+	}
+}
+
 func TestGetSandboxResuming(t *testing.T) {
 	t.Parallel()
 	createdAt := time.Now().UTC()

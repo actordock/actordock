@@ -16,7 +16,7 @@ E2B-compatible self-hosted agent sandboxes on Kubernetes.
 
 **Full-field rule:** an operation counts as done only when **all** request/response schema fields for that route are implemented — no partial endpoints. Existing v0.0.1–v0.0.4 routes are marked `partial` until backfill completes (mostly v0.0.5–v0.1.0).
 
-Current (v0.0.4): **7 ops (13%)**, **~20% fields** (5 routes still partial).
+Current (v0.0.5): **9 ops (16%)**, **~28% fields** (sandbox create/get lifecycle backfill done; list/create response fields still partial).
 
 ## Progression (pre-0.1.0)
 

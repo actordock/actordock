@@ -50,8 +50,8 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 11 | GET | `/sandboxes/{sandboxID}` | partial → done v0.1.0 |
 | 12 | DELETE | `/sandboxes/{sandboxID}` | done (v0.0.1) |
 | 13 | GET | `/sandboxes/{sandboxID}/metrics` | v0.0.6 |
-| 14 | POST | `/sandboxes/{sandboxID}/pause` | v0.0.5 |
-| 15 | POST | `/sandboxes/{sandboxID}/resume` | v0.0.5 |
+| 14 | POST | `/sandboxes/{sandboxID}/pause` | done (v0.0.5) |
+| 15 | POST | `/sandboxes/{sandboxID}/resume` | done (v0.0.5) |
 | 16 | POST | `/sandboxes/{sandboxID}/connect` | v0.0.7 |
 | 17 | POST | `/sandboxes/{sandboxID}/timeout` | done (v0.0.3) |
 | 18 | PUT | `/sandboxes/{sandboxID}/network` | v0.0.7 |
@@ -104,7 +104,7 @@ These routes exist but are **`partial`** until all schema fields are wired:
 |-------|--------|-------------|
 | `templateID`, `timeout` | done | v0.0.3 |
 | `secure` | partial (reject) | v0.1.0 (full secure path) |
-| `autoPause`, `autoResume`, `lifecycle` | partial | v0.0.5 |
+| `autoPause`, `autoResume`, `lifecycle` | done | v0.0.5 |
 | `network`, `allow_internet_access` | missing | v0.0.7 |
 | `metadata`, `envVars` | missing | v0.1.0 |
 | `volumeMounts` | missing | v0.0.8 |
@@ -118,7 +118,8 @@ These routes exist but are **`partial`** until all schema fields are wired:
 | Core 10 (id, state, times, resources, …) | done | v0.0.4 |
 | `alias`, `allowInternetAccess`, `domain` | partial | v0.0.9 / v0.1.0 |
 | `envdAccessToken` | missing | v0.1.0 |
-| `lifecycle`, `metadata`, `network`, `volumeMounts` | missing | v0.0.5–v0.1.0 |
+| `lifecycle` | done | v0.0.5 |
+| `metadata`, `network`, `volumeMounts` | missing | v0.0.7–v0.1.0 |
 
 ### `GET /sandboxes`, `GET /v2/sandboxes` (`ListedSandbox` — 13 fields)
 
@@ -130,6 +131,20 @@ All 13 fields **done** in the release that completes list item schema — **v0.1
 |-------|--------|
 | `timeout` | done (v0.0.3) |
 
+### `POST …/pause`
+
+| Field | Status |
+|-------|--------|
+| (empty body) | done (v0.0.5) |
+
+### `POST …/resume` (`ResumedSandbox` → `Sandbox`)
+
+| Field | Status |
+|-------|--------|
+| Request: `timeout`, `autoPause` | done (v0.0.5) |
+| Response: core `Sandbox` fields (`clientID`, `envdVersion`, `sandboxID`, `templateID`, `domain`) | done (v0.0.5) |
+| Response: `alias`, `envdAccessToken`, `trafficAccessToken` | partial (v0.1.0) |
+
 ## Cumulative by release
 
 Each release closes **new operations with full fields** and any **backfill** rows due that version.
@@ -137,7 +152,7 @@ Each release closes **new operations with full fields** and any **backfill** row
 | Release | New ops (full fields) | Field backfill | Ops % | Fields % (est.) |
 |---------|----------------------|----------------|-------|-----------------|
 | v0.0.1–v0.0.4 | 7 (2 full, 5 partial) | — | 13% | ~20% |
-| [v0.0.5](v0.0.5.md) | +2 | lifecycle on create/get | 16% | ~28% |
+| [v0.0.5](v0.0.5.md) | +2 (pause, resume) | lifecycle on create/get | **16%** | **~28%** |
 | [v0.0.6](v0.0.6.md) | +5 | — | 25% | ~38% |
 | [v0.0.7](v0.0.7.md) | +4 | `network`, connect schemas | 32% | ~48% |
 | [v0.0.8](v0.0.8.md) | +4 | `volumeMounts` on create/list | 39% | ~52% |

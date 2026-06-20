@@ -1,4 +1,4 @@
-# Quickstart (v0.0.4)
+# Quickstart (v0.0.5)
 
 Run the E2B SDK against a local Actordock cluster on Kind.
 
@@ -41,11 +41,11 @@ Run the E2E demo (port-forward + E2B Python SDK):
 ./hack/verify-local.sh
 ```
 
-Covers commands, visibility, timeout metadata, and scheduler auto-cleanup on expiry.
+Covers commands, visibility, timeout metadata, scheduler auto-cleanup, and idle suspend (pause lifecycle + router auto-resume).
 
 ### Timeout
 
-Sandboxes accept an optional lifetime in seconds (E2B `timeout`, default 300). The **scheduler** kills expired sandboxes automatically (no `kill()` required).
+Sandboxes accept an optional lifetime in seconds (E2B `timeout`, default 300). The **scheduler** kills expired sandboxes when `on_timeout=kill` (default).
 
 ```python
 from e2b import Sandbox
@@ -54,6 +54,26 @@ sbx = Sandbox.create(template="base", secure=False, timeout=600)
 sbx.set_timeout(900)  # extend from now
 sbx.kill()  # optional manual delete before expiry
 ```
+
+### Pause lifecycle
+
+Set `lifecycle={"on_timeout": "pause", "auto_resume": True}` on create. After timeout the scheduler **suspends** the actor (sandbox metadata stays in Redis). The next `commands.run` goes through the **router**, which resumes the actor automatically — no explicit `resume()` call required.
+
+```python
+from e2b import Sandbox
+
+sbx = Sandbox.create(
+    template="base",
+    secure=False,
+    timeout=60,
+    lifecycle={"on_timeout": "pause", "auto_resume": True},
+)
+# ... after idle past timeout ...
+print(sbx.commands.run("echo back").stdout)
+sbx.kill()
+```
+
+Explicit pause/resume REST routes: `POST /sandboxes/{id}/pause` (204) and `POST /sandboxes/{id}/resume` (201). The SDK exposes `sandbox.pause()`; resume can be called via HTTP or by sending traffic when `auto_resume=True`.
 
 Or manually:
 
@@ -76,4 +96,4 @@ cd e2e && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 - [Architecture](../architecture.md)
 - [Roadmap](../roadmap.md)
-- [v0.0.4 release notes](../releases/v0.0.4.md)
+- [v0.0.5 release notes](../releases/v0.0.5.md)

@@ -108,6 +108,32 @@ func TestProxyToEnvd(t *testing.T) {
 	}
 }
 
+func TestProxyResumesPausedSandbox(t *testing.T) {
+	t.Parallel()
+	envd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	t.Cleanup(envd.Close)
+
+	actors := &fakeBackend{backend: envd.Listener.Addr().String()}
+	srv := NewServer(testConfig(), actors, slog.Default())
+	srv.envdTransport = http.DefaultTransport
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "paused-sbx.localhost"
+	req.Header.Set("E2b-Sandbox-Id", "paused-sbx")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if actors.lastSandboxID != "paused-sbx" {
+		t.Fatalf("ResumeSandboxBackend sandbox id = %q, want paused-sbx", actors.lastSandboxID)
+	}
+}
+
 func TestProxySandboxNotFound(t *testing.T) {
 	t.Parallel()
 	srv := NewServer(testConfig(), &fakeBackend{err: substrate.ErrNotFound}, slog.Default())
