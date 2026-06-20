@@ -1149,6 +1149,161 @@ func TestResumeSandbox(t *testing.T) {
 	}
 }
 
+func TestConnectSandboxRunningExtendsTTL(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: now,
+		ExpiresAt: now.Add(5 * time.Minute),
+		Status:    store.StatusRunning,
+	}
+	actors := &fakeActors{backendAddr: testEnvdBackend(t)}
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/connect", bytes.NewReader([]byte(`{"timeout":600}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if actors.lastResumed != "" {
+		t.Fatalf("ResumeSandbox called for running sandbox")
+	}
+	if !st.records["sb-1"].ExpiresAt.Equal(now.Add(600 * time.Second)) {
+		t.Fatalf("expires_at = %v, want extended TTL", st.records["sb-1"].ExpiresAt)
+	}
+	var resp sandboxResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.SandboxID != "sb-1" || resp.Domain != "localhost" || resp.TemplateID != "base" {
+		t.Fatalf("resp = %+v", resp)
+	}
+}
+
+func TestConnectSandboxPausedResumes(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: now,
+		Status:    store.StatusPaused,
+	}
+	actors := &fakeActors{backendAddr: testEnvdBackend(t)}
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/connect", bytes.NewReader([]byte(`{"timeout":120}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if actors.lastResumed != "sb-1" {
+		t.Fatalf("resumed = %q, want sb-1", actors.lastResumed)
+	}
+	if st.records["sb-1"].Status != store.StatusRunning {
+		t.Fatalf("status = %q, want running", st.records["sb-1"].Status)
+	}
+	if !st.records["sb-1"].ExpiresAt.Equal(now.Add(120 * time.Second)) {
+		t.Fatalf("expires_at = %v", st.records["sb-1"].ExpiresAt)
+	}
+}
+
+func TestConnectSandboxNotFound(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/missing/connect", bytes.NewReader([]byte(`{"timeout":60}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestConnectSandboxInvalidTimeout(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Status: store.StatusRunning}
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, slog.Default())
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/connect", bytes.NewReader([]byte(`{"timeout":1}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestConnectSandboxDoesNotShortenTTL(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	longExpiry := now.Add(300 * time.Second)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: now,
+		ExpiresAt: longExpiry,
+		Status:    store.StatusRunning,
+	}
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/connect", bytes.NewReader([]byte(`{"timeout":30}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if !st.records["sb-1"].ExpiresAt.Equal(longExpiry) {
+		t.Fatalf("expires_at = %v, want %v", st.records["sb-1"].ExpiresAt, longExpiry)
+	}
+}
+
+func TestResolveConnectExpiresAt(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	current := now.Add(300 * time.Second)
+
+	got := resolveConnectExpiresAt(now, current, 30, false)
+	if !got.Equal(current) {
+		t.Fatalf("running shorten: got %v want %v", got, current)
+	}
+
+	got = resolveConnectExpiresAt(now, current, 600, false)
+	want := now.Add(600 * time.Second)
+	if !got.Equal(want) {
+		t.Fatalf("running extend: got %v want %v", got, want)
+	}
+
+	got = resolveConnectExpiresAt(now, current, 30, true)
+	want = now.Add(30 * time.Second)
+	if !got.Equal(want) {
+		t.Fatalf("paused: got %v want %v", got, want)
+	}
+}
+
 func TestResumeSandboxDefaultTimeout(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)

@@ -89,6 +89,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sandboxes/{id}/refreshes", s.requireAPIKey(http.HandlerFunc(s.handleRefreshSandbox)))
 	mux.Handle("POST /sandboxes/{id}/pause", s.requireAPIKey(http.HandlerFunc(s.handlePauseSandbox)))
 	mux.Handle("POST /sandboxes/{id}/resume", s.requireAPIKey(http.HandlerFunc(s.handleResumeSandbox)))
+	mux.Handle("POST /sandboxes/{id}/connect", s.requireAPIKey(http.HandlerFunc(s.handleConnectSandbox)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
 }
@@ -160,6 +161,10 @@ type refreshSandboxRequest struct {
 type resumeSandboxRequest struct {
 	Timeout   *int  `json:"timeout,omitempty"`
 	AutoPause *bool `json:"autoPause,omitempty"`
+}
+
+type connectSandboxRequest struct {
+	Timeout int `json:"timeout"`
 }
 
 const resumeDefaultTimeoutSeconds = 15
@@ -255,6 +260,83 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleConnectSandbox(w http.ResponseWriter, r *http.Request) {
+	sandboxID := r.PathValue("id")
+	if sandboxID == "" {
+		writeAPIError(w, http.StatusBadRequest, "sandbox id is required")
+		return
+	}
+
+	var req connectSandboxRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := store.ValidateTimeout(req.Timeout); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid timeout")
+		return
+	}
+
+	ctx := r.Context()
+	sb, err := s.store.Get(ctx, sandboxID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeAPIError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("get sandbox for connect", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to connect sandbox")
+		return
+	}
+
+	wasPaused := sb.Status == store.StatusPaused
+	if wasPaused {
+		if err := s.actors.ResumeSandbox(ctx, sb.ActorID); err != nil {
+			if errors.Is(err, substrate.ErrNotFound) {
+				writeAPIError(w, http.StatusNotFound, "sandbox not found")
+				return
+			}
+			s.logger.Error("resume sandbox for connect", "sandbox_id", sandboxID, "err", err)
+			writeAPIError(w, http.StatusInternalServerError, "failed to connect sandbox")
+			return
+		}
+		sb.Status = store.StatusRunning
+	}
+
+	if err := envd.WaitForBackendReady(ctx, func(ctx context.Context) (string, error) {
+		return s.actors.GetActorBackend(ctx, sb.ActorID, s.cfg.EnvdPort)
+	}, envd.DefaultReadyTimeout); err != nil {
+		s.logger.Error("wait for envd on connect", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to connect sandbox")
+		return
+	}
+
+	now := s.nowFunc()
+	sb.ExpiresAt = resolveConnectExpiresAt(now, sb.ExpiresAt, req.Timeout, wasPaused)
+	if err := s.store.Put(ctx, sb); err != nil {
+		s.logger.Error("persist sandbox on connect", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to connect sandbox")
+		return
+	}
+
+	resp := buildSandboxResponse(s.cfg, sb)
+	w.Header().Set("Content-Type", "application/json")
+	if wasPaused {
+		w.WriteHeader(http.StatusCreated)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func resolveConnectExpiresAt(now, current time.Time, timeoutSeconds int, wasPaused bool) time.Time {
+	newExpiry := store.ExpiresAt(now, timeoutSeconds)
+	if wasPaused || current.IsZero() || !current.After(newExpiry) {
+		return newExpiry
+	}
+	return current
 }
 
 func (s *Server) handlePauseSandbox(w http.ResponseWriter, r *http.Request) {
