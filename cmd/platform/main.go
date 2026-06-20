@@ -60,5 +60,5 @@ func run(ctx context.Context) error {
 	}
 	defer st.Close()
 
-	return platform.NewServer(cfg, ate, st, logger).Run(ctx)
+	return platform.NewServer(cfg, ate, st, st, logger).Run(ctx)
 }

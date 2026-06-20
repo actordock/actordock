@@ -39,6 +39,7 @@ import (
 
 type sandboxClient interface {
 	CreateAndResumeSandbox(ctx context.Context, actorID, templateNamespace, templateName string) error
+	CreateSnapshot(ctx context.Context, actorID string) (substrate.SnapshotResult, error)
 	DeleteSandbox(ctx context.Context, actorID string) error
 	GetActor(ctx context.Context, actorID string) (ateapipb.Actor_Status, error)
 	GetActorBackend(ctx context.Context, actorID string, envdPort int) (string, error)
@@ -53,24 +54,31 @@ type sandboxStore interface {
 	List(ctx context.Context) ([]store.Sandbox, error)
 }
 
-type Server struct {
-	cfg     config.Platform
-	actors  sandboxClient
-	store   sandboxStore
-	logger  *slog.Logger
-	nowFunc func() time.Time
+type snapshotStore interface {
+	PutSnapshot(ctx context.Context, snap store.Snapshot) error
+	GetSnapshot(ctx context.Context, snapshotID string) (store.Snapshot, error)
 }
 
-func NewServer(cfg config.Platform, actors sandboxClient, st sandboxStore, logger *slog.Logger) *Server {
+type Server struct {
+	cfg       config.Platform
+	actors    sandboxClient
+	store     sandboxStore
+	snapshots snapshotStore
+	logger    *slog.Logger
+	nowFunc   func() time.Time
+}
+
+func NewServer(cfg config.Platform, actors sandboxClient, st sandboxStore, snapshots snapshotStore, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Server{
-		cfg:     cfg,
-		actors:  actors,
-		store:   st,
-		logger:  logger,
-		nowFunc: time.Now,
+		cfg:       cfg,
+		actors:    actors,
+		store:     st,
+		snapshots: snapshots,
+		logger:    logger,
+		nowFunc:   time.Now,
 	}
 }
 
@@ -91,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sandboxes/{id}/resume", s.requireAPIKey(http.HandlerFunc(s.handleResumeSandbox)))
 	mux.Handle("POST /sandboxes/{id}/connect", s.requireAPIKey(http.HandlerFunc(s.handleConnectSandbox)))
 	mux.Handle("PUT /sandboxes/{id}/network", s.requireAPIKey(http.HandlerFunc(s.handlePutSandboxNetwork)))
+	mux.Handle("POST /sandboxes/{id}/snapshots", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandboxSnapshot)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
 }
@@ -838,5 +847,8 @@ func resolveResumeOnTimeout(currentOnTimeout string, req resumeSandboxRequest) (
 // Ensure substrate.Client satisfies sandboxClient.
 var _ sandboxClient = (*substrate.Client)(nil)
 
-// Ensure store.Redis satisfies sandboxStore.
-var _ sandboxStore = (*store.Redis)(nil)
+// Ensure store.Redis satisfies sandboxStore and snapshotStore.
+var (
+	_ sandboxStore  = (*store.Redis)(nil)
+	_ snapshotStore = (*store.Redis)(nil)
+)

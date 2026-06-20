@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,19 +37,22 @@ import (
 )
 
 type fakeActors struct {
-	lastActorID   string
-	lastDeletedID string
-	lastSuspended string
-	lastResumed   string
-	backendAddr   string
-	createErr     error
-	deleteErr     error
-	suspendErr    error
-	resumeErr     error
-	getErr        error
-	backendErr    error
-	actorStatuses map[string]ateapipb.Actor_Status
-	defaultStatus ateapipb.Actor_Status
+	lastActorID       string
+	lastDeletedID     string
+	lastSuspended     string
+	lastResumed       string
+	lastSnapshotActor string
+	backendAddr       string
+	createErr         error
+	deleteErr         error
+	suspendErr        error
+	resumeErr         error
+	createSnapshotErr error
+	getErr            error
+	backendErr        error
+	snapshotResult    substrate.SnapshotResult
+	actorStatuses     map[string]ateapipb.Actor_Status
+	defaultStatus     ateapipb.Actor_Status
 }
 
 func (f *fakeActors) CreateAndResumeSandbox(_ context.Context, actorID, _, _ string) error {
@@ -69,6 +73,20 @@ func (f *fakeActors) SuspendSandbox(_ context.Context, actorID string) error {
 func (f *fakeActors) ResumeSandbox(_ context.Context, actorID string) error {
 	f.lastResumed = actorID
 	return f.resumeErr
+}
+
+func (f *fakeActors) CreateSnapshot(_ context.Context, actorID string) (substrate.SnapshotResult, error) {
+	f.lastSnapshotActor = actorID
+	if f.createSnapshotErr != nil {
+		return substrate.SnapshotResult{}, f.createSnapshotErr
+	}
+	if f.snapshotResult.SnapshotURI == "" {
+		return substrate.SnapshotResult{
+			SnapshotURI:  "gs://bucket/actordock/" + actorID + "/snap",
+			SnapshotType: "SNAPSHOT_TYPE_EXTERNAL",
+		}, nil
+	}
+	return f.snapshotResult, nil
 }
 
 func (f *fakeActors) GetActor(_ context.Context, actorID string) (ateapipb.Actor_Status, error) {
@@ -97,13 +115,17 @@ func (f *fakeActors) GetActorBackend(_ context.Context, actorID string, _ int) (
 }
 
 type fakeStore struct {
-	records map[string]store.Sandbox
-	putErr  error
-	delErr  error
+	records   map[string]store.Sandbox
+	snapshots map[string]store.Snapshot
+	putErr    error
+	delErr    error
 }
 
 func newFakeStore() *fakeStore {
-	return &fakeStore{records: make(map[string]store.Sandbox)}
+	return &fakeStore{
+		records:   make(map[string]store.Sandbox),
+		snapshots: make(map[string]store.Snapshot),
+	}
 }
 
 func (f *fakeStore) Put(_ context.Context, sb store.Sandbox) error {
@@ -138,9 +160,22 @@ func (f *fakeStore) List(_ context.Context) ([]store.Sandbox, error) {
 	return out, nil
 }
 
+func (f *fakeStore) PutSnapshot(_ context.Context, snap store.Snapshot) error {
+	f.snapshots[snap.SnapshotID] = snap
+	return nil
+}
+
+func (f *fakeStore) GetSnapshot(_ context.Context, snapshotID string) (store.Snapshot, error) {
+	snap, ok := f.snapshots[snapshotID]
+	if !ok {
+		return store.Snapshot{}, store.ErrSnapshotNotFound
+	}
+	return snap, nil
+}
+
 func TestHealth(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -154,7 +189,7 @@ func TestCreateSandbox(t *testing.T) {
 	actors := &fakeActors{}
 	st := newFakeStore()
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	body := []byte(`{"templateID":"base","secure":false}`)
@@ -206,7 +241,7 @@ func TestCreateSandboxWithTimeout(t *testing.T) {
 	actors := &fakeActors{}
 	st := newFakeStore()
 	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	body := []byte(`{"templateID":"base","secure":false,"timeout":60}`)
@@ -233,7 +268,7 @@ func TestCreateSandboxLifecycleKill(t *testing.T) {
 	t.Parallel()
 	actors := &fakeActors{}
 	st := newFakeStore()
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 
 	body := []byte(`{"templateID":"base","secure":false,"lifecycle":{"onTimeout":"kill"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
@@ -258,7 +293,7 @@ func TestCreateSandboxLifecyclePause(t *testing.T) {
 	t.Parallel()
 	actors := &fakeActors{}
 	st := newFakeStore()
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 
 	body := []byte(`{"templateID":"base","secure":false,"lifecycle":{"onTimeout":"pause"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
@@ -287,7 +322,7 @@ func TestCreateSandboxLifecyclePauseWithAutoResume(t *testing.T) {
 	t.Parallel()
 	actors := &fakeActors{}
 	st := newFakeStore()
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 
 	body := []byte(`{"templateID":"base","secure":false,"autoPause":true,"autoResume":{"enabled":true},"lifecycle":{"onTimeout":"pause"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
@@ -316,7 +351,7 @@ func TestCreateSandboxAutoPause(t *testing.T) {
 	t.Parallel()
 	actors := &fakeActors{}
 	st := newFakeStore()
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 
 	body := []byte(`{"templateID":"base","autoPause":true}`)
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
@@ -339,7 +374,7 @@ func TestCreateSandboxAutoPause(t *testing.T) {
 
 func TestCreateSandboxAutoResumeKillRejected(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	body := []byte(`{"templateID":"base","autoResume":{"enabled":true}}`)
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -353,7 +388,7 @@ func TestCreateSandboxAutoResumeKillRejected(t *testing.T) {
 
 func TestCreateSandboxLifecyclePauseAutoPauseConflict(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	body := []byte(`{"templateID":"base","autoPause":false,"lifecycle":{"onTimeout":"pause"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -367,7 +402,7 @@ func TestCreateSandboxLifecyclePauseAutoPauseConflict(t *testing.T) {
 
 func TestCreateSandboxLifecycleUnknownRejected(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	body := []byte(`{"templateID":"base","lifecycle":{"onTimeout":"destroy"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -381,7 +416,7 @@ func TestCreateSandboxLifecycleUnknownRejected(t *testing.T) {
 
 func TestCreateSandboxInvalidTimeout(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader([]byte(`{"templateID":"base","timeout":0}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-KEY", "dev")
@@ -404,7 +439,7 @@ func TestSetSandboxTimeout(t *testing.T) {
 		ExpiresAt: now.Add(60 * time.Second),
 		Status:    store.StatusRunning,
 	}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now.Add(30 * time.Second) }
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/timeout", bytes.NewReader([]byte(`{"timeout":120}`)))
@@ -424,7 +459,7 @@ func TestSetSandboxTimeout(t *testing.T) {
 
 func TestSetSandboxTimeoutNotFound(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/missing/timeout", bytes.NewReader([]byte(`{"timeout":120}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-KEY", "dev")
@@ -440,7 +475,7 @@ func TestSetSandboxTimeoutInvalid(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/timeout", bytes.NewReader([]byte(`{"timeout":1}`)))
 	req.Header.Set("Content-Type", "application/json")
@@ -464,7 +499,7 @@ func TestRefreshSandbox(t *testing.T) {
 		ExpiresAt: now.Add(60 * time.Second),
 		Status:    store.StatusRunning,
 	}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now.Add(30 * time.Second) }
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/refreshes", bytes.NewReader([]byte(`{"duration":120}`)))
@@ -511,7 +546,7 @@ func TestRefreshSandboxDefaultDuration(t *testing.T) {
 		CreatedAt: now,
 		ExpiresAt: now.Add(60 * time.Second),
 	}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/refreshes", bytes.NewReader([]byte(`{}`)))
@@ -531,7 +566,7 @@ func TestRefreshSandboxDefaultDuration(t *testing.T) {
 
 func TestRefreshSandboxNotFound(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/missing/refreshes", bytes.NewReader([]byte(`{"duration":120}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-KEY", "dev")
@@ -547,7 +582,7 @@ func TestRefreshSandboxInvalidDuration(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 
 	for _, body := range []string{`{"duration":0}`, `{"duration":3601}`} {
 		req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/refreshes", bytes.NewReader([]byte(body)))
@@ -564,7 +599,7 @@ func TestRefreshSandboxInvalidDuration(t *testing.T) {
 func TestListSandboxMetrics(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/metrics?sandbox_ids=sb-1,sb-2", nil)
@@ -595,7 +630,7 @@ func TestListSandboxMetrics(t *testing.T) {
 
 func TestListSandboxMetricsMissingIDs(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/metrics", nil)
 	req.Header.Set("X-API-KEY", "dev")
 	rec := httptest.NewRecorder()
@@ -611,7 +646,7 @@ func TestListSandboxMetricsFromEnvd(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/metrics?sandbox_ids=sb-1", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -637,7 +672,7 @@ func TestGetSandboxMetricsFromEnvd(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/metrics", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -661,7 +696,7 @@ func TestGetSandboxMetrics(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/metrics?start=0&end=100", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -682,7 +717,7 @@ func TestGetSandboxMetrics(t *testing.T) {
 
 func TestGetSandboxMetricsNotFound(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/missing/metrics", nil)
 	req.Header.Set("X-API-KEY", "dev")
 	rec := httptest.NewRecorder()
@@ -697,7 +732,7 @@ func TestGetSandboxMetricsInvalidQuery(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/metrics?start=bad", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -716,7 +751,7 @@ func TestGetSandboxLogsFromEnvd(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/logs?start=0&limit=100", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -743,7 +778,7 @@ func TestGetSandboxLogsEnvdUnreachable(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{backendErr: fmt.Errorf("no worker")}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendErr: fmt.Errorf("no worker")}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/logs", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -767,7 +802,7 @@ func TestGetSandboxLogs(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/logs?start=0&limit=100", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -791,7 +826,7 @@ func TestGetSandboxLogs(t *testing.T) {
 
 func TestGetSandboxLogsNotFound(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/missing/logs", nil)
 	req.Header.Set("X-API-KEY", "dev")
 	rec := httptest.NewRecorder()
@@ -806,7 +841,7 @@ func TestGetSandboxLogsInvalidQuery(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/logs?start=bad", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -825,7 +860,7 @@ func TestGetSandboxLogsV2FromEnvd(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes/sb-1/logs?cursor=0&limit=50&direction=forward&level=info", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -852,7 +887,7 @@ func TestGetSandboxLogsV2(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes/sb-1/logs?cursor=0&limit=50&direction=forward&level=warn&search=test", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -876,7 +911,7 @@ func TestGetSandboxLogsV2(t *testing.T) {
 
 func TestGetSandboxLogsV2NotFound(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes/missing/logs", nil)
 	req.Header.Set("X-API-KEY", "dev")
 	rec := httptest.NewRecorder()
@@ -891,7 +926,7 @@ func TestGetSandboxLogsV2InvalidQuery(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes/sb-1/logs?limit=1001", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -904,7 +939,7 @@ func TestGetSandboxLogsV2InvalidQuery(t *testing.T) {
 
 func TestCreateSandboxUnauthorized(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader([]byte(`{"templateID":"base"}`)))
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -918,7 +953,7 @@ func TestDeleteSandbox(t *testing.T) {
 	actors := &fakeActors{}
 	st := newFakeStore()
 	st.records["abc-123"] = store.Sandbox{SandboxID: "abc-123", ActorID: "abc-123"}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodDelete, "/sandboxes/abc-123", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -939,7 +974,7 @@ func TestDeleteSandbox(t *testing.T) {
 func TestDeleteSandboxNotFound(t *testing.T) {
 	t.Parallel()
 	actors := &fakeActors{deleteErr: substrate.ErrNotFound}
-	srv := NewServer(testConfig(), actors, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), actors, newFakeStore(), newFakeStore(), slog.Default())
 
 	req := httptest.NewRequest(http.MethodDelete, "/sandboxes/missing", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -953,7 +988,7 @@ func TestDeleteSandboxNotFound(t *testing.T) {
 
 func TestDeleteSandboxUnauthorized(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodDelete, "/sandboxes/abc-123", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -964,7 +999,7 @@ func TestDeleteSandboxUnauthorized(t *testing.T) {
 
 func TestCreateSandboxUnsupportedTemplate(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader([]byte(`{"templateID":"other"}`)))
 	req.Header.Set("X-API-KEY", "dev")
 	rec := httptest.NewRecorder()
@@ -988,7 +1023,7 @@ func TestGetSandbox(t *testing.T) {
 		Status:    store.StatusRunning,
 	}
 	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -1033,7 +1068,7 @@ func TestGetSandboxPaused(t *testing.T) {
 			"sb-1": ateapipb.Actor_STATUS_SUSPENDED,
 		},
 	}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -1065,7 +1100,7 @@ func TestPauseSandbox(t *testing.T) {
 		Status:    store.StatusRunning,
 	}
 	actors := &fakeActors{}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/pause", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -1086,7 +1121,7 @@ func TestPauseSandbox(t *testing.T) {
 func TestPauseSandboxNotFound(t *testing.T) {
 	t.Parallel()
 	actors := &fakeActors{suspendErr: substrate.ErrNotFound}
-	srv := NewServer(testConfig(), actors, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), actors, newFakeStore(), newFakeStore(), slog.Default())
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/missing/pause", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -1111,7 +1146,7 @@ func TestResumeSandbox(t *testing.T) {
 		Status:     store.StatusPaused,
 	}
 	actors := &fakeActors{backendAddr: testEnvdBackend(t)}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	body := []byte(`{"timeout":60,"autoPause":true}`)
@@ -1162,7 +1197,7 @@ func TestConnectSandboxRunningExtendsTTL(t *testing.T) {
 		Status:    store.StatusRunning,
 	}
 	actors := &fakeActors{backendAddr: testEnvdBackend(t)}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/connect", bytes.NewReader([]byte(`{"timeout":600}`)))
@@ -1201,7 +1236,7 @@ func TestConnectSandboxPausedResumes(t *testing.T) {
 		Status:    store.StatusPaused,
 	}
 	actors := &fakeActors{backendAddr: testEnvdBackend(t)}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/connect", bytes.NewReader([]byte(`{"timeout":120}`)))
@@ -1226,7 +1261,7 @@ func TestConnectSandboxPausedResumes(t *testing.T) {
 
 func TestConnectSandboxNotFound(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/missing/connect", bytes.NewReader([]byte(`{"timeout":60}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-KEY", "dev")
@@ -1241,7 +1276,7 @@ func TestConnectSandboxInvalidTimeout(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Status: store.StatusRunning}
-	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, st, slog.Default())
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/connect", bytes.NewReader([]byte(`{"timeout":1}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-KEY", "dev")
@@ -1265,7 +1300,7 @@ func TestConnectSandboxDoesNotShortenTTL(t *testing.T) {
 		ExpiresAt: longExpiry,
 		Status:    store.StatusRunning,
 	}
-	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/connect", bytes.NewReader([]byte(`{"timeout":30}`)))
@@ -1314,7 +1349,7 @@ func TestResumeSandboxDefaultTimeout(t *testing.T) {
 		Template:  "base",
 		Status:    store.StatusPaused,
 	}
-	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/resume", bytes.NewReader([]byte(`{}`)))
@@ -1342,7 +1377,7 @@ func TestResumeSandboxAutoPauseKill(t *testing.T) {
 		AutoResume: true,
 		Status:     store.StatusPaused,
 	}
-	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, st, slog.Default())
 
 	body := []byte(`{"timeout":60,"autoPause":false}`)
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/resume", bytes.NewReader(body))
@@ -1376,7 +1411,7 @@ func TestGetSandboxSyncsAfterAutoResume(t *testing.T) {
 		Status:    store.StatusPaused,
 	}
 	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
@@ -1412,7 +1447,7 @@ func TestGetSandboxResuming(t *testing.T) {
 			"sb-1": ateapipb.Actor_STATUS_RESUMING,
 		},
 	}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -1447,7 +1482,7 @@ func TestGetSandboxEndAtAfterSetTimeout(t *testing.T) {
 		Status:    store.StatusRunning,
 	}
 	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 	extendAt := createdAt.Add(30 * time.Second)
 	srv.nowFunc = func() time.Time { return extendAt }
 
@@ -1479,7 +1514,7 @@ func TestGetSandboxEndAtAfterSetTimeout(t *testing.T) {
 
 func TestGetSandboxNotFound(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/missing", nil)
 	req.Header.Set("X-API-KEY", "dev")
 	rec := httptest.NewRecorder()
@@ -1494,7 +1529,7 @@ func TestGetSandboxActorGone(t *testing.T) {
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Template: "base", CreatedAt: time.Now()}
 	actors := &fakeActors{getErr: substrate.ErrNotFound}
-	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -1520,7 +1555,7 @@ func TestListSandboxes(t *testing.T) {
 		SandboxID: "b", ActorID: "b", Template: "base",
 		CreatedAt: now, ExpiresAt: now.Add(90 * time.Second), Status: store.StatusRunning,
 	}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -1554,7 +1589,7 @@ func TestListSandboxesV2(t *testing.T) {
 	now := time.Now().UTC()
 	st := newFakeStore()
 	st.records["a"] = store.Sandbox{SandboxID: "a", ActorID: "a", Template: "base", CreatedAt: now, Status: store.StatusRunning}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes", nil)
 	req.Header.Set("X-API-KEY", "dev")
@@ -1586,7 +1621,7 @@ func TestPutSandboxNetworkRoundTrip(t *testing.T) {
 		ExpiresAt: expiresAt,
 		Status:    store.StatusRunning,
 	}
-	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, st, slog.Default())
 
 	putBody := []byte(`{
 		"allowOut":["1.1.1.1"],
@@ -1647,7 +1682,7 @@ func TestPutSandboxNetworkClearsExistingRules(t *testing.T) {
 		},
 		AllowInternetAccess: boolPtr(false),
 	}
-	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, st, slog.Default())
 
 	putReq := httptest.NewRequest(http.MethodPut, "/sandboxes/sb-1/network", bytes.NewReader([]byte(`{}`)))
 	putReq.Header.Set("Content-Type", "application/json")
@@ -1680,7 +1715,7 @@ func TestPutSandboxNetworkClearsExistingRules(t *testing.T) {
 
 func TestPutSandboxNetworkNotFound(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
 	req := httptest.NewRequest(http.MethodPut, "/sandboxes/missing/network", bytes.NewReader([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-KEY", "dev")
@@ -1695,7 +1730,7 @@ func TestPutSandboxNetworkInvalidBody(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Status: store.StatusRunning}
-	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, st, slog.Default())
 
 	cases := []struct {
 		name string
@@ -1719,6 +1754,109 @@ func TestPutSandboxNetworkInvalidBody(t *testing.T) {
 				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 			}
 		})
+	}
+}
+
+func TestCreateSandboxSnapshot(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		Status:    store.StatusRunning,
+	}
+	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/snapshots", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp snapshotInfoResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.SnapshotID == "" || !strings.HasSuffix(resp.SnapshotID, ":default") {
+		t.Fatalf("snapshotID = %q", resp.SnapshotID)
+	}
+	if len(resp.Names) != 1 || resp.Names[0] != resp.SnapshotID {
+		t.Fatalf("names = %v", resp.Names)
+	}
+	if actors.lastSnapshotActor != "sb-1" {
+		t.Fatalf("snapshot actor = %q", actors.lastSnapshotActor)
+	}
+
+	snap, err := st.GetSnapshot(context.Background(), resp.SnapshotID)
+	if err != nil {
+		t.Fatalf("GetSnapshot: %v", err)
+	}
+	if snap.SandboxID != "sb-1" || snap.ActorID != "sb-1" || snap.SnapshotURI == "" {
+		t.Fatalf("stored snapshot = %+v", snap)
+	}
+	if st.records["sb-1"].Status != store.StatusPaused {
+		t.Fatalf("sandbox status = %q, want paused", st.records["sb-1"].Status)
+	}
+}
+
+func TestCreateSandboxSnapshotNamed(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Status: store.StatusRunning}
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
+
+	body := []byte(`{"name":"my-snap"}`)
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/snapshots", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp snapshotInfoResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	wantID := "actordock/my-snap:default"
+	if resp.SnapshotID != wantID {
+		t.Fatalf("snapshotID = %q, want %q", resp.SnapshotID, wantID)
+	}
+}
+
+func TestCreateSandboxSnapshotNotFound(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/missing/snapshots", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestCreateSandboxSnapshotInvalidState(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Status: store.StatusRunning}
+	actors := &fakeActors{createSnapshotErr: substrate.ErrInvalidState}
+	srv := NewServer(testConfig(), actors, st, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/snapshots", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 }
 
