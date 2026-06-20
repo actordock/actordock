@@ -56,9 +56,10 @@ def _seconds_until(end_at: datetime) -> float:
     return (end_at - now).total_seconds()
 
 
-def test_list_sandbox_metrics_returns_expected_keys() -> None:
+func test_list_sandbox_metrics_returns_expected_keys() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
+        sbx.commands.run("echo metrics")
         resp = httpx.get(
             f"{_api_url()}/sandboxes/metrics",
             params={"sandbox_ids": sbx.sandbox_id},
@@ -71,6 +72,8 @@ def test_list_sandbox_metrics_returns_expected_keys() -> None:
         metric = body["sandboxes"][sbx.sandbox_id]
         for key in METRIC_KEYS:
             assert key in metric, f"missing metric key {key!r}"
+        assert metric["memTotal"] > 0
+        assert metric["memUsed"] > 0 or metric["cpuUsedPct"] >= 0
     finally:
         sbx.kill()
 
@@ -78,13 +81,17 @@ def test_list_sandbox_metrics_returns_expected_keys() -> None:
 def test_per_sandbox_metrics_returns_200() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
+        sbx.commands.run("echo metrics")
         resp = httpx.get(
             f"{_api_url()}/sandboxes/{sbx.sandbox_id}/metrics",
             headers={"X-API-KEY": os.environ["E2B_API_KEY"]},
             timeout=30.0,
         )
         assert resp.status_code == 200
-        assert isinstance(resp.json(), list)
+        samples = resp.json()
+        assert isinstance(samples, list)
+        assert len(samples) >= 1
+        assert samples[0]["memTotal"] > 0
     finally:
         sbx.kill()
 

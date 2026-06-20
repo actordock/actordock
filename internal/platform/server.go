@@ -30,6 +30,7 @@ import (
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/envd"
 	"github.com/actordock/actordock/internal/logs"
+	"github.com/actordock/actordock/internal/metrics"
 	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -479,11 +480,14 @@ func (s *Server) handleListSandboxMetrics(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	now := s.nowFunc()
-	stub := buildStubSandboxMetric(now)
 	sandboxes := make(map[string]sandboxMetricResponse, len(ids))
 	for _, id := range ids {
-		sandboxes[id] = stub
+		sb, err := s.store.Get(r.Context(), id)
+		if err != nil {
+			sandboxes[id] = metrics.FallbackSample(s.nowFunc())
+			continue
+		}
+		sandboxes[id] = s.fetchSandboxMetric(r.Context(), sb)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -501,7 +505,7 @@ func (s *Server) handleGetSandboxMetrics(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	_, err := s.store.Get(r.Context(), sandboxID)
+	sb, err := s.store.Get(r.Context(), sandboxID)
 	if errors.Is(err, store.ErrNotFound) {
 		writeAPIError(w, http.StatusNotFound, "sandbox not found")
 		return
@@ -512,8 +516,18 @@ func (s *Server) handleGetSandboxMetrics(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	var samples []sandboxMetricResponse
+	if metricsIntervalRequested(r) {
+		samples = s.fetchSandboxMetricsHistory(r.Context(), sb, r.URL.RawQuery)
+		if samples == nil {
+			samples = []sandboxMetricResponse{}
+		}
+	} else {
+		samples = []sandboxMetricResponse{s.fetchSandboxMetric(r.Context(), sb)}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write([]byte("[]"))
+	_ = json.NewEncoder(w).Encode(samples)
 }
 
 func (s *Server) handleGetSandboxLogs(w http.ResponseWriter, r *http.Request) {

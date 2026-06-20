@@ -54,7 +54,10 @@ func Run(ctx context.Context, opts Options) error {
 	})
 
 	logBuf := logs.NewBuffer(logs.DefaultMaxLines, logs.DefaultMaxBytes)
+	metricsCollector := NewCollector(NewProcCgroupReader())
 	mux.HandleFunc("GET /logs", logs.NewHandler(logBuf))
+	mux.HandleFunc("GET /metrics", NewMetricsHandler(metricsCollector))
+	mux.HandleFunc("GET /metrics/history", NewMetricsHistoryHandler(metricsCollector))
 
 	processPath, processHandler := processv1connect.NewProcessHandler(
 		&processService{logger: opts.Logger, logs: logBuf},

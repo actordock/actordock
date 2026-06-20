@@ -605,6 +605,57 @@ func TestListSandboxMetricsMissingIDs(t *testing.T) {
 	}
 }
 
+func TestListSandboxMetricsFromEnvd(t *testing.T) {
+	t.Parallel()
+	backend := testEnvdBackend(t)
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/metrics?sandbox_ids=sb-1", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxesWithMetricsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	m := resp.Sandboxes["sb-1"]
+	if m.MemUsed == 0 || m.MemTotal == 0 {
+		t.Fatalf("metric = %+v", m)
+	}
+}
+
+func TestGetSandboxMetricsFromEnvd(t *testing.T) {
+	t.Parallel()
+	backend := testEnvdBackend(t)
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/metrics", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var samples []sandboxMetricResponse
+	if err := json.NewDecoder(rec.Body).Decode(&samples); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(samples) != 1 || samples[0].MemUsed == 0 {
+		t.Fatalf("samples = %+v", samples)
+	}
+}
+
 func TestGetSandboxMetrics(t *testing.T) {
 	t.Parallel()
 	now := time.Now().UTC()
@@ -620,8 +671,12 @@ func TestGetSandboxMetrics(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if rec.Body.String() != "[]" {
-		t.Fatalf("body = %q, want []", rec.Body.String())
+	var samples []sandboxMetricResponse
+	if err := json.NewDecoder(rec.Body).Decode(&samples); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(samples) != 0 {
+		t.Fatalf("samples = %+v, want empty", samples)
 	}
 }
 

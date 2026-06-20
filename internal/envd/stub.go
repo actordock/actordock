@@ -28,11 +28,14 @@ import (
 // NewStubHandler serves /health and the process Connect API for readiness probes.
 func NewStubHandler() http.Handler {
 	logBuf := logs.NewBuffer(logs.DefaultMaxLines, logs.DefaultMaxBytes)
+	metricsCollector := stubMetricsCollector()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /logs", logs.NewHandler(logBuf))
+	mux.HandleFunc("GET /metrics", NewMetricsHandler(metricsCollector))
+	mux.HandleFunc("GET /metrics/history", NewMetricsHistoryHandler(metricsCollector))
 	path, handler := processv1connect.NewProcessHandler(&processService{logs: logBuf})
 	mux.Handle(path, handler)
 	return h2c.NewHandler(mux, &http2.Server{})
