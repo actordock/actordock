@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -35,11 +36,13 @@ type fakeActors struct {
 	lastDeletedID string
 	lastSuspended string
 	lastResumed   string
+	backendAddr   string
 	createErr     error
 	deleteErr     error
 	suspendErr    error
 	resumeErr     error
 	getErr        error
+	backendErr    error
 	actorStatuses map[string]ateapipb.Actor_Status
 	defaultStatus ateapipb.Actor_Status
 }
@@ -77,6 +80,16 @@ func (f *fakeActors) GetActor(_ context.Context, actorID string) (ateapipb.Actor
 		return f.defaultStatus, nil
 	}
 	return ateapipb.Actor_STATUS_RUNNING, nil
+}
+
+func (f *fakeActors) GetActorBackend(_ context.Context, actorID string, _ int) (string, error) {
+	if f.backendErr != nil {
+		return "", f.backendErr
+	}
+	if f.backendAddr == "" {
+		return "", fmt.Errorf("actor %q has no worker assigned", actorID)
+	}
+	return f.backendAddr, nil
 }
 
 type fakeStore struct {
@@ -643,7 +656,7 @@ func TestResumeSandbox(t *testing.T) {
 		AutoResume: true,
 		Status:     store.StatusPaused,
 	}
-	actors := &fakeActors{}
+	actors := &fakeActors{backendAddr: testEnvdBackend(t)}
 	srv := NewServer(testConfig(), actors, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
@@ -692,7 +705,7 @@ func TestResumeSandboxDefaultTimeout(t *testing.T) {
 		Template:  "base",
 		Status:    store.StatusPaused,
 	}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/resume", bytes.NewReader([]byte(`{}`)))
@@ -720,7 +733,7 @@ func TestResumeSandboxAutoPauseKill(t *testing.T) {
 		AutoResume: true,
 		Status:     store.StatusPaused,
 	}
-	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: testEnvdBackend(t)}, st, slog.Default())
 
 	body := []byte(`{"timeout":60,"autoPause":false}`)
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/resume", bytes.NewReader(body))
@@ -962,7 +975,21 @@ func testConfig() config.Platform {
 		TemplateNamespace:     "actordock",
 		TemplateName:          "base",
 		EnvdVersion:           "0.1.0",
+		EnvdPort:              80,
 		ClientID:              "actordock",
 		DefaultSandboxTimeout: 300,
 	}
+}
+
+func testEnvdBackend(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	return srv.Listener.Addr().String()
 }

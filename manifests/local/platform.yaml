@@ -48,6 +48,8 @@ spec:
               value: "base"
             - name: ACTORDOCK_ENVD_VERSION
               value: "0.1.0"
+            - name: ACTORDOCK_ENVD_PORT
+              value: "80"
             - name: ACTORDOCK_REDIS_ADDR
               value: "redis.actordock.svc:6379"
             - name: ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT

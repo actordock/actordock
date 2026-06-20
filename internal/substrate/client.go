@@ -79,22 +79,51 @@ func (c *Client) CreateAndResumeSandbox(
 	return nil
 }
 
-func (c *Client) ResumeSandboxBackend(ctx context.Context, actorID string, envdPort int) (string, error) {
-	resp, err := c.api.ResumeActor(ctx, &ateapipb.ResumeActorRequest{
-		ActorId: actorID,
-	})
+func (c *Client) actorBackend(actor *ateapipb.Actor, envdPort int) (string, error) {
+	ip := actor.GetAteomPodIp()
+	if ip == "" {
+		return "", fmt.Errorf("actor %q has no worker assigned", actor.GetActorId())
+	}
+	return net.JoinHostPort(ip, strconv.Itoa(envdPort)), nil
+}
+
+func (c *Client) GetActorBackend(ctx context.Context, actorID string, envdPort int) (string, error) {
+	resp, err := c.api.GetActor(ctx, &ateapipb.GetActorRequest{ActorId: actorID})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return "", ErrNotFound
 		}
-		return "", fmt.Errorf("resume actor: %w", err)
+		return "", fmt.Errorf("get actor: %w", err)
+	}
+	return c.actorBackend(resp.GetActor(), envdPort)
+}
+
+func (c *Client) ResumeSandboxBackend(ctx context.Context, actorID string, envdPort int) (string, bool, error) {
+	resp, err := c.api.GetActor(ctx, &ateapipb.GetActorRequest{ActorId: actorID})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return "", false, ErrNotFound
+		}
+		return "", false, fmt.Errorf("get actor: %w", err)
 	}
 
-	ip := resp.GetActor().GetAteomPodIp()
-	if ip == "" {
-		return "", fmt.Errorf("actor %q has no worker assigned", actorID)
+	actor := resp.GetActor()
+	if actor.GetStatus() == ateapipb.Actor_STATUS_RUNNING {
+		backend, err := c.actorBackend(actor, envdPort)
+		return backend, false, err
 	}
-	return net.JoinHostPort(ip, strconv.Itoa(envdPort)), nil
+
+	resumeResp, err := c.api.ResumeActor(ctx, &ateapipb.ResumeActorRequest{
+		ActorId: actorID,
+	})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return "", false, ErrNotFound
+		}
+		return "", false, fmt.Errorf("resume actor: %w", err)
+	}
+	backend, err := c.actorBackend(resumeResp.GetActor(), envdPort)
+	return backend, true, err
 }
 
 func (c *Client) ResumeSandbox(ctx context.Context, actorID string) error {

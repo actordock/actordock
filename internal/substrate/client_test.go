@@ -31,6 +31,7 @@ func newTestClient(api ateapipb.ControlClient) *Client {
 
 type fakeControl struct {
 	getStatus    ateapipb.Actor_Status
+	podIP        string
 	getErr       error
 	suspendCalls int
 	suspendErr   error
@@ -39,15 +40,20 @@ type fakeControl struct {
 	deleteErr    error
 }
 
+func (f *fakeControl) actor(actorID string, status ateapipb.Actor_Status) *ateapipb.Actor {
+	return &ateapipb.Actor{
+		ActorId:    actorID,
+		Status:     status,
+		AteomPodIp: f.podIP,
+	}
+}
+
 func (f *fakeControl) GetActor(_ context.Context, req *ateapipb.GetActorRequest, _ ...grpc.CallOption) (*ateapipb.GetActorResponse, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
 	return &ateapipb.GetActorResponse{
-		Actor: &ateapipb.Actor{
-			ActorId: req.GetActorId(),
-			Status:  f.getStatus,
-		},
+		Actor: f.actor(req.GetActorId(), f.getStatus),
 	}, nil
 }
 
@@ -69,10 +75,7 @@ func (f *fakeControl) ResumeActor(_ context.Context, req *ateapipb.ResumeActorRe
 		return nil, f.resumeErr
 	}
 	return &ateapipb.ResumeActorResponse{
-		Actor: &ateapipb.Actor{
-			ActorId: req.GetActorId(),
-			Status:  ateapipb.Actor_STATUS_RUNNING,
-		},
+		Actor: f.actor(req.GetActorId(), ateapipb.Actor_STATUS_RUNNING),
 	}, nil
 }
 
@@ -116,6 +119,69 @@ func TestResumeSandbox(t *testing.T) {
 
 	if err := client.ResumeSandbox(context.Background(), "actor-1"); err != nil {
 		t.Fatalf("ResumeSandbox() = %v, want nil", err)
+	}
+}
+
+func TestGetActorBackend(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeControl{getStatus: ateapipb.Actor_STATUS_RUNNING, podIP: "10.0.0.5"}
+	client := newTestClient(fake)
+
+	backend, err := client.GetActorBackend(context.Background(), "actor-1", 80)
+	if err != nil {
+		t.Fatalf("GetActorBackend() = %v, want nil", err)
+	}
+	if backend != "10.0.0.5:80" {
+		t.Fatalf("backend = %q, want 10.0.0.5:80", backend)
+	}
+}
+
+func TestGetActorBackendNoWorker(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeControl{getStatus: ateapipb.Actor_STATUS_RUNNING}
+	client := newTestClient(fake)
+
+	_, err := client.GetActorBackend(context.Background(), "actor-1", 80)
+	if err == nil {
+		t.Fatal("GetActorBackend() = nil, want error")
+	}
+}
+
+func TestResumeSandboxBackendRunning(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeControl{getStatus: ateapipb.Actor_STATUS_RUNNING, podIP: "10.0.0.5"}
+	client := newTestClient(fake)
+
+	backend, waitEnvd, err := client.ResumeSandboxBackend(context.Background(), "actor-1", 80)
+	if err != nil {
+		t.Fatalf("ResumeSandboxBackend() = %v, want nil", err)
+	}
+	if backend != "10.0.0.5:80" {
+		t.Fatalf("backend = %q, want 10.0.0.5:80", backend)
+	}
+	if waitEnvd {
+		t.Fatal("waitEnvd = true, want false")
+	}
+}
+
+func TestResumeSandboxBackendSuspended(t *testing.T) {
+	t.Parallel()
+
+	fake := &fakeControl{getStatus: ateapipb.Actor_STATUS_SUSPENDED, podIP: "10.0.0.5"}
+	client := newTestClient(fake)
+
+	backend, waitEnvd, err := client.ResumeSandboxBackend(context.Background(), "actor-1", 80)
+	if err != nil {
+		t.Fatalf("ResumeSandboxBackend() = %v, want nil", err)
+	}
+	if backend != "10.0.0.5:80" {
+		t.Fatalf("backend = %q, want 10.0.0.5:80", backend)
+	}
+	if !waitEnvd {
+		t.Fatal("waitEnvd = false, want true")
 	}
 }
 

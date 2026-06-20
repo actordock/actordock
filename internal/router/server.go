@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/internal/config"
+	"github.com/actordock/actordock/internal/envd"
 	"github.com/actordock/actordock/internal/substrate"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -40,7 +41,7 @@ import (
 const sandboxIDHeader = "E2b-Sandbox-Id"
 
 type sandboxBackendResolver interface {
-	ResumeSandboxBackend(ctx context.Context, actorID string, envdPort int) (string, error)
+	ResumeSandboxBackend(ctx context.Context, actorID string, envdPort int) (backend string, waitEnvd bool, err error)
 }
 
 type Server struct {
@@ -123,7 +124,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	backend, err := s.actors.ResumeSandboxBackend(r.Context(), sandboxID, s.cfg.EnvdPort)
+	backend, waitEnvd, err := s.actors.ResumeSandboxBackend(r.Context(), sandboxID, s.cfg.EnvdPort)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "sandbox not found")
@@ -132,6 +133,13 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("resolve sandbox backend", "sandbox_id", sandboxID, "err", err)
 		writeAPIError(w, http.StatusBadGateway, "failed to reach sandbox")
 		return
+	}
+	if waitEnvd {
+		if err := envd.WaitForHealth(r.Context(), nil, "http://"+backend, envd.DefaultReadyTimeout); err != nil {
+			s.logger.Error("wait for envd", "sandbox_id", sandboxID, "backend", backend, "err", err)
+			writeAPIError(w, http.StatusBadGateway, "failed to reach sandbox")
+			return
+		}
 	}
 
 	target, err := url.Parse("http://" + backend)

@@ -16,6 +16,7 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/actordock/actordock/internal/store"
 )
@@ -29,6 +30,7 @@ type Platform struct {
 	TemplateNamespace     string
 	TemplateName          string
 	EnvdVersion           string
+	EnvdPort              int
 	ClientID              string
 	DefaultSandboxTimeout int
 }
@@ -57,6 +59,11 @@ func PlatformFromEnv() (Platform, error) {
 	if err := store.ValidateTimeout(cfg.DefaultSandboxTimeout); err != nil {
 		return Platform{}, fmt.Errorf("ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT: %w", err)
 	}
+	envdPort, err := strconv.Atoi(envOrDefault("ACTORDOCK_ENVD_PORT", "80"))
+	if err != nil || envdPort <= 0 || envdPort > 65535 {
+		return Platform{}, fmt.Errorf("ACTORDOCK_ENVD_PORT must be a valid port")
+	}
+	cfg.EnvdPort = envdPort
 	if cfg.TemplateName == "" {
 		return Platform{}, fmt.Errorf("ACTORDOCK_TEMPLATE_NAME is required")
 	}

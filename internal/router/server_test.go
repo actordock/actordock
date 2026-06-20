@@ -29,15 +29,16 @@ import (
 type fakeBackend struct {
 	lastSandboxID string
 	backend       string
+	waitEnvd      bool
 	err           error
 }
 
-func (f *fakeBackend) ResumeSandboxBackend(_ context.Context, actorID string, _ int) (string, error) {
+func (f *fakeBackend) ResumeSandboxBackend(_ context.Context, actorID string, _ int) (string, bool, error) {
 	f.lastSandboxID = actorID
 	if f.err != nil {
-		return "", f.err
+		return "", false, f.err
 	}
-	return f.backend, nil
+	return f.backend, f.waitEnvd, nil
 }
 
 func TestHealth(t *testing.T) {
@@ -110,13 +111,17 @@ func TestProxyToEnvd(t *testing.T) {
 
 func TestProxyResumesPausedSandbox(t *testing.T) {
 	t.Parallel()
-	envd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	envd := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	}))
 	t.Cleanup(envd.Close)
 
-	actors := &fakeBackend{backend: envd.Listener.Addr().String()}
+	actors := &fakeBackend{backend: envd.Listener.Addr().String(), waitEnvd: true}
 	srv := NewServer(testConfig(), actors, slog.Default())
 	srv.envdTransport = http.DefaultTransport
 

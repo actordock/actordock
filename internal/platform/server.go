@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/internal/config"
+	"github.com/actordock/actordock/internal/envd"
 	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -38,6 +39,7 @@ type sandboxClient interface {
 	CreateAndResumeSandbox(ctx context.Context, actorID, templateNamespace, templateName string) error
 	DeleteSandbox(ctx context.Context, actorID string) error
 	GetActor(ctx context.Context, actorID string) (ateapipb.Actor_Status, error)
+	GetActorBackend(ctx context.Context, actorID string, envdPort int) (string, error)
 	SuspendSandbox(ctx context.Context, actorID string) error
 	ResumeSandbox(ctx context.Context, actorID string) error
 }
@@ -150,7 +152,8 @@ type resumeSandboxRequest struct {
 }
 
 const resumeDefaultTimeoutSeconds = 15
-const resumeReadyTimeout = 60 * time.Second
+
+const resumedEnvdPollInterval = 200 * time.Millisecond
 
 type sandboxResponse struct {
 	ClientID        string `json:"clientID"`
@@ -335,7 +338,7 @@ func (s *Server) handleResumeSandbox(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
 		return
 	}
-	if err := waitForActorRunning(ctx, s.actors, sb.ActorID, resumeReadyTimeout); err != nil {
+	if err := waitForResumedEnvd(ctx, s.actors, sb.ActorID, s.cfg.EnvdPort, envd.DefaultReadyTimeout); err != nil {
 		s.logger.Error("wait for resumed sandbox", "sandbox_id", sandboxID, "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
 		return
@@ -585,23 +588,25 @@ func resolveResumeOnTimeout(currentOnTimeout string, req resumeSandboxRequest) (
 	return store.OnTimeoutKill, nil
 }
 
-func waitForActorRunning(ctx context.Context, actors sandboxClient, actorID string, timeout time.Duration) error {
+func waitForResumedEnvd(ctx context.Context, actors sandboxClient, actorID string, envdPort int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
+	var lastErr error
 	for {
-		status, err := actors.GetActor(ctx, actorID)
+		backend, err := actors.GetActorBackend(ctx, actorID, envdPort)
 		if err != nil {
-			return err
-		}
-		if status == ateapipb.Actor_STATUS_RUNNING {
+			lastErr = err
+		} else if err := envd.ProbeHealth(ctx, nil, "http://"+backend); err == nil {
 			return nil
+		} else {
+			lastErr = err
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout waiting for actor %q to be running", actorID)
+			return fmt.Errorf("timeout waiting for sandbox %q envd: %v", actorID, lastErr)
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(200 * time.Millisecond):
+		case <-time.After(resumedEnvdPollInterval):
 		}
 	}
 }
