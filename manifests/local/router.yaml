@@ -42,6 +42,8 @@ spec:
               value: "localhost"
             - name: ACTORDOCK_ENVD_PORT
               value: "80"
+            - name: ACTORDOCK_REDIS_ADDR
+              value: "redis.actordock.svc:6379"
           readinessProbe:
             httpGet:
               path: /health

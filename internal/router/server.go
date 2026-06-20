@@ -33,6 +33,7 @@ import (
 
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/envd"
+	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -45,21 +46,25 @@ type sandboxBackendResolver interface {
 }
 
 type Server struct {
-	cfg           config.Router
-	actors        sandboxBackendResolver
-	logger        *slog.Logger
-	envdTransport http.RoundTripper
+	cfg             config.Router
+	actors          sandboxBackendResolver
+	policies        sandboxPolicyReader
+	logger          *slog.Logger
+	envdTransport   http.RoundTripper
+	egressTransport http.RoundTripper
 }
 
-func NewServer(cfg config.Router, actors sandboxBackendResolver, logger *slog.Logger) *Server {
+func NewServer(cfg config.Router, actors sandboxBackendResolver, policies sandboxPolicyReader, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Server{
-		cfg:           cfg,
-		actors:        actors,
-		logger:        logger,
-		envdTransport: newEnvdTransport(),
+		cfg:             cfg,
+		actors:          actors,
+		policies:        policies,
+		logger:          logger,
+		envdTransport:   newEnvdTransport(),
+		egressTransport: http.DefaultTransport,
 	}
 }
 
@@ -118,13 +123,18 @@ func (s *Server) handleHealthOrProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
-	// Proxies all envd traffic including Connect RPC (e.g. /process.Process/Connect).
 	sandboxID, err := parseSandboxID(r, s.cfg.Domain, s.cfg.EnvdPort)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "sandbox id not found in request")
 		return
 	}
 
+	if isEgressRequest(r) {
+		s.handleEgress(w, r, sandboxID)
+		return
+	}
+
+	// Proxies all envd traffic including Connect RPC (e.g. /process.Process/Connect).
 	backend, waitEnvd, err := s.actors.ResumeSandboxBackend(r.Context(), sandboxID, s.cfg.EnvdPort)
 	if err != nil {
 		if errors.Is(err, substrate.ErrNotFound) {
@@ -231,6 +241,9 @@ func (t envdRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 func h2cHandler(next http.Handler) http.Handler {
 	return h2c.NewHandler(next, &http2.Server{})
 }
+
+// Ensure store.Redis satisfies sandboxPolicyReader.
+var _ sandboxPolicyReader = (*store.Redis)(nil)
 
 // Ensure substrate.Client satisfies sandboxBackendResolver.
 var _ sandboxBackendResolver = (*substrate.Client)(nil)

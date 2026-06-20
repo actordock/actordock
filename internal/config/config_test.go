@@ -148,3 +148,25 @@ func TestSchedulerFromEnvInvalidPollInterval(t *testing.T) {
 		t.Fatal("expected error for invalid SCHEDULER_POLL_INTERVAL")
 	}
 }
+
+func TestRouterFromEnvRedisAddr(t *testing.T) {
+	t.Setenv("ROUTER_LISTEN_ADDR", "")
+	t.Setenv("ACTORDOCK_REDIS_ADDR", "")
+
+	cfg, err := RouterFromEnv()
+	if err != nil {
+		t.Fatalf("RouterFromEnv: %v", err)
+	}
+	if cfg.RedisAddr != "redis.actordock.svc:6379" {
+		t.Fatalf("RedisAddr = %q, want redis.actordock.svc:6379", cfg.RedisAddr)
+	}
+
+	t.Setenv("ACTORDOCK_REDIS_ADDR", "redis:6379")
+	cfg, err = RouterFromEnv()
+	if err != nil {
+		t.Fatalf("RouterFromEnv: %v", err)
+	}
+	if cfg.RedisAddr != "redis:6379" {
+		t.Fatalf("RedisAddr = %q, want redis:6379", cfg.RedisAddr)
+	}
+}

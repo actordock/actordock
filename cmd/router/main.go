@@ -22,6 +22,7 @@ import (
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/log"
 	"github.com/actordock/actordock/internal/router"
+	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
 )
 
@@ -45,5 +46,11 @@ func run(ctx context.Context) error {
 	}
 	defer ate.Close()
 
-	return router.NewServer(cfg, ate, logger).Run(ctx)
+	st, err := store.NewRedis(cfg.RedisAddr)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+
+	return router.NewServer(cfg, ate, st, logger).Run(ctx)
 }

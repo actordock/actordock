@@ -44,7 +44,7 @@ func (f *fakeBackend) ResumeSandboxBackend(_ context.Context, actorID string, _ 
 
 func TestHealth(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeBackend{}, slog.Default())
+	srv := NewServer(testConfig(), &fakeBackend{}, nil, slog.Default())
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
@@ -91,7 +91,7 @@ func TestProxyToEnvd(t *testing.T) {
 
 	backendHost := envd.Listener.Addr().String()
 	actors := &fakeBackend{backend: backendHost}
-	srv := NewServer(testConfig(), actors, slog.Default())
+	srv := NewServer(testConfig(), actors, nil, slog.Default())
 	srv.envdTransport = http.DefaultTransport
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -122,7 +122,7 @@ func TestProxyResumesPausedSandbox(t *testing.T) {
 	t.Cleanup(envdSrv.Close)
 
 	actors := &fakeBackend{backend: envdSrv.Listener.Addr().String(), waitEnvd: true}
-	srv := NewServer(testConfig(), actors, slog.Default())
+	srv := NewServer(testConfig(), actors, nil, slog.Default())
 	srv.envdTransport = http.DefaultTransport
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -141,7 +141,7 @@ func TestProxyResumesPausedSandbox(t *testing.T) {
 
 func TestProxySandboxNotFound(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeBackend{err: substrate.ErrNotFound}, slog.Default())
+	srv := NewServer(testConfig(), &fakeBackend{err: substrate.ErrNotFound}, nil, slog.Default())
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("E2b-Sandbox-Id", "missing")
 	rec := httptest.NewRecorder()
@@ -153,7 +153,7 @@ func TestProxySandboxNotFound(t *testing.T) {
 
 func TestProxyMissingSandboxID(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeBackend{}, slog.Default())
+	srv := NewServer(testConfig(), &fakeBackend{}, nil, slog.Default())
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "localhost:8081"
 	rec := httptest.NewRecorder()

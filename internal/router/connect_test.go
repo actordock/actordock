@@ -60,7 +60,7 @@ func newRouterOverEnvd(t *testing.T, envdHandler http.Handler, waitEnvd bool) (*
 
 	envdSrv := startH2CTestServer(t, envdHandler)
 	actors := &fakeBackend{backend: envdSrv.Listener.Addr().String(), waitEnvd: waitEnvd}
-	router := NewServer(testConfig(), actors, slog.Default())
+	router := NewServer(testConfig(), actors, nil, slog.Default())
 
 	routerSrv := startH2CTestServer(t, router.Handler())
 	return routerSrv, actors
@@ -235,7 +235,7 @@ func TestProxyConnectResumesPausedSandbox(t *testing.T) {
 func TestProxyConnectSandboxNotFound(t *testing.T) {
 	t.Parallel()
 
-	router := NewServer(testConfig(), &fakeBackend{err: substrate.ErrNotFound}, slog.Default())
+	router := NewServer(testConfig(), &fakeBackend{err: substrate.ErrNotFound}, nil, slog.Default())
 	routerSrv := startH2CTestServer(t, router.Handler())
 
 	client := processv1connect.NewProcessClient(
