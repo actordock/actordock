@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	MinTimeoutSeconds     = 15
-	MaxTimeoutSeconds     = 24 * 60 * 60
-	DefaultTimeoutSeconds = 300
+	MinTimeoutSeconds         = 15
+	MaxTimeoutSeconds         = 24 * 60 * 60
+	MaxRefreshDurationSeconds = 3600
+	DefaultTimeoutSeconds     = 300
 )
 
 var ErrInvalidTimeout = errors.New("invalid timeout")
@@ -51,6 +52,31 @@ func ResolveTimeout(timeout *int, defaultSeconds int) (int, error) {
 		return 0, err
 	}
 	return *timeout, nil
+}
+
+// ValidateRefreshDuration checks E2B refresh bounds (POST …/refreshes duration field).
+func ValidateRefreshDuration(seconds int) error {
+	if seconds < MinTimeoutSeconds {
+		return fmt.Errorf("%w: must be at least %d seconds", ErrInvalidTimeout, MinTimeoutSeconds)
+	}
+	if seconds > MaxRefreshDurationSeconds {
+		return fmt.Errorf("%w: must be at most %d seconds", ErrInvalidTimeout, MaxRefreshDurationSeconds)
+	}
+	return nil
+}
+
+// ResolveRefreshDuration returns an explicit refresh duration or defaultSeconds when duration is nil.
+func ResolveRefreshDuration(duration *int, defaultSeconds int) (int, error) {
+	if duration == nil {
+		if err := ValidateRefreshDuration(defaultSeconds); err != nil {
+			return 0, fmt.Errorf("default refresh duration: %w", err)
+		}
+		return defaultSeconds, nil
+	}
+	if err := ValidateRefreshDuration(*duration); err != nil {
+		return 0, err
+	}
+	return *duration, nil
 }
 
 // ExpiresAt computes absolute expiry from now and timeout seconds.

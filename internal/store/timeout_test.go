@@ -78,3 +78,51 @@ func TestExpiresAt(t *testing.T) {
 		t.Fatalf("ExpiresAt = %v, want %v", got, want)
 	}
 }
+
+func TestValidateRefreshDuration(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		seconds int
+		ok      bool
+	}{
+		{0, false},
+		{14, false},
+		{15, true},
+		{3600, true},
+		{3601, false},
+		{MaxTimeoutSeconds, false},
+	}
+	for _, tc := range tests {
+		err := ValidateRefreshDuration(tc.seconds)
+		if tc.ok && err != nil {
+			t.Fatalf("ValidateRefreshDuration(%d) = %v, want nil", tc.seconds, err)
+		}
+		if !tc.ok && !errors.Is(err, ErrInvalidTimeout) {
+			t.Fatalf("ValidateRefreshDuration(%d) = %v, want ErrInvalidTimeout", tc.seconds, err)
+		}
+	}
+}
+
+func TestResolveRefreshDuration(t *testing.T) {
+	t.Parallel()
+
+	got, err := ResolveRefreshDuration(nil, DefaultTimeoutSeconds)
+	if err != nil {
+		t.Fatalf("ResolveRefreshDuration(nil): %v", err)
+	}
+	if got != DefaultTimeoutSeconds {
+		t.Fatalf("got %d, want %d", got, DefaultTimeoutSeconds)
+	}
+
+	duration := 120
+	got, err = ResolveRefreshDuration(&duration, DefaultTimeoutSeconds)
+	if err != nil || got != 120 {
+		t.Fatalf("ResolveRefreshDuration(120) = %d, %v", got, err)
+	}
+
+	bad := 0
+	if _, err := ResolveRefreshDuration(&bad, DefaultTimeoutSeconds); !errors.Is(err, ErrInvalidTimeout) {
+		t.Fatalf("ResolveRefreshDuration(0) = %v, want ErrInvalidTimeout", err)
+	}
+}

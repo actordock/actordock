@@ -80,6 +80,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleGetSandbox)))
 	mux.Handle("POST /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandbox)))
 	mux.Handle("POST /sandboxes/{id}/timeout", s.requireAPIKey(http.HandlerFunc(s.handleSetSandboxTimeout)))
+	mux.Handle("POST /sandboxes/{id}/refreshes", s.requireAPIKey(http.HandlerFunc(s.handleRefreshSandbox)))
 	mux.Handle("POST /sandboxes/{id}/pause", s.requireAPIKey(http.HandlerFunc(s.handlePauseSandbox)))
 	mux.Handle("POST /sandboxes/{id}/resume", s.requireAPIKey(http.HandlerFunc(s.handleResumeSandbox)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
@@ -144,6 +145,10 @@ type createSandboxRequest struct {
 
 type setSandboxTimeoutRequest struct {
 	Timeout int `json:"timeout"`
+}
+
+type refreshSandboxRequest struct {
+	Duration *int `json:"duration,omitempty"`
 }
 
 type resumeSandboxRequest struct {
@@ -417,6 +422,46 @@ func (s *Server) handleSetSandboxTimeout(w http.ResponseWriter, r *http.Request)
 	if err := s.store.Put(ctx, sb); err != nil {
 		s.logger.Error("update sandbox timeout", "sandbox_id", sandboxID, "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to set sandbox timeout")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRefreshSandbox(w http.ResponseWriter, r *http.Request) {
+	sandboxID := r.PathValue("id")
+	if sandboxID == "" {
+		writeAPIError(w, http.StatusBadRequest, "sandbox id is required")
+		return
+	}
+
+	var req refreshSandboxRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	durationSeconds, err := store.ResolveRefreshDuration(req.Duration, s.cfg.DefaultSandboxTimeout)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid duration")
+		return
+	}
+
+	ctx := r.Context()
+	sb, err := s.store.Get(ctx, sandboxID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeAPIError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("get sandbox for refresh", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to refresh sandbox")
+		return
+	}
+
+	now := s.nowFunc()
+	sb.ExpiresAt = store.ExpiresAt(now, durationSeconds)
+	if err := s.store.Put(ctx, sb); err != nil {
+		s.logger.Error("update sandbox refresh", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to refresh sandbox")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

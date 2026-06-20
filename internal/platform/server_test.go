@@ -448,6 +448,115 @@ func TestSetSandboxTimeoutInvalid(t *testing.T) {
 	}
 }
 
+func TestRefreshSandbox(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: now,
+		ExpiresAt: now.Add(60 * time.Second),
+		Status:    store.StatusRunning,
+	}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now.Add(30 * time.Second) }
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/refreshes", bytes.NewReader([]byte(`{"duration":120}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("body = %q, want empty", rec.Body.String())
+	}
+	want := now.Add(30 * time.Second).Add(120 * time.Second)
+	if !st.records["sb-1"].ExpiresAt.Equal(want) {
+		t.Fatalf("expires_at = %v, want %v", st.records["sb-1"].ExpiresAt, want)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
+	getReq.Header.Set("X-API-KEY", "dev")
+	getRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, body = %s", getRec.Code, getRec.Body.String())
+	}
+	var detail sandboxDetailResponse
+	if err := json.NewDecoder(getRec.Body).Decode(&detail); err != nil {
+		t.Fatalf("decode GET: %v", err)
+	}
+	if detail.EndAt != want.UTC().Format(time.RFC3339) {
+		t.Fatalf("endAt = %q, want %q", detail.EndAt, want.UTC().Format(time.RFC3339))
+	}
+}
+
+func TestRefreshSandboxDefaultDuration(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: now,
+		ExpiresAt: now.Add(60 * time.Second),
+	}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/refreshes", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	want := now.Add(300 * time.Second)
+	if !st.records["sb-1"].ExpiresAt.Equal(want) {
+		t.Fatalf("expires_at = %v, want %v", st.records["sb-1"].ExpiresAt, want)
+	}
+}
+
+func TestRefreshSandboxNotFound(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes/missing/refreshes", bytes.NewReader([]byte(`{"duration":120}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestRefreshSandboxInvalidDuration(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	for _, body := range []string{`{"duration":0}`, `{"duration":3601}`} {
+		req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/refreshes", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-API-KEY", "dev")
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("body %s: status = %d, want 400", body, rec.Code)
+		}
+	}
+}
+
 func TestCreateSandboxUnauthorized(t *testing.T) {
 	t.Parallel()
 	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
