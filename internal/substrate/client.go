@@ -97,7 +97,7 @@ func (c *Client) ResumeSandboxBackend(ctx context.Context, actorID string, envdP
 	return net.JoinHostPort(ip, strconv.Itoa(envdPort)), nil
 }
 
-func (c *Client) DeleteSandbox(ctx context.Context, actorID string) error {
+func (c *Client) SuspendSandbox(ctx context.Context, actorID string) error {
 	resp, err := c.api.GetActor(ctx, &ateapipb.GetActorRequest{ActorId: actorID})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
@@ -106,17 +106,26 @@ func (c *Client) DeleteSandbox(ctx context.Context, actorID string) error {
 		return fmt.Errorf("get actor: %w", err)
 	}
 
-	if resp.GetActor().GetStatus() != ateapipb.Actor_STATUS_SUSPENDED {
-		_, err = c.api.SuspendActor(ctx, &ateapipb.SuspendActorRequest{ActorId: actorID})
-		if err != nil {
-			if status.Code(err) == codes.NotFound {
-				return ErrNotFound
-			}
-			return fmt.Errorf("suspend actor: %w", err)
-		}
+	if resp.GetActor().GetStatus() == ateapipb.Actor_STATUS_SUSPENDED {
+		return nil
 	}
 
-	_, err = c.api.DeleteActor(ctx, &ateapipb.DeleteActorRequest{ActorId: actorID})
+	_, err = c.api.SuspendActor(ctx, &ateapipb.SuspendActorRequest{ActorId: actorID})
+	if err != nil {
+		if status.Code(err) == codes.NotFound {
+			return ErrNotFound
+		}
+		return fmt.Errorf("suspend actor: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) DeleteSandbox(ctx context.Context, actorID string) error {
+	if err := c.SuspendSandbox(ctx, actorID); err != nil {
+		return err
+	}
+
+	_, err := c.api.DeleteActor(ctx, &ateapipb.DeleteActorRequest{ActorId: actorID})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return ErrNotFound
