@@ -19,6 +19,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/actordock/actordock/internal/logs"
 	"github.com/actordock/actordock/pkg/envd/process/processv1connect"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -26,11 +27,13 @@ import (
 
 // NewStubHandler serves /health and the process Connect API for readiness probes.
 func NewStubHandler() http.Handler {
+	logBuf := logs.NewBuffer(logs.DefaultMaxLines, logs.DefaultMaxBytes)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-	path, handler := processv1connect.NewProcessHandler(&processService{})
+	mux.HandleFunc("GET /logs", logs.NewHandler(logBuf))
+	path, handler := processv1connect.NewProcessHandler(&processService{logs: logBuf})
 	mux.Handle(path, handler)
 	return h2c.NewHandler(mux, &http2.Server{})
 }

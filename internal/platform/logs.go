@@ -15,109 +15,32 @@
 package platform
 
 import (
-	"errors"
 	"net/http"
-	"strconv"
-	"strings"
+
+	"github.com/actordock/actordock/internal/logs"
 )
 
-const (
-	maxLogsV2Limit  = 1000
-	maxLogSearchLen = 256
-)
+type sandboxLogResponse = logs.LineEntry
+type sandboxLogEntryResponse = logs.Entry
 
-var errInvalidLogsQuery = errors.New("invalid logs query")
-
-type sandboxLogResponse struct {
-	Timestamp string `json:"timestamp"`
-	Line      string `json:"line"`
-}
-
-type sandboxLogEntryResponse struct {
-	Timestamp string            `json:"timestamp"`
-	Message   string            `json:"message"`
-	Level     string            `json:"level"`
-	Fields    map[string]string `json:"fields"`
-}
-
-type sandboxLogsResponse struct {
-	Logs       []sandboxLogResponse      `json:"logs"`
-	LogEntries []sandboxLogEntryResponse `json:"logEntries"`
-}
-
-type sandboxLogsV2Response struct {
-	Logs []sandboxLogEntryResponse `json:"logs"`
-}
+type sandboxLogsResponse = logs.V1Response
+type sandboxLogsV2Response = logs.V2Response
 
 func buildStubSandboxLogs() sandboxLogsResponse {
-	return sandboxLogsResponse{
-		Logs:       []sandboxLogResponse{},
-		LogEntries: []sandboxLogEntryResponse{},
+	return logs.V1Response{
+		Logs:       []logs.LineEntry{},
+		LogEntries: []logs.Entry{},
 	}
 }
 
 func buildStubSandboxLogsV2() sandboxLogsV2Response {
-	return sandboxLogsV2Response{
-		Logs: []sandboxLogEntryResponse{},
-	}
+	return logs.V2Response{Logs: []logs.Entry{}}
 }
 
 func parseLogsV1Query(r *http.Request) error {
-	q := r.URL.Query()
-	if raw := strings.TrimSpace(q.Get("start")); raw != "" {
-		v, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || v < 0 {
-			return errInvalidLogsQuery
-		}
-	}
-	if err := parseLogsLimit(q.Get("limit"), 0); err != nil {
-		return err
-	}
-	return nil
+	return logs.ValidateV1Query(r)
 }
 
 func parseLogsV2Query(r *http.Request) error {
-	q := r.URL.Query()
-	if raw := strings.TrimSpace(q.Get("cursor")); raw != "" {
-		v, err := strconv.ParseInt(raw, 10, 64)
-		if err != nil || v < 0 {
-			return errInvalidLogsQuery
-		}
-	}
-	if err := parseLogsLimit(q.Get("limit"), maxLogsV2Limit); err != nil {
-		return err
-	}
-	if raw := strings.TrimSpace(q.Get("direction")); raw != "" {
-		switch raw {
-		case "forward", "backward":
-		default:
-			return errInvalidLogsQuery
-		}
-	}
-	if raw := strings.TrimSpace(q.Get("level")); raw != "" {
-		switch raw {
-		case "debug", "info", "warn", "error":
-		default:
-			return errInvalidLogsQuery
-		}
-	}
-	if search := q.Get("search"); len(search) > maxLogSearchLen {
-		return errInvalidLogsQuery
-	}
-	return nil
-}
-
-func parseLogsLimit(raw string, maxLimit int) error {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	v, err := strconv.ParseInt(raw, 10, 32)
-	if err != nil || v < 0 {
-		return errInvalidLogsQuery
-	}
-	if maxLimit > 0 && int(v) > maxLimit {
-		return errInvalidLogsQuery
-	}
-	return nil
+	return logs.ValidateV2Query(r)
 }

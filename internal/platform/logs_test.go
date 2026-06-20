@@ -20,6 +20,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/actordock/actordock/internal/logs"
 )
 
 func TestParseLogsV1Query(t *testing.T) {
@@ -62,7 +64,7 @@ func TestParseLogsV2Query(t *testing.T) {
 		{"limit=1001", false},
 		{"direction=up", false},
 		{"level=trace", false},
-		{"search=" + strings.Repeat("a", maxLogSearchLen+1), false},
+		{"search=" + strings.Repeat("a", logs.MaxLogSearchLen+1), false},
 	}
 	for _, tc := range cases {
 		req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes/sb-1/logs?"+tc.query, nil)

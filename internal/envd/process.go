@@ -24,11 +24,13 @@ import (
 	"os/exec"
 
 	"connectrpc.com/connect"
+	"github.com/actordock/actordock/internal/logs"
 	processv1 "github.com/actordock/actordock/pkg/envd/process"
 )
 
 type processService struct {
 	logger *slog.Logger
+	logs   *logs.Buffer
 }
 
 func (s *processService) List(
@@ -84,6 +86,14 @@ func (s *processService) Start(
 	}
 
 	runErr := cmd.Wait()
+	if s.logs != nil {
+		if stdout.Len() > 0 {
+			s.logs.AppendOutput("stdout", stdout.Bytes())
+		}
+		if stderr.Len() > 0 {
+			s.logs.AppendOutput("stderr", stderr.Bytes())
+		}
+	}
 	if stdout.Len() > 0 {
 		if err := stream.Send(dataResponse(stdout.Bytes(), true)); err != nil {
 			return err

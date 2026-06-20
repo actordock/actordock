@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/actordock/actordock/internal/logs"
 	"github.com/actordock/actordock/pkg/envd/process/processv1connect"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -52,8 +53,11 @@ func Run(ctx context.Context, opts Options) error {
 		w.WriteHeader(http.StatusNoContent)
 	})
 
+	logBuf := logs.NewBuffer(logs.DefaultMaxLines, logs.DefaultMaxBytes)
+	mux.HandleFunc("GET /logs", logs.NewHandler(logBuf))
+
 	processPath, processHandler := processv1connect.NewProcessHandler(
-		&processService{logger: opts.Logger},
+		&processService{logger: opts.Logger, logs: logBuf},
 		connect.WithCompressMinBytes(1024),
 	)
 	mux.Handle(processPath, processHandler)
