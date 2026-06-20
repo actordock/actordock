@@ -1,8 +1,8 @@
 # actordock
 
-**Pod-scale density for agent sandboxes.** Multiplex agents onto shared workers; idle sessions suspend to zero and wake on demand.
+**Hundreds of agent sandboxes. A handful of Pods.** Actordock ships Agent Substrate worker multiplexing behind an E2B-compatible API—gVisor isolation, sub-second suspend/resume, RAM and filesystem snapshots on idle, 30×+ session oversubscription on warm Workers. Point the E2B SDK at your cluster; no code changes.
 
-Kubernetes-native. Self-hosted. One command to deploy. E2B SDK compatible—point it at your endpoint.
+Self-hosted. Kubernetes-native. One command to deploy.
 
 ```bash
 ./hack/install-local.sh
