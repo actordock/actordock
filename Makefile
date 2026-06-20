@@ -53,6 +53,11 @@ fmt:
 	@gofmt -w .
 
 verify-fmt:
-	@test -z "$$(gofmt -l .)"
+	@files=$$(gofmt -l .); \
+	if [ -n "$$files" ]; then \
+		echo "gofmt needed (run: make fmt):"; \
+		echo "$$files"; \
+		exit 1; \
+	fi
 
 verify: verify-fmt vet test

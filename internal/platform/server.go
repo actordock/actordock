@@ -207,11 +207,11 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	now := s.nowFunc()
 	expiresAt := store.ExpiresAt(now, timeoutSeconds)
 	if err := s.store.Put(ctx, store.Sandbox{
-		SandboxID: actorID,
-		ActorID:   actorID,
-		Template:  req.TemplateID,
-		CreatedAt: now,
-		ExpiresAt: expiresAt,
+		SandboxID:  actorID,
+		ActorID:    actorID,
+		Template:   req.TemplateID,
+		CreatedAt:  now,
+		ExpiresAt:  expiresAt,
 		OnTimeout:  onTimeout,
 		AutoResume: autoResume,
 		Status:     store.StatusRunning,

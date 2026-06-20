@@ -32,8 +32,14 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Verify (fmt, vet, test)
-        run: make verify
+      - name: Verify formatting (gofmt)
+        run: make verify-fmt
+
+      - name: Vet
+        run: make vet
+
+      - name: Test
+        run: make test
 
       - name: Build binaries
         run: make build
