@@ -1,4 +1,4 @@
-# Quickstart (v0.0.6)
+# Quickstart (v0.0.7)
 
 Run the E2B SDK against a local Actordock cluster on Kind.
 
@@ -130,4 +130,4 @@ cd e2e && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 - [Architecture](../architecture.md)
 - [Roadmap](../roadmap.md)
-- [v0.0.6 release notes](../releases/v0.0.6.md)
+- [v0.0.7 release notes](../releases/v0.0.7.md)
