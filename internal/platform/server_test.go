@@ -173,6 +173,14 @@ func (f *fakeStore) GetSnapshot(_ context.Context, snapshotID string) (store.Sna
 	return snap, nil
 }
 
+func (f *fakeStore) ListSnapshots(_ context.Context) ([]store.Snapshot, error) {
+	out := make([]store.Snapshot, 0, len(f.snapshots))
+	for _, snap := range f.snapshots {
+		out = append(out, snap)
+	}
+	return out, nil
+}
+
 func TestHealth(t *testing.T) {
 	t.Parallel()
 	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
@@ -1857,6 +1865,163 @@ func TestCreateSandboxSnapshotInvalidState(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestListSnapshotsEmpty(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodGet, "/snapshots", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp []snapshotInfoResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 0 {
+		t.Fatalf("resp = %+v, want empty", resp)
+	}
+}
+
+func TestListSnapshotsAfterCreate(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Status: store.StatusRunning}
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
+
+	createReq := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/snapshots", bytes.NewReader([]byte(`{}`)))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-API-KEY", "dev")
+	createRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/snapshots", nil)
+	listReq.Header.Set("X-API-KEY", "dev")
+	listRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listRec.Code, listRec.Body.String())
+	}
+
+	var resp []snapshotInfoResponse
+	if err := json.NewDecoder(listRec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 1 || resp[0].SnapshotID == "" || len(resp[0].Names) != 1 {
+		t.Fatalf("resp = %+v", resp)
+	}
+}
+
+func TestListSnapshotsFilterBySandboxID(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.snapshots["snap-a"] = store.Snapshot{
+		SnapshotID: "snap-a:default",
+		Names:      []string{"snap-a:default"},
+		SandboxID:  "sb-1",
+		CreatedAt:  now,
+	}
+	st.snapshots["snap-b"] = store.Snapshot{
+		SnapshotID: "snap-b:default",
+		Names:      []string{"snap-b:default"},
+		SandboxID:  "sb-2",
+		CreatedAt:  now.Add(time.Minute),
+	}
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/snapshots?sandboxID=sb-1", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+
+	var resp []snapshotInfoResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp) != 1 || resp[0].SnapshotID != "snap-a:default" {
+		t.Fatalf("resp = %+v", resp)
+	}
+}
+
+func TestListSnapshotsPagination(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	st := newFakeStore()
+	st.snapshots["snap-old:default"] = store.Snapshot{
+		SnapshotID: "snap-old:default",
+		Names:      []string{"snap-old:default"},
+		SandboxID:  "sb-1",
+		CreatedAt:  now,
+	}
+	st.snapshots["snap-new:default"] = store.Snapshot{
+		SnapshotID: "snap-new:default",
+		Names:      []string{"snap-new:default"},
+		SandboxID:  "sb-1",
+		CreatedAt:  now.Add(time.Minute),
+	}
+	srv := NewServer(testConfig(), &fakeActors{}, st, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/snapshots?limit=1", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	next := rec.Header().Get("X-Next-Token")
+	if next == "" {
+		t.Fatal("expected X-Next-Token header")
+	}
+
+	var page1 []snapshotInfoResponse
+	if err := json.NewDecoder(rec.Body).Decode(&page1); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(page1) != 1 || page1[0].SnapshotID != "snap-new:default" {
+		t.Fatalf("page1 = %+v", page1)
+	}
+
+	req2 := httptest.NewRequest(http.MethodGet, "/snapshots?limit=1&nextToken="+next, nil)
+	req2.Header.Set("X-API-KEY", "dev")
+	rec2 := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec2.Code, rec2.Body.String())
+	}
+	if rec2.Header().Get("X-Next-Token") != "" {
+		t.Fatalf("unexpected next token on last page")
+	}
+
+	var page2 []snapshotInfoResponse
+	if err := json.NewDecoder(rec2.Body).Decode(&page2); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(page2) != 1 || page2[0].SnapshotID != "snap-old:default" {
+		t.Fatalf("page2 = %+v", page2)
+	}
+}
+
+func TestListSnapshotsInvalidLimit(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodGet, "/snapshots?limit=0", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
 

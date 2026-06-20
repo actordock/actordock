@@ -57,6 +57,7 @@ type sandboxStore interface {
 type snapshotStore interface {
 	PutSnapshot(ctx context.Context, snap store.Snapshot) error
 	GetSnapshot(ctx context.Context, snapshotID string) (store.Snapshot, error)
+	ListSnapshots(ctx context.Context) ([]store.Snapshot, error)
 }
 
 type Server struct {
@@ -100,6 +101,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sandboxes/{id}/connect", s.requireAPIKey(http.HandlerFunc(s.handleConnectSandbox)))
 	mux.Handle("PUT /sandboxes/{id}/network", s.requireAPIKey(http.HandlerFunc(s.handlePutSandboxNetwork)))
 	mux.Handle("POST /sandboxes/{id}/snapshots", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandboxSnapshot)))
+	mux.Handle("GET /snapshots", s.requireAPIKey(http.HandlerFunc(s.handleListSnapshots)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
 }
