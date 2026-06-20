@@ -31,17 +31,17 @@ import (
 )
 
 type fakeActors struct {
-	lastActorID    string
-	lastDeletedID  string
-	lastSuspended  string
-	lastResumed    string
-	createErr      error
-	deleteErr      error
-	suspendErr     error
-	resumeErr      error
-	getErr         error
-	actorStatuses  map[string]ateapipb.Actor_Status
-	defaultStatus  ateapipb.Actor_Status
+	lastActorID   string
+	lastDeletedID string
+	lastSuspended string
+	lastResumed   string
+	createErr     error
+	deleteErr     error
+	suspendErr    error
+	resumeErr     error
+	getErr        error
+	actorStatuses map[string]ateapipb.Actor_Status
+	defaultStatus ateapipb.Actor_Status
 }
 
 func (f *fakeActors) CreateAndResumeSandbox(_ context.Context, actorID, _, _ string) error {

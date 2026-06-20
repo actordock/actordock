@@ -61,8 +61,8 @@ func (f *fakeStore) Delete(_ context.Context, sandboxID string) error {
 }
 
 type fakeActors struct {
-	suspended []string
-	deleted   []string
+	suspended  []string
+	deleted    []string
 	suspendErr error
 	err        error
 }
