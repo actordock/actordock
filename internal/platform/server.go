@@ -77,6 +77,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.Handle("GET /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleListSandboxes)))
 	mux.Handle("GET /v2/sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleListSandboxes)))
+	mux.Handle("GET /sandboxes/metrics", s.requireAPIKey(http.HandlerFunc(s.handleListSandboxMetrics)))
+	mux.Handle("GET /sandboxes/{id}/metrics", s.requireAPIKey(http.HandlerFunc(s.handleGetSandboxMetrics)))
 	mux.Handle("GET /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleGetSandbox)))
 	mux.Handle("POST /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandbox)))
 	mux.Handle("POST /sandboxes/{id}/timeout", s.requireAPIKey(http.HandlerFunc(s.handleSetSandboxTimeout)))
@@ -465,6 +467,50 @@ func (s *Server) handleRefreshSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleListSandboxMetrics(w http.ResponseWriter, r *http.Request) {
+	ids, err := parseSandboxIDs(r)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid sandbox_ids")
+		return
+	}
+
+	now := s.nowFunc()
+	stub := buildStubSandboxMetric(now)
+	sandboxes := make(map[string]sandboxMetricResponse, len(ids))
+	for _, id := range ids {
+		sandboxes[id] = stub
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(sandboxesWithMetricsResponse{Sandboxes: sandboxes})
+}
+
+func (s *Server) handleGetSandboxMetrics(w http.ResponseWriter, r *http.Request) {
+	sandboxID := r.PathValue("id")
+	if sandboxID == "" {
+		writeAPIError(w, http.StatusBadRequest, "sandbox id is required")
+		return
+	}
+	if err := parseMetricsIntervalQuery(r); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid metrics query")
+		return
+	}
+
+	_, err := s.store.Get(r.Context(), sandboxID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeAPIError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("get sandbox metrics", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to get sandbox metrics")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte("[]"))
 }
 
 func (s *Server) handleGetSandbox(w http.ResponseWriter, r *http.Request) {

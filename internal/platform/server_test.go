@@ -557,6 +557,98 @@ func TestRefreshSandboxInvalidDuration(t *testing.T) {
 	}
 }
 
+func TestListSandboxMetrics(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 6, 20, 12, 0, 0, 0, time.UTC)
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/metrics?sandbox_ids=sb-1,sb-2", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxesWithMetricsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Sandboxes) != 2 {
+		t.Fatalf("sandboxes len = %d, want 2", len(resp.Sandboxes))
+	}
+	for _, id := range []string{"sb-1", "sb-2"} {
+		m, ok := resp.Sandboxes[id]
+		if !ok {
+			t.Fatalf("missing sandbox %q", id)
+		}
+		if m.TimestampUnix != now.Unix() || m.CPUCount != defaultCPUCount || m.CPUUsedPct != 0 {
+			t.Fatalf("metric for %q = %+v", id, m)
+		}
+	}
+}
+
+func TestListSandboxMetricsMissingIDs(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/metrics", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestGetSandboxMetrics(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/metrics?start=0&end=100", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != "[]" {
+		t.Fatalf("body = %q, want []", rec.Body.String())
+	}
+}
+
+func TestGetSandboxMetricsNotFound(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/missing/metrics", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestGetSandboxMetricsInvalidQuery(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/metrics?start=bad", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
 func TestCreateSandboxUnauthorized(t *testing.T) {
 	t.Parallel()
 	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
