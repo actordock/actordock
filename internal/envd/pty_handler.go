@@ -26,8 +26,8 @@ import (
 	"syscall"
 
 	"connectrpc.com/connect"
-	"github.com/creack/pty"
 	processv1 "github.com/actordock/actordock/pkg/envd/process"
+	"github.com/creack/pty"
 )
 
 const (
