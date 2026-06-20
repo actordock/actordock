@@ -189,6 +189,7 @@ Each release closes **new operations with full fields** and any **backfill** row
 | [v0.0.8](v0.0.8.md) | +4 | `network`, connect schemas | 32% | ~48% |
 | [v0.0.9](v0.0.9.md) | +4 | `volumeMounts` on create/list | 39% | ~52% |
 | [v0.0.10](v0.0.10.md) | +5 | `alias`, template GET schemas | 48% | ~56% |
+| [v0.0.11](v0.0.11.md) | — (optional UI, not E2B REST) | — | 48% | ~56% |
 | [v0.1.0](v0.1.0.md) | +7 | sandbox create/get/list **done**; auth schemas | **61%** | **≥60%** |
 
 ## Release gate (every v0.0.x PR)
