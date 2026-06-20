@@ -118,6 +118,7 @@ func (s *Server) handleHealthOrProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
+	// Proxies all envd traffic including Connect RPC (e.g. /process.Process/Connect).
 	sandboxID, err := parseSandboxID(r, s.cfg.Domain, s.cfg.EnvdPort)
 	if err != nil {
 		writeAPIError(w, http.StatusBadRequest, "sandbox id not found in request")
@@ -151,6 +152,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.Transport = s.envdTransport
+	proxy.FlushInterval = 100 * time.Millisecond
 	proxy.ErrorHandler = func(w http.ResponseWriter, req *http.Request, err error) {
 		s.logger.Error("proxy to envd", "sandbox_id", sandboxID, "backend", backend, "err", err)
 		writeAPIError(w, http.StatusBadGateway, "failed to reach sandbox")
