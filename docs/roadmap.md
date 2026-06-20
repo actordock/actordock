@@ -29,10 +29,11 @@ Each release adds one capability layer. You should be able to demo the **Target*
 | [v0.0.3](releases/v0.0.3.md) | **Manual TTL** | Set/extend timeout; metadata in Redis | (in 7) |
 | [v0.0.4](releases/v0.0.4.md) | **Auto cleanup** | Expired sandboxes killed by scheduler | (in 7) |
 | [v0.0.5](releases/v0.0.5.md) | **Idle suspend** | Pause on timeout; command wakes sandbox | 9 |
-| [v0.0.6](releases/v0.0.6.md) | **Observability** | Logs, metrics, timeout refresh | 14 |
-| [v0.0.7](releases/v0.0.7.md) | **Sandbox extras** | Connect, network, snapshots | 18 |
-| [v0.0.8](releases/v0.0.8.md) | **Volumes** | Volume CRUD (Platform) | 22 |
-| [v0.0.9](releases/v0.0.9.md) | **Templates (read)** | List/get template, alias, tags | 27 |
+| [v0.0.6](releases/v0.0.6.md) | **Observability** | Logs, metrics, timeout refresh (stub OK) | 14 |
+| [v0.0.7](releases/v0.0.7.md) | **Real telemetry** | Real logs + metrics from envd | 14 |
+| [v0.0.8](releases/v0.0.8.md) | **Sandbox extras** | Connect, network, snapshots | 18 |
+| [v0.0.9](releases/v0.0.9.md) | **Volumes** | Volume CRUD (Platform) | 22 |
+| [v0.0.10](releases/v0.0.10.md) | **Templates (read)** | List/get template, alias, tags | 27 |
 | [v0.1.0](releases/v0.1.0.md) | **Pilot + 60% REST** | Files, secure envd, Helm; full sandbox + auth fields | **34 ops, ≥60% fields** |
 
 \*v0.0.1–v0.0.4 cumulative count is measured at v0.0.4.
@@ -47,9 +48,10 @@ Each release adds one capability layer. You should be able to demo the **Target*
 | [v0.0.4](releases/v0.0.4.md) | released | Auto cleanup |
 | [v0.0.5](releases/v0.0.5.md) | released | Idle suspend |
 | [v0.0.6](releases/v0.0.6.md) | released | Observability |
-| [v0.0.7](releases/v0.0.7.md) | planned | Sandbox extras |
-| [v0.0.8](releases/v0.0.8.md) | planned | Volumes |
-| [v0.0.9](releases/v0.0.9.md) | planned | Templates (read) |
+| [v0.0.7](releases/v0.0.7.md) | planned | Real telemetry |
+| [v0.0.8](releases/v0.0.8.md) | planned | Sandbox extras |
+| [v0.0.9](releases/v0.0.9.md) | planned | Volumes |
+| [v0.0.10](releases/v0.0.10.md) | planned | Templates (read) |
 | [v0.1.0](releases/v0.1.0.md) | planned | Pilot + 60% REST |
 
 **Current focus:** [v0.0.7](releases/v0.0.7.md)

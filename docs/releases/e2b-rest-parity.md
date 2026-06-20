@@ -52,18 +52,18 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 13 | GET | `/sandboxes/{sandboxID}/metrics` | done (v0.0.6) |
 | 14 | POST | `/sandboxes/{sandboxID}/pause` | done (v0.0.5) |
 | 15 | POST | `/sandboxes/{sandboxID}/resume` | done (v0.0.5) |
-| 16 | POST | `/sandboxes/{sandboxID}/connect` | v0.0.7 |
+| 16 | POST | `/sandboxes/{sandboxID}/connect` | v0.0.8 |
 | 17 | POST | `/sandboxes/{sandboxID}/timeout` | done (v0.0.3) |
-| 18 | PUT | `/sandboxes/{sandboxID}/network` | v0.0.7 |
+| 18 | PUT | `/sandboxes/{sandboxID}/network` | v0.0.8 |
 | 19 | POST | `/sandboxes/{sandboxID}/refreshes` | done (v0.0.6) |
-| 20 | POST | `/sandboxes/{sandboxID}/snapshots` | v0.0.7 |
-| 21 | GET | `/snapshots` | v0.0.7 |
+| 20 | POST | `/sandboxes/{sandboxID}/snapshots` | v0.0.8 |
+| 21 | GET | `/snapshots` | v0.0.8 |
 | 22 | POST | `/v3/templates` | defer |
 | 23 | POST | `/v2/templates` | defer |
-| 24 | GET | `/templates/{templateID}/files/{hash}` | v0.0.9 |
-| 25 | GET | `/templates` | v0.0.9 |
+| 24 | GET | `/templates/{templateID}/files/{hash}` | v0.0.10 |
+| 25 | GET | `/templates` | v0.0.10 |
 | 26 | POST | `/templates` | v0.1.0 |
-| 27 | GET | `/templates/{templateID}` | v0.0.9 |
+| 27 | GET | `/templates/{templateID}` | v0.0.10 |
 | 28 | POST | `/templates/{templateID}` | defer |
 | 29 | DELETE | `/templates/{templateID}` | defer |
 | 30 | PATCH | `/templates/{templateID}` | v0.1.0 |
@@ -74,8 +74,8 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 35 | GET | `/templates/{templateID}/builds/{buildID}/logs` | defer |
 | 36 | POST | `/templates/tags` | defer |
 | 37 | DELETE | `/templates/tags` | defer |
-| 38 | GET | `/templates/{templateID}/tags` | v0.0.9 |
-| 39 | GET | `/templates/aliases/{alias}` | v0.0.9 |
+| 38 | GET | `/templates/{templateID}/tags` | v0.0.10 |
+| 39 | GET | `/templates/aliases/{alias}` | v0.0.10 |
 | 40 | GET | `/nodes` | defer |
 | 41 | GET | `/nodes/{nodeID}` | defer |
 | 42 | POST | `/nodes/{nodeID}` | defer |
@@ -89,10 +89,10 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 50 | POST | `/api-keys` | v0.1.0 |
 | 51 | PATCH | `/api-keys/{apiKeyID}` | defer |
 | 52 | DELETE | `/api-keys/{apiKeyID}` | defer |
-| 53 | GET | `/volumes` | v0.0.8 |
-| 54 | POST | `/volumes` | v0.0.8 |
-| 55 | GET | `/volumes/{volumeID}` | v0.0.8 |
-| 56 | DELETE | `/volumes/{volumeID}` | v0.0.8 |
+| 53 | GET | `/volumes` | v0.0.9 |
+| 54 | POST | `/volumes` | v0.0.9 |
+| 55 | GET | `/volumes/{volumeID}` | v0.0.9 |
+| 56 | DELETE | `/volumes/{volumeID}` | v0.0.9 |
 
 ## Field backfill — already shipped routes
 
@@ -105,9 +105,9 @@ These routes exist but are **`partial`** until all schema fields are wired:
 | `templateID`, `timeout` | done | v0.0.3 |
 | `secure` | partial (reject) | v0.1.0 (full secure path) |
 | `autoPause`, `autoResume`, `lifecycle` | done | v0.0.5 |
-| `network`, `allow_internet_access` | missing | v0.0.7 |
+| `network`, `allow_internet_access` | missing | v0.0.8 |
 | `metadata`, `envVars` | missing | v0.1.0 |
-| `volumeMounts` | missing | v0.0.8 |
+| `volumeMounts` | missing | v0.0.9 |
 | `mcp` | missing | v0.1.0 (accept + persist; no MCP server) |
 | Response: all 8 `Sandbox` fields | partial | v0.1.0 |
 
@@ -116,10 +116,10 @@ These routes exist but are **`partial`** until all schema fields are wired:
 | Field | Status | Complete in |
 |-------|--------|-------------|
 | Core 10 (id, state, times, resources, …) | done | v0.0.4 |
-| `alias`, `allowInternetAccess`, `domain` | partial | v0.0.9 / v0.1.0 |
+| `alias`, `allowInternetAccess`, `domain` | partial | v0.0.10 / v0.1.0 |
 | `envdAccessToken` | missing | v0.1.0 |
 | `lifecycle` | done | v0.0.5 |
-| `metadata`, `network`, `volumeMounts` | missing | v0.0.7–v0.1.0 |
+| `metadata`, `network`, `volumeMounts` | missing | v0.0.8–v0.1.0 |
 
 ### `GET /sandboxes`, `GET /v2/sandboxes` (`ListedSandbox` — 13 fields)
 
@@ -149,25 +149,25 @@ All 13 fields **done** in the release that completes list item schema — **v0.1
 
 | Field | Status |
 |-------|--------|
-| `sandboxes` map + all 9 `SandboxMetric` fields per entry | done (v0.0.6; stub zeros OK) |
+| `sandboxes` map + all 9 `SandboxMetric` fields per entry | done (v0.0.6); real values [v0.0.7](v0.0.7.md) |
 
 ### `GET /sandboxes/{id}/metrics`
 
 | Field | Status |
 |-------|--------|
-| `SandboxMetric[]` response (all 9 fields when non-empty) | done (v0.0.6; empty array OK) |
+| `SandboxMetric[]` response (all 9 fields when non-empty) | done (v0.0.6); real samples [v0.0.7](v0.0.7.md) |
 
 ### `GET /sandboxes/{id}/logs` (`SandboxLogs`)
 
 | Field | Status |
 |-------|--------|
-| `logs`, `logEntries` arrays + nested schema fields | done (v0.0.6; empty arrays OK) |
+| `logs`, `logEntries` arrays + nested schema fields | done (v0.0.6); real data [v0.0.7](v0.0.7.md) |
 
 ### `GET /v2/sandboxes/{id}/logs` (`SandboxLogsV2Response`)
 
 | Field | Status |
 |-------|--------|
-| `logs` array + nested `SandboxLogEntry` fields | done (v0.0.6; empty array OK) |
+| `logs` array + nested `SandboxLogEntry` fields | done (v0.0.6); real data [v0.0.7](v0.0.7.md) |
 
 ### `POST …/refreshes`
 
@@ -185,9 +185,10 @@ Each release closes **new operations with full fields** and any **backfill** row
 | v0.0.1–v0.0.4 | 7 (2 full, 5 partial) | — | 13% | ~20% |
 | [v0.0.5](v0.0.5.md) | +2 (pause, resume) | lifecycle on create/get | **16%** | **~28%** |
 | [v0.0.6](v0.0.6.md) | +5 | — | 25% | ~38% |
-| [v0.0.7](v0.0.7.md) | +4 | `network`, connect schemas | 32% | ~48% |
-| [v0.0.8](v0.0.8.md) | +4 | `volumeMounts` on create/list | 39% | ~52% |
-| [v0.0.9](v0.0.9.md) | +5 | `alias`, template GET schemas | 48% | ~56% |
+| [v0.0.7](v0.0.7.md) | — | observability real data | 25% | ~38% |
+| [v0.0.8](v0.0.8.md) | +4 | `network`, connect schemas | 32% | ~48% |
+| [v0.0.9](v0.0.9.md) | +4 | `volumeMounts` on create/list | 39% | ~52% |
+| [v0.0.10](v0.0.10.md) | +5 | `alias`, template GET schemas | 48% | ~56% |
 | [v0.1.0](v0.1.0.md) | +7 | sandbox create/get/list **done**; auth schemas | **61%** | **≥60%** |
 
 ## Release gate (every v0.0.x PR)
