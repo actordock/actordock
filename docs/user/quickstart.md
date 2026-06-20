@@ -1,4 +1,4 @@
-# Quickstart (v0.0.7)
+# Quickstart (v0.0.8)
 
 Run the E2B SDK against a local Actordock cluster on Kind.
 
@@ -41,7 +41,7 @@ Run the E2E demo (port-forward + E2B Python SDK):
 ./hack/verify-local.sh
 ```
 
-Covers commands, visibility, timeout metadata, scheduler auto-cleanup, idle suspend (pause lifecycle + router auto-resume), and observability routes (metrics, logs, refreshes).
+Covers commands, visibility, timeout metadata, scheduler auto-cleanup, idle suspend (pause lifecycle + router auto-resume), observability routes (metrics, logs, refreshes), and sandbox extras (connect PTY, network policy, snapshots).
 
 ### Timeout
 
@@ -109,6 +109,70 @@ finally:
     sbx.kill()
 ```
 
+### Connect (interactive PTY)
+
+Attach to a running PTY through Router → envd `process.Connect` (bidirectional stream):
+
+```python
+from e2b import Sandbox
+from e2b.sandbox.commands.command_handle import PtySize
+
+sbx = Sandbox.create(template="base", secure=False, timeout=120)
+try:
+    terminal = sbx.pty.create(PtySize(cols=80, rows=24))
+    sbx.pty.send_stdin(terminal.pid, b"echo hello\n")
+    terminal.disconnect()
+    handle = sbx.pty.connect(terminal.pid)
+    sbx.pty.send_stdin(terminal.pid, b"exit\n")
+    handle.wait()
+finally:
+    sbx.kill()
+```
+
+Platform `POST /sandboxes/{id}/connect` resumes a paused sandbox and returns a usable router domain.
+
+### Network policy
+
+Persist network config on Platform; Router enforces `allow_internet_access` on egress proxy traffic:
+
+```python
+import httpx
+import os
+from e2b import Sandbox
+
+api = os.environ["E2B_API_URL"].rstrip("/")
+headers = {"X-API-KEY": os.environ["E2B_API_KEY"], "Content-Type": "application/json"}
+
+sbx = Sandbox.create(template="base", secure=False, timeout=120)
+try:
+    httpx.put(
+        f"{api}/sandboxes/{sbx.sandbox_id}/network",
+        headers=headers,
+        json={"allow_internet_access": False},
+    ).raise_for_status()
+    detail = httpx.get(f"{api}/sandboxes/{sbx.sandbox_id}", headers=headers).json()
+    assert detail["allowInternetAccess"] is False
+finally:
+    sbx.kill()
+```
+
+### Snapshots
+
+Create a Substrate checkpoint and list metadata from Redis:
+
+```python
+from e2b import Sandbox
+
+sbx = Sandbox.create(template="base", secure=False, timeout=120)
+try:
+    sbx.commands.run("echo snapshot")
+    snap = sbx.create_snapshot()
+    listed = Sandbox.list_snapshots(sandbox_id=sbx.sandbox_id).next_items()
+    assert any(s.snapshot_id == snap.snapshot_id for s in listed)
+finally:
+    sbx.kill()
+```
+
 Or manually:
 
 ```bash
@@ -130,4 +194,4 @@ cd e2e && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 - [Architecture](../architecture.md)
 - [Roadmap](../roadmap.md)
-- [v0.0.7 release notes](../releases/v0.0.7.md)
+- [v0.0.8 release notes](../releases/v0.0.8.md)

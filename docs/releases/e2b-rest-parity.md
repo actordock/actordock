@@ -19,8 +19,8 @@ Count Platform REST only. envd RPC (commands, filesystem) is separate but requir
 
 | Metric | v0.0.7 (now) | v0.1.0 target |
 |--------|--------------|---------------|
-| Operations | 14 / 56 (**25%**) | **≥34 / 56 (61%)** |
-| Fields (full-field ops only) | ~84 / ~220 (**~38%**) | **≥132 / ~220 (60%)** |
+| Operations | 18 / 56 (**32%**) | **≥34 / 56 (61%)** |
+| Fields (full-field ops only) | ~105 / ~220 (**~48%**) | **≥132 / ~220 (60%)** |
 
 Field % = sum of fields in **fully implemented** operations ÷ total fields across all 56 operations.
 
@@ -52,12 +52,12 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 13 | GET | `/sandboxes/{sandboxID}/metrics` | done (v0.0.6) |
 | 14 | POST | `/sandboxes/{sandboxID}/pause` | done (v0.0.5) |
 | 15 | POST | `/sandboxes/{sandboxID}/resume` | done (v0.0.5) |
-| 16 | POST | `/sandboxes/{sandboxID}/connect` | v0.0.8 |
+| 16 | POST | `/sandboxes/{sandboxID}/connect` | done (v0.0.8) |
 | 17 | POST | `/sandboxes/{sandboxID}/timeout` | done (v0.0.3) |
-| 18 | PUT | `/sandboxes/{sandboxID}/network` | v0.0.8 |
+| 18 | PUT | `/sandboxes/{sandboxID}/network` | done (v0.0.8) |
 | 19 | POST | `/sandboxes/{sandboxID}/refreshes` | done (v0.0.6) |
-| 20 | POST | `/sandboxes/{sandboxID}/snapshots` | v0.0.8 |
-| 21 | GET | `/snapshots` | v0.0.8 |
+| 20 | POST | `/sandboxes/{sandboxID}/snapshots` | done (v0.0.8) |
+| 21 | GET | `/snapshots` | done (v0.0.8) |
 | 22 | POST | `/v3/templates` | defer |
 | 23 | POST | `/v2/templates` | defer |
 | 24 | GET | `/templates/{templateID}/files/{hash}` | v0.0.10 |
@@ -116,10 +116,11 @@ These routes exist but are **`partial`** until all schema fields are wired:
 | Field | Status | Complete in |
 |-------|--------|-------------|
 | Core 10 (id, state, times, resources, …) | done | v0.0.4 |
-| `alias`, `allowInternetAccess`, `domain` | partial | v0.0.10 / v0.1.0 |
+| `alias`, `domain` | partial | v0.0.10 / v0.1.0 |
+| `allowInternetAccess`, `network` | done | v0.0.8 |
 | `envdAccessToken` | missing | v0.1.0 |
 | `lifecycle` | done | v0.0.5 |
-| `metadata`, `network`, `volumeMounts` | missing | v0.0.8–v0.1.0 |
+| `metadata`, `volumeMounts` | missing | v0.0.9–v0.1.0 |
 
 ### `GET /sandboxes`, `GET /v2/sandboxes` (`ListedSandbox` — 13 fields)
 
