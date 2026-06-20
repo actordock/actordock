@@ -29,6 +29,7 @@ import (
 
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/envd"
+	"github.com/actordock/actordock/internal/logs"
 	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
@@ -526,7 +527,7 @@ func (s *Server) handleGetSandboxLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := s.store.Get(r.Context(), sandboxID)
+	sb, err := s.store.Get(r.Context(), sandboxID)
 	if errors.Is(err, store.ErrNotFound) {
 		writeAPIError(w, http.StatusNotFound, "sandbox not found")
 		return
@@ -537,8 +538,10 @@ func (s *Server) handleGetSandboxLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := logs.ToV1(s.fetchSandboxLogEntries(r.Context(), sb, r.URL.RawQuery))
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(buildStubSandboxLogs())
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleGetSandboxLogsV2(w http.ResponseWriter, r *http.Request) {
@@ -552,7 +555,7 @@ func (s *Server) handleGetSandboxLogsV2(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_, err := s.store.Get(r.Context(), sandboxID)
+	sb, err := s.store.Get(r.Context(), sandboxID)
 	if errors.Is(err, store.ErrNotFound) {
 		writeAPIError(w, http.StatusNotFound, "sandbox not found")
 		return
@@ -563,8 +566,10 @@ func (s *Server) handleGetSandboxLogsV2(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	resp := logs.ToV2(s.fetchSandboxLogEntries(r.Context(), sb, r.URL.RawQuery))
+
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(buildStubSandboxLogsV2())
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 func (s *Server) handleGetSandbox(w http.ResponseWriter, r *http.Request) {

@@ -25,10 +25,13 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/envd"
 	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/substrate"
+	processv1 "github.com/actordock/actordock/pkg/envd/process"
+	"github.com/actordock/actordock/pkg/envd/process/processv1connect"
 	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
 )
 
@@ -650,6 +653,60 @@ func TestGetSandboxMetricsInvalidQuery(t *testing.T) {
 	}
 }
 
+func TestGetSandboxLogsFromEnvd(t *testing.T) {
+	t.Parallel()
+	backend := testEnvdBackend(t)
+	seedEnvdLog(t, backend, "hello")
+
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/logs?start=0&limit=100", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxLogsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Logs) != 1 || resp.Logs[0].Line != "hello" {
+		t.Fatalf("logs = %+v, want hello line", resp.Logs)
+	}
+	if len(resp.LogEntries) != 1 || resp.LogEntries[0].Message != "hello" {
+		t.Fatalf("logEntries = %+v, want hello entry", resp.LogEntries)
+	}
+}
+
+func TestGetSandboxLogsEnvdUnreachable(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{backendErr: fmt.Errorf("no worker")}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/logs", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var resp sandboxLogsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Logs) != 0 || len(resp.LogEntries) != 0 {
+		t.Fatalf("expected empty logs, got %+v", resp)
+	}
+}
+
 func TestGetSandboxLogs(t *testing.T) {
 	t.Parallel()
 	now := time.Now().UTC()
@@ -702,6 +759,36 @@ func TestGetSandboxLogsInvalidQuery(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestGetSandboxLogsV2FromEnvd(t *testing.T) {
+	t.Parallel()
+	backend := testEnvdBackend(t)
+	seedEnvdLog(t, backend, "hello")
+
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{backendAddr: backend}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes/sb-1/logs?cursor=0&limit=50&direction=forward&level=info", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxLogsV2Response
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Logs) != 1 || resp.Logs[0].Message != "hello" {
+		t.Fatalf("logs = %+v, want hello entry", resp.Logs)
+	}
+	if resp.Logs[0].Level != "info" || resp.Logs[0].Fields["stream"] != "stdout" {
+		t.Fatalf("entry = %+v", resp.Logs[0])
 	}
 }
 
@@ -1296,4 +1383,23 @@ func testConfig() config.Platform {
 func testEnvdBackend(t *testing.T) string {
 	t.Helper()
 	return envd.StartStubTestBackend(t)
+}
+
+func seedEnvdLog(t *testing.T, backend, message string) {
+	t.Helper()
+	client := processv1connect.NewProcessClient(envd.NewHTTPClient(), "http://"+backend)
+	stream, err := client.Start(context.Background(), connect.NewRequest(&processv1.StartRequest{
+		Process: &processv1.ProcessConfig{
+			Cmd:  "/bin/sh",
+			Args: []string{"-c", "echo " + message},
+		},
+	}))
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	for stream.Receive() {
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream: %v", err)
+	}
 }

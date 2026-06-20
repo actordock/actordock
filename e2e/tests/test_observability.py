@@ -92,6 +92,7 @@ def test_per_sandbox_metrics_returns_200() -> None:
 def test_sandbox_logs_v1_returns_expected_keys() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
+        sbx.commands.run("echo hello")
         resp = httpx.get(
             f"{_api_url()}/sandboxes/{sbx.sandbox_id}/logs",
             params={"start": 0, "limit": 100},
@@ -104,6 +105,9 @@ def test_sandbox_logs_v1_returns_expected_keys() -> None:
         assert "logEntries" in body
         assert isinstance(body["logs"], list)
         assert isinstance(body["logEntries"], list)
+        lines = [e.get("line", "") for e in body["logs"]]
+        messages = [e.get("message", "") for e in body["logEntries"]]
+        assert any("hello" in text for text in lines + messages)
     finally:
         sbx.kill()
 
@@ -111,6 +115,7 @@ def test_sandbox_logs_v1_returns_expected_keys() -> None:
 def test_sandbox_logs_v2_returns_expected_keys() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
+        sbx.commands.run("echo hello")
         resp = httpx.get(
             f"{_api_url()}/v2/sandboxes/{sbx.sandbox_id}/logs",
             params={"cursor": 0, "limit": 50, "direction": "forward", "level": "info"},
@@ -121,6 +126,8 @@ def test_sandbox_logs_v2_returns_expected_keys() -> None:
         body = resp.json()
         assert "logs" in body
         assert isinstance(body["logs"], list)
+        assert any("hello" in e.get("message", "") for e in body["logs"])
+        assert any(e.get("level") == "info" for e in body["logs"])
     finally:
         sbx.kill()
 

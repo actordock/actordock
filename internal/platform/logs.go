@@ -15,9 +15,12 @@
 package platform
 
 import (
+	"context"
 	"net/http"
 
+	"github.com/actordock/actordock/internal/envd"
 	"github.com/actordock/actordock/internal/logs"
+	"github.com/actordock/actordock/internal/store"
 )
 
 type sandboxLogResponse = logs.LineEntry
@@ -26,21 +29,24 @@ type sandboxLogEntryResponse = logs.Entry
 type sandboxLogsResponse = logs.V1Response
 type sandboxLogsV2Response = logs.V2Response
 
-func buildStubSandboxLogs() sandboxLogsResponse {
-	return logs.V1Response{
-		Logs:       []logs.LineEntry{},
-		LogEntries: []logs.Entry{},
-	}
-}
-
-func buildStubSandboxLogsV2() sandboxLogsV2Response {
-	return logs.V2Response{Logs: []logs.Entry{}}
-}
-
 func parseLogsV1Query(r *http.Request) error {
 	return logs.ValidateV1Query(r)
 }
 
 func parseLogsV2Query(r *http.Request) error {
 	return logs.ValidateV2Query(r)
+}
+
+func (s *Server) fetchSandboxLogEntries(ctx context.Context, sb store.Sandbox, rawQuery string) []logs.Entry {
+	backend, err := s.actors.GetActorBackend(ctx, sb.ActorID, s.cfg.EnvdPort)
+	if err != nil {
+		s.logger.Warn("get sandbox logs backend", "sandbox_id", sb.SandboxID, "err", err)
+		return nil
+	}
+	entries, err := envd.FetchLogs(ctx, "http://"+backend, rawQuery)
+	if err != nil {
+		s.logger.Warn("fetch sandbox logs from envd", "sandbox_id", sb.SandboxID, "err", err)
+		return nil
+	}
+	return entries
 }

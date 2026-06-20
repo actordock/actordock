@@ -24,6 +24,11 @@ import (
 )
 
 func newH2CHTTPClient() *http.Client {
+	return NewHTTPClient()
+}
+
+// NewHTTPClient returns an HTTP client suitable for envd (h2c) backends.
+func NewHTTPClient() *http.Client {
 	return &http.Client{
 		Transport: &http2.Transport{
 			AllowHTTP: true,

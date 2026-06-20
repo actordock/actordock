@@ -46,6 +46,9 @@ type V2Response struct {
 
 // ToV1 converts structured entries to Platform v1 response fields.
 func ToV1(entries []Entry) V1Response {
+	if len(entries) == 0 {
+		return EmptyV1()
+	}
 	lines := make([]LineEntry, len(entries))
 	for i, e := range entries {
 		lines[i] = LineEntry{Timestamp: e.Timestamp, Line: e.Message}
@@ -55,5 +58,18 @@ func ToV1(entries []Entry) V1Response {
 
 // ToV2 converts structured entries to Platform v2 response fields.
 func ToV2(entries []Entry) V2Response {
+	if len(entries) == 0 {
+		return EmptyV2()
+	}
 	return V2Response{Logs: entries}
+}
+
+// EmptyV1 returns empty v1 log response slices (not nil).
+func EmptyV1() V1Response {
+	return V1Response{Logs: []LineEntry{}, LogEntries: []Entry{}}
+}
+
+// EmptyV2 returns empty v2 log response slices (not nil).
+func EmptyV2() V2Response {
+	return V2Response{Logs: []Entry{}}
 }

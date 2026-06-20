@@ -78,23 +78,23 @@ func TestParseLogsV2Query(t *testing.T) {
 	}
 }
 
-func TestBuildStubSandboxLogs(t *testing.T) {
+func TestEmptySandboxLogs(t *testing.T) {
 	t.Parallel()
 
-	v1 := buildStubSandboxLogs()
+	v1 := logs.EmptyV1()
 	if v1.Logs == nil || v1.LogEntries == nil {
-		t.Fatalf("stub v1 has nil slices: %+v", v1)
+		t.Fatalf("empty v1 has nil slices: %+v", v1)
 	}
 	if len(v1.Logs) != 0 || len(v1.LogEntries) != 0 {
-		t.Fatalf("stub v1 not empty: %+v", v1)
+		t.Fatalf("empty v1 not empty: %+v", v1)
 	}
 
-	v2 := buildStubSandboxLogsV2()
+	v2 := logs.EmptyV2()
 	if v2.Logs == nil {
-		t.Fatalf("stub v2 logs is nil")
+		t.Fatalf("empty v2 logs is nil")
 	}
 	if len(v2.Logs) != 0 {
-		t.Fatalf("stub v2 not empty: %+v", v2)
+		t.Fatalf("empty v2 not empty: %+v", v2)
 	}
 
 	b, err := json.Marshal(v1)
