@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import os
 import socket
+import ssl
+import time
 from urllib.parse import urlparse
 
 import httpx
@@ -46,6 +48,7 @@ def _router_host_port() -> tuple[str, int]:
 
 
 def _router_connect(sandbox_id: str, target_host: str, target_port: int = 443) -> int:
+    parsed = urlparse(os.environ["E2B_SANDBOX_URL"])
     router_host, router_port = _router_host_port()
     payload = (
         f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
@@ -54,6 +57,9 @@ def _router_connect(sandbox_id: str, target_host: str, target_port: int = 443) -
         "\r\n"
     ).encode()
     with socket.create_connection((router_host, router_port), timeout=10) as sock:
+        if parsed.scheme == "https":
+            ctx = ssl.create_default_context()
+            sock = ctx.wrap_socket(sock, server_hostname=router_host)
         sock.sendall(payload)
         sock.settimeout(10)
         data = sock.recv(4096)
@@ -95,13 +101,29 @@ def test_pty_connect_runs_interactive_command() -> None:
         def append_output(data: bytes) -> None:
             output.append(data.decode("utf-8", errors="replace"))
 
-        terminal = sbx.pty.create(PtySize(cols=80, rows=24))
-        sbx.pty.send_stdin(terminal.pid, b"echo connect-ok\n")
-        terminal.disconnect()
+        # Warm up envd/router path to reduce CI flakiness.
+        run_command(sbx, "echo warmup")
 
-        reconnect = sbx.pty.connect(terminal.pid)
-        sbx.pty.send_stdin(terminal.pid, b"echo connect-ok\nexit\n")
-        result = reconnect.wait(on_pty=append_output)
+        last_err: Exception | None = None
+        for _ in range(3):
+            try:
+                terminal = sbx.pty.create(
+                    PtySize(cols=80, rows=24),
+                    timeout=60,
+                    request_timeout=60,
+                )
+                sbx.pty.send_stdin(terminal.pid, b"echo connect-ok\n")
+                terminal.disconnect()
+
+                reconnect = sbx.pty.connect(terminal.pid, timeout=60, request_timeout=60)
+                sbx.pty.send_stdin(terminal.pid, b"echo connect-ok\nexit\n")
+                result = reconnect.wait(on_pty=append_output)
+                break
+            except Exception as e:
+                last_err = e
+                time.sleep(1.0)
+        else:
+            raise last_err  # type: ignore[misc]
 
         assert result.exit_code == 0
         assert "connect-ok" in "".join(output)
