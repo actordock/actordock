@@ -79,6 +79,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /v2/sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleListSandboxes)))
 	mux.Handle("GET /sandboxes/metrics", s.requireAPIKey(http.HandlerFunc(s.handleListSandboxMetrics)))
 	mux.Handle("GET /sandboxes/{id}/metrics", s.requireAPIKey(http.HandlerFunc(s.handleGetSandboxMetrics)))
+	mux.Handle("GET /sandboxes/{id}/logs", s.requireAPIKey(http.HandlerFunc(s.handleGetSandboxLogs)))
+	mux.Handle("GET /v2/sandboxes/{id}/logs", s.requireAPIKey(http.HandlerFunc(s.handleGetSandboxLogsV2)))
 	mux.Handle("GET /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleGetSandbox)))
 	mux.Handle("POST /sandboxes", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandbox)))
 	mux.Handle("POST /sandboxes/{id}/timeout", s.requireAPIKey(http.HandlerFunc(s.handleSetSandboxTimeout)))
@@ -511,6 +513,58 @@ func (s *Server) handleGetSandboxMetrics(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte("[]"))
+}
+
+func (s *Server) handleGetSandboxLogs(w http.ResponseWriter, r *http.Request) {
+	sandboxID := r.PathValue("id")
+	if sandboxID == "" {
+		writeAPIError(w, http.StatusBadRequest, "sandbox id is required")
+		return
+	}
+	if err := parseLogsV1Query(r); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid logs query")
+		return
+	}
+
+	_, err := s.store.Get(r.Context(), sandboxID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeAPIError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("get sandbox logs", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to get sandbox logs")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(buildStubSandboxLogs())
+}
+
+func (s *Server) handleGetSandboxLogsV2(w http.ResponseWriter, r *http.Request) {
+	sandboxID := r.PathValue("id")
+	if sandboxID == "" {
+		writeAPIError(w, http.StatusBadRequest, "sandbox id is required")
+		return
+	}
+	if err := parseLogsV2Query(r); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid logs query")
+		return
+	}
+
+	_, err := s.store.Get(r.Context(), sandboxID)
+	if errors.Is(err, store.ErrNotFound) {
+		writeAPIError(w, http.StatusNotFound, "sandbox not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("get sandbox logs v2", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to get sandbox logs")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(buildStubSandboxLogsV2())
 }
 
 func (s *Server) handleGetSandbox(w http.ResponseWriter, r *http.Request) {

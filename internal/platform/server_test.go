@@ -650,6 +650,116 @@ func TestGetSandboxMetricsInvalidQuery(t *testing.T) {
 	}
 }
 
+func TestGetSandboxLogs(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/logs?start=0&limit=100", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxLogsResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Logs == nil || resp.LogEntries == nil {
+		t.Fatalf("nil slices in response: %+v", resp)
+	}
+	if len(resp.Logs) != 0 || len(resp.LogEntries) != 0 {
+		t.Fatalf("expected empty logs, got %+v", resp)
+	}
+}
+
+func TestGetSandboxLogsNotFound(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/missing/logs", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestGetSandboxLogsInvalidQuery(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1/logs?start=bad", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestGetSandboxLogsV2(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes/sb-1/logs?cursor=0&limit=50&direction=forward&level=warn&search=test", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxLogsV2Response
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Logs == nil {
+		t.Fatalf("nil logs slice in response: %+v", resp)
+	}
+	if len(resp.Logs) != 0 {
+		t.Fatalf("expected empty logs, got %+v", resp)
+	}
+}
+
+func TestGetSandboxLogsV2NotFound(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes/missing/logs", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestGetSandboxLogsV2InvalidQuery(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/v2/sandboxes/sb-1/logs?limit=1001", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
 func TestCreateSandboxUnauthorized(t *testing.T) {
 	t.Parallel()
 	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
