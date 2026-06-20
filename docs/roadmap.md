@@ -45,14 +45,14 @@ Each release adds one capability layer. You should be able to demo the **Target*
 | [v0.0.2](releases/v0.0.2.md) | released | Visibility |
 | [v0.0.3](releases/v0.0.3.md) | released | Manual TTL |
 | [v0.0.4](releases/v0.0.4.md) | released | Auto cleanup |
-| [v0.0.5](releases/v0.0.5.md) | planned | Idle suspend |
+| [v0.0.5](releases/v0.0.5.md) | released | Idle suspend |
 | [v0.0.6](releases/v0.0.6.md) | planned | Observability |
 | [v0.0.7](releases/v0.0.7.md) | planned | Sandbox extras |
 | [v0.0.8](releases/v0.0.8.md) | planned | Volumes |
 | [v0.0.9](releases/v0.0.9.md) | planned | Templates (read) |
 | [v0.1.0](releases/v0.1.0.md) | planned | Pilot + 60% REST |
 
-**Current focus:** [v0.0.5](releases/v0.0.5.md)
+**Current focus:** [v0.0.6](releases/v0.0.6.md)
 
 ## Release doc template
 
