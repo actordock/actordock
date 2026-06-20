@@ -17,10 +17,7 @@
 from __future__ import annotations
 
 import os
-import socket
-import ssl
 import time
-from urllib.parse import urlparse
 
 import httpx
 from e2b import Sandbox, SandboxState
@@ -40,31 +37,29 @@ def _api_headers() -> dict[str, str]:
     }
 
 
-def _router_host_port() -> tuple[str, int]:
-    parsed = urlparse(os.environ["E2B_SANDBOX_URL"])
-    host = parsed.hostname or "localhost"
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    return host, port
+def _router_proxy_url() -> str:
+    return os.environ["E2B_SANDBOX_URL"].rstrip("/")
 
 
-def _router_connect(sandbox_id: str, target_host: str, target_port: int = 443) -> int:
-    parsed = urlparse(os.environ["E2B_SANDBOX_URL"])
-    router_host, router_port = _router_host_port()
-    payload = (
-        f"CONNECT {target_host}:{target_port} HTTP/1.1\r\n"
-        f"Host: {target_host}:{target_port}\r\n"
-        f"E2b-Sandbox-Id: {sandbox_id}\r\n"
-        "\r\n"
-    ).encode()
-    with socket.create_connection((router_host, router_port), timeout=10) as sock:
-        if parsed.scheme == "https":
-            ctx = ssl.create_default_context()
-            sock = ctx.wrap_socket(sock, server_hostname=router_host)
-        sock.sendall(payload)
-        sock.settimeout(10)
-        data = sock.recv(4096)
-    status_line = data.split(b"\r\n", 1)[0].decode("ascii", errors="replace")
-    return int(status_line.split(" ", 2)[1])
+def _router_egress_get(
+    sandbox_id: str,
+    target_url: str = "http://example.com/",
+) -> httpx.Response:
+    """Send an outbound HTTP request through the router egress proxy.
+
+    Matches router isEgressRequest (absolute http:// Request-URI) and the
+    unit-test path in internal/router/egress_test.go.
+    """
+    with httpx.Client(
+        proxy=_router_proxy_url(),
+        timeout=10.0,
+        trust_env=False,
+        follow_redirects=False,
+    ) as client:
+        return client.get(
+            target_url,
+            headers={"E2b-Sandbox-Id": sandbox_id},
+        )
 
 
 def test_connect_paused_sandbox_resumes() -> None:
@@ -153,7 +148,8 @@ def test_network_disable_blocks_router_egress() -> None:
         body = detail.json()
         assert body.get("allowInternetAccess") is False
 
-        assert _router_connect(sbx.sandbox_id, "example.com") == 403
+        resp = _router_egress_get(sbx.sandbox_id)
+        assert resp.status_code == 403, resp.text
     finally:
         sbx.kill()
 
@@ -171,8 +167,9 @@ def test_network_enabled_allows_router_egress() -> None:
         )
         assert put.status_code == 204
 
-        status = _router_connect(sbx.sandbox_id, "example.com")
-        assert status != 403
+        resp = _router_egress_get(sbx.sandbox_id)
+        # Policy must allow egress; 502 only means upstream unreachable in CI.
+        assert resp.status_code not in (403, 404), resp.text
     finally:
         sbx.kill()
 
