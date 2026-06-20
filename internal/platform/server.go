@@ -150,6 +150,7 @@ type resumeSandboxRequest struct {
 }
 
 const resumeDefaultTimeoutSeconds = 15
+const resumeReadyTimeout = 60 * time.Second
 
 type sandboxResponse struct {
 	ClientID        string `json:"clientID"`
@@ -331,6 +332,11 @@ func (s *Server) handleResumeSandbox(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.logger.Error("resume sandbox", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
+		return
+	}
+	if err := waitForActorRunning(ctx, s.actors, sb.ActorID, resumeReadyTimeout); err != nil {
+		s.logger.Error("wait for resumed sandbox", "sandbox_id", sandboxID, "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
 		return
 	}
@@ -577,6 +583,27 @@ func resolveResumeOnTimeout(currentOnTimeout string, req resumeSandboxRequest) (
 		return store.OnTimeoutPause, nil
 	}
 	return store.OnTimeoutKill, nil
+}
+
+func waitForActorRunning(ctx context.Context, actors sandboxClient, actorID string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		status, err := actors.GetActor(ctx, actorID)
+		if err != nil {
+			return err
+		}
+		if status == ateapipb.Actor_STATUS_RUNNING {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for actor %q to be running", actorID)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
 
 // Ensure substrate.Client satisfies sandboxClient.

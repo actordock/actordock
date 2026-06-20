@@ -29,6 +29,15 @@ PAUSE_TEST_TIMEOUT = 15
 PAUSE_TEST_WAIT = 22
 
 
+def _wait_until_running(sbx: Sandbox, timeout: float = 60.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if sbx.is_running():
+            return
+        time.sleep(0.5)
+    pytest.fail("sandbox did not become running in time")
+
+
 def test_pause_lifecycle_survives_timeout() -> None:
     sbx = Sandbox.create(
         template="base",
@@ -82,6 +91,7 @@ def test_explicit_pause_and_resume() -> None:
         assert body["sandboxID"] == sbx.sandbox_id
         assert body["templateID"] == "base"
 
+        _wait_until_running(sbx)
         result = sbx.commands.run("echo resumed")
         assert result.stdout == "resumed\n"
         assert sbx.get_info().state == SandboxState.RUNNING
