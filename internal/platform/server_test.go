@@ -1573,6 +1573,157 @@ func TestListSandboxesV2(t *testing.T) {
 	}
 }
 
+func TestPutSandboxNetworkRoundTrip(t *testing.T) {
+	t.Parallel()
+	createdAt := time.Date(2026, 6, 19, 10, 0, 0, 0, time.UTC)
+	expiresAt := createdAt.Add(120 * time.Second)
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		CreatedAt: createdAt,
+		ExpiresAt: expiresAt,
+		Status:    store.StatusRunning,
+	}
+	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, slog.Default())
+
+	putBody := []byte(`{
+		"allowOut":["1.1.1.1"],
+		"denyOut":["8.8.8.8"],
+		"allow_internet_access":false,
+		"rules":{"api.example.com":[{"transform":{"headers":{"X-Test":"1"}}}]}
+	}`)
+	putReq := httptest.NewRequest(http.MethodPut, "/sandboxes/sb-1/network", bytes.NewReader(putBody))
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.Header.Set("X-API-KEY", "dev")
+	putRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusNoContent {
+		t.Fatalf("PUT status = %d, body = %s", putRec.Code, putRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
+	getReq.Header.Set("X-API-KEY", "dev")
+	getRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, body = %s", getRec.Code, getRec.Body.String())
+	}
+
+	var resp sandboxDetailResponse
+	if err := json.NewDecoder(getRec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.AllowInternetAccess == nil || *resp.AllowInternetAccess {
+		t.Fatalf("allowInternetAccess = %v, want false", resp.AllowInternetAccess)
+	}
+	if resp.Network == nil {
+		t.Fatal("network is nil")
+	}
+	if len(resp.Network.AllowOut) != 1 || resp.Network.AllowOut[0] != "1.1.1.1" {
+		t.Fatalf("allowOut = %v", resp.Network.AllowOut)
+	}
+	if len(resp.Network.DenyOut) != 1 || resp.Network.DenyOut[0] != "8.8.8.8" {
+		t.Fatalf("denyOut = %v", resp.Network.DenyOut)
+	}
+	rules := resp.Network.Rules["api.example.com"]
+	if len(rules) != 1 || rules[0].Transform.Headers["X-Test"] != "1" {
+		t.Fatalf("rules = %+v", resp.Network.Rules)
+	}
+}
+
+func TestPutSandboxNetworkClearsExistingRules(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{
+		SandboxID: "sb-1",
+		ActorID:   "sb-1",
+		Template:  "base",
+		Status:    store.StatusRunning,
+		Network: &store.NetworkConfig{
+			AllowOut: []string{"1.1.1.1"},
+			DenyOut:  []string{"8.8.8.8"},
+		},
+		AllowInternetAccess: boolPtr(false),
+	}
+	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, slog.Default())
+
+	putReq := httptest.NewRequest(http.MethodPut, "/sandboxes/sb-1/network", bytes.NewReader([]byte(`{}`)))
+	putReq.Header.Set("Content-Type", "application/json")
+	putReq.Header.Set("X-API-KEY", "dev")
+	putRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(putRec, putReq)
+	if putRec.Code != http.StatusNoContent {
+		t.Fatalf("PUT status = %d, body = %s", putRec.Code, putRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
+	getReq.Header.Set("X-API-KEY", "dev")
+	getRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, body = %s", getRec.Code, getRec.Body.String())
+	}
+
+	var resp sandboxDetailResponse
+	if err := json.NewDecoder(getRec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.Network != nil {
+		t.Fatalf("network = %+v, want nil", resp.Network)
+	}
+	if resp.AllowInternetAccess != nil {
+		t.Fatalf("allowInternetAccess = %v, want null", resp.AllowInternetAccess)
+	}
+}
+
+func TestPutSandboxNetworkNotFound(t *testing.T) {
+	t.Parallel()
+	srv := NewServer(testConfig(), &fakeActors{}, newFakeStore(), slog.Default())
+	req := httptest.NewRequest(http.MethodPut, "/sandboxes/missing/network", bytes.NewReader([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestPutSandboxNetworkInvalidBody(t *testing.T) {
+	t.Parallel()
+	st := newFakeStore()
+	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Status: store.StatusRunning}
+	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, slog.Default())
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "invalid json", body: `{`},
+		{name: "allowOut type", body: `{"allowOut":"8.8.8.8"}`},
+		{name: "deny domain", body: `{"denyOut":["example.com"]}`},
+		{name: "missing transform", body: `{"rules":{"example.com":[{}]}}`},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			req := httptest.NewRequest(http.MethodPut, "/sandboxes/sb-1/network", bytes.NewReader([]byte(tc.body)))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-API-KEY", "dev")
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func boolPtr(v bool) *bool { return &v }
+
 func testConfig() config.Platform {
 	return config.Platform{
 		Server: config.Server{

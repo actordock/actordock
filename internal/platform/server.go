@@ -90,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sandboxes/{id}/pause", s.requireAPIKey(http.HandlerFunc(s.handlePauseSandbox)))
 	mux.Handle("POST /sandboxes/{id}/resume", s.requireAPIKey(http.HandlerFunc(s.handleResumeSandbox)))
 	mux.Handle("POST /sandboxes/{id}/connect", s.requireAPIKey(http.HandlerFunc(s.handleConnectSandbox)))
+	mux.Handle("PUT /sandboxes/{id}/network", s.requireAPIKey(http.HandlerFunc(s.handlePutSandboxNetwork)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
 }

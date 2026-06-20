@@ -34,18 +34,20 @@ type sandboxLifecycleResponse struct {
 }
 
 type sandboxDetailResponse struct {
-	ClientID    string                   `json:"clientID"`
-	CPUCount    int                      `json:"cpuCount"`
-	DiskSizeMB  int                      `json:"diskSizeMB"`
-	EndAt       string                   `json:"endAt"`
-	EnvdVersion string                   `json:"envdVersion"`
-	MemoryMB    int                      `json:"memoryMB"`
-	SandboxID   string                   `json:"sandboxID"`
-	StartedAt   string                   `json:"startedAt"`
-	State       string                   `json:"state"`
-	TemplateID  string                   `json:"templateID"`
-	Domain      string                   `json:"domain,omitempty"`
-	Lifecycle   sandboxLifecycleResponse `json:"lifecycle"`
+	ClientID            string                   `json:"clientID"`
+	CPUCount            int                      `json:"cpuCount"`
+	DiskSizeMB          int                      `json:"diskSizeMB"`
+	EndAt               string                   `json:"endAt"`
+	EnvdVersion         string                   `json:"envdVersion"`
+	MemoryMB            int                      `json:"memoryMB"`
+	SandboxID           string                   `json:"sandboxID"`
+	StartedAt           string                   `json:"startedAt"`
+	State               string                   `json:"state"`
+	TemplateID          string                   `json:"templateID"`
+	Domain              string                   `json:"domain,omitempty"`
+	AllowInternetAccess *bool                    `json:"allowInternetAccess"`
+	Network             *store.NetworkConfig     `json:"network,omitempty"`
+	Lifecycle           sandboxLifecycleResponse `json:"lifecycle"`
 }
 
 type listedSandboxResponse struct {
@@ -64,18 +66,20 @@ type listedSandboxResponse struct {
 
 func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string) sandboxDetailResponse {
 	return sandboxDetailResponse{
-		ClientID:    cfg.ClientID,
-		CPUCount:    defaultCPUCount,
-		DiskSizeMB:  defaultDiskSizeMB,
-		EndAt:       sandboxEndAt(cfg, sb),
-		EnvdVersion: cfg.EnvdVersion,
-		MemoryMB:    defaultMemoryMB,
-		SandboxID:   sb.SandboxID,
-		StartedAt:   sb.CreatedAt.UTC().Format(time.RFC3339),
-		State:       state,
-		TemplateID:  sb.Template,
-		Domain:      cfg.Domain,
-		Lifecycle:   buildSandboxLifecycle(sb),
+		ClientID:            cfg.ClientID,
+		CPUCount:            defaultCPUCount,
+		DiskSizeMB:          defaultDiskSizeMB,
+		EndAt:               sandboxEndAt(cfg, sb),
+		EnvdVersion:         cfg.EnvdVersion,
+		MemoryMB:            defaultMemoryMB,
+		SandboxID:           sb.SandboxID,
+		StartedAt:           sb.CreatedAt.UTC().Format(time.RFC3339),
+		State:               state,
+		TemplateID:          sb.Template,
+		Domain:              cfg.Domain,
+		AllowInternetAccess: sb.AllowInternetAccess,
+		Network:             sb.Network,
+		Lifecycle:           buildSandboxLifecycle(sb),
 	}
 }
 
