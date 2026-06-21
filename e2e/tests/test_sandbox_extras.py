@@ -25,6 +25,11 @@ from e2b.sandbox.commands.command_handle import PtySize
 
 from support.commands import run_command
 
+EXTERNAL_EGRESS_URL = "http://example.com/"
+EXTERNAL_EGRESS_MARKER = "Example Domain"
+SUCCESS_EGRESS_STATUSES = (200, 301, 302)
+INTERNAL_EGRESS_URL = "http://127.0.0.1:8081/health"
+
 
 def _api_url() -> str:
     return os.environ["E2B_API_URL"].rstrip("/")
@@ -41,25 +46,47 @@ def _router_proxy_url() -> str:
     return os.environ["E2B_SANDBOX_URL"].rstrip("/")
 
 
+def _put_network_policy(sandbox_id: str, *, allow_internet_access: bool) -> None:
+    resp = httpx.put(
+        f"{_api_url()}/sandboxes/{sandbox_id}/network",
+        headers=_api_headers(),
+        json={"allow_internet_access": allow_internet_access},
+        timeout=30.0,
+    )
+    assert resp.status_code == 204, resp.text
+
+
 def _router_egress_get(
     sandbox_id: str,
-    target_url: str = "http://example.com/",
+    target_url: str = EXTERNAL_EGRESS_URL,
+    *,
+    follow_redirects: bool = False,
+    max_attempts: int = 1,
+    retry_delay_sec: float = 1.0,
 ) -> httpx.Response:
     """Send an outbound HTTP request through the router egress proxy.
 
     Matches router isEgressRequest (absolute http:// Request-URI) and the
     unit-test path in internal/router/egress_test.go.
     """
-    with httpx.Client(
-        proxy=_router_proxy_url(),
-        timeout=10.0,
-        trust_env=False,
-        follow_redirects=False,
-    ) as client:
-        return client.get(
-            target_url,
-            headers={"E2b-Sandbox-Id": sandbox_id},
-        )
+    last_resp: httpx.Response | None = None
+    for attempt in range(max_attempts):
+        with httpx.Client(
+            proxy=_router_proxy_url(),
+            timeout=10.0,
+            trust_env=False,
+            follow_redirects=follow_redirects,
+        ) as client:
+            last_resp = client.get(
+                target_url,
+                headers={"E2b-Sandbox-Id": sandbox_id},
+            )
+        if last_resp.status_code in SUCCESS_EGRESS_STATUSES or last_resp.status_code == 403:
+            return last_resp
+        if attempt + 1 < max_attempts:
+            time.sleep(retry_delay_sec)
+    assert last_resp is not None
+    return last_resp
 
 
 def test_connect_paused_sandbox_resumes() -> None:
@@ -126,18 +153,12 @@ def test_pty_connect_runs_interactive_command() -> None:
         sbx.kill()
 
 
-def test_network_disable_blocks_router_egress() -> None:
+def test_network_toggle_controls_router_egress() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
         run_command(sbx, "echo network")
 
-        put = httpx.put(
-            f"{_api_url()}/sandboxes/{sbx.sandbox_id}/network",
-            headers=_api_headers(),
-            json={"allow_internet_access": False},
-            timeout=30.0,
-        )
-        assert put.status_code == 204
+        _put_network_policy(sbx.sandbox_id, allow_internet_access=False)
 
         detail = httpx.get(
             f"{_api_url()}/sandboxes/{sbx.sandbox_id}",
@@ -145,31 +166,34 @@ def test_network_disable_blocks_router_egress() -> None:
             timeout=30.0,
         )
         assert detail.status_code == 200
-        body = detail.json()
-        assert body.get("allowInternetAccess") is False
+        assert detail.json().get("allowInternetAccess") is False
 
-        resp = _router_egress_get(sbx.sandbox_id)
-        assert resp.status_code == 403, resp.text
+        blocked = _router_egress_get(sbx.sandbox_id, EXTERNAL_EGRESS_URL)
+        assert blocked.status_code == 403, blocked.text
+
+        _put_network_policy(sbx.sandbox_id, allow_internet_access=True)
+
+        allowed = _router_egress_get(
+            sbx.sandbox_id,
+            EXTERNAL_EGRESS_URL,
+            follow_redirects=True,
+            max_attempts=3,
+        )
+        assert allowed.status_code == 200, allowed.text
+        assert EXTERNAL_EGRESS_MARKER in allowed.text
     finally:
         sbx.kill()
 
 
-def test_network_enabled_allows_router_egress() -> None:
+def test_internal_egress_allowed_when_internet_disabled() -> None:
     sbx = Sandbox.create(template="base", secure=False, timeout=120)
     try:
         run_command(sbx, "echo network")
+        _put_network_policy(sbx.sandbox_id, allow_internet_access=False)
 
-        put = httpx.put(
-            f"{_api_url()}/sandboxes/{sbx.sandbox_id}/network",
-            headers=_api_headers(),
-            json={"allow_internet_access": True},
-            timeout=30.0,
-        )
-        assert put.status_code == 204
-
-        resp = _router_egress_get(sbx.sandbox_id)
-        # Policy must allow egress; 502 only means upstream unreachable in CI.
-        assert resp.status_code not in (403, 404), resp.text
+        resp = _router_egress_get(sbx.sandbox_id, INTERNAL_EGRESS_URL)
+        assert resp.status_code == 200, resp.text
+        assert resp.json().get("status") == "ok"
     finally:
         sbx.kill()
 
