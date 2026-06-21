@@ -56,7 +56,15 @@ Each release adds one capability layer. You should be able to demo the **Target*
 | [v0.0.11](releases/v0.0.11.md) | planned | Ops dashboard (optional) |
 | [v0.1.0](releases/v0.1.0.md) | planned | Pilot + 60% REST |
 
-**Current focus:** [v0.0.9](releases/v0.0.9.md)
+**Current focus:** [v0.0.10](releases/v0.0.10.md)
+
+## Backlog
+
+Work not scheduled for the current release. GitHub label: `backlog`.
+
+| Topic | Issues | Notes |
+|-------|--------|-------|
+| Volume runtime bind-mount | [#48](https://github.com/actordock/actordock/issues/48), [#49](https://github.com/actordock/actordock/issues/49) | Substrate per-actor bind mounts + actordock wiring; cross-sandbox file persistence |
 
 ## Release doc template
 
