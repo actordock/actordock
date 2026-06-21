@@ -44,11 +44,11 @@ def test_volume_crud_via_sdk() -> None:
         listed = Volume.list()
         assert name in {item.name for item in listed}
 
-        fetched = Volume.get(volume.volume_id)
+        fetched = Volume.get_info(volume.volume_id)
         assert fetched.name == name
         assert fetched.volume_id == volume.volume_id
     finally:
-        volume.delete()
+        Volume.destroy(volume.volume_id)
 
 
 def test_volume_invalid_name_400() -> None:
@@ -99,4 +99,4 @@ def test_volume_mounts_round_trip() -> None:
     finally:
         if sbx is not None:
             sbx.kill()
-        volume.delete()
+        Volume.destroy(volume.volume_id)
