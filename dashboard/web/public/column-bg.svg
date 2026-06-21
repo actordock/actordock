@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" fill="none" preserveAspectRatio="xMidYMid slice">
+  <g opacity="0.06" stroke="#8A8680" stroke-width="1">
+    <path d="M60 520V180"/>
+    <path d="M40 180h40"/>
+    <path d="M35 520h50"/>
+    <ellipse cx="60" cy="170" rx="22" ry="8"/>
+    <path d="M140 520V200"/>
+    <path d="M120 200h40"/>
+    <path d="M115 520h50"/>
+    <ellipse cx="140" cy="190" rx="22" ry="8"/>
+    <path d="M700 520V160"/>
+    <path d="M680 160h40"/>
+    <path d="M675 520h50"/>
+    <ellipse cx="700" cy="150" rx="22" ry="8"/>
+    <path d="M780 520V190"/>
+    <path d="M760 190h40"/>
+    <path d="M755 520h50"/>
+    <ellipse cx="780" cy="180" rx="22" ry="8"/>
+  </g>
+  <path opacity="0.04" d="M350 400c0-80 50-140 100-140s100 60 100 140" stroke="#8A8680" stroke-width="1.5" fill="none"/>
+  <path opacity="0.04" d="M380 260c20-30 40-40 70-40s50 10 70 40" stroke="#8A8680" stroke-width="1" fill="none"/>
+</svg>

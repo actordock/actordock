@@ -1,0 +1,46 @@
+:root {
+  /* Marble surfaces */
+  --marble-base: #f5f0e8;
+  --marble-card: #faf7f2;
+  --marble-shadow: #e8e2d8;
+  --marble-inset: #f0ebe3;
+
+  /* Typography */
+  --stone-ink: #2c2a26;
+  --stone-muted: #8a8680;
+  --stone-faint: #b5b0a8;
+
+  /* Bronze accents */
+  --bronze-accent: #b8956a;
+  --bronze-deep: #8a6f4a;
+  --bronze-light: #d4bc98;
+
+  /* State colors */
+  --laurel-ok: #6b7f5e;
+  --laurel-ok-bg: rgba(107, 127, 94, 0.1);
+  --amber-pause: #c4a574;
+  --amber-pause-bg: rgba(196, 165, 116, 0.12);
+  --terracotta-danger: #a65d4e;
+  --terracotta-danger-bg: rgba(166, 93, 78, 0.1);
+
+  /* Layout */
+  --nav-width: 240px;
+  --header-height: 52px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow-card: 0 1px 3px rgba(44, 42, 38, 0.06), 0 4px 12px rgba(44, 42, 38, 0.04);
+  --shadow-nav-active: inset 0 0 0 1px var(--marble-shadow), inset 2px 0 0 var(--bronze-accent);
+
+  /* Typography stacks */
+  --font-display: "Cinzel", "Playfair Display", Georgia, serif;
+  --font-body: "Inter", "Source Sans 3", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* Motion */
+  --transition-fast: 150ms ease;
+  --transition-shimmer: 800ms ease-in-out;
+}

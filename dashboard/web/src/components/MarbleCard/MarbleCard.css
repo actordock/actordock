@@ -1,0 +1,33 @@
+.marble-card {
+  background: var(--marble-card);
+  border: 1px solid var(--marble-shadow);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.marble-card__header {
+  padding: 14px 18px 0;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bronze-deep);
+}
+
+.marble-card__body {
+  padding: 16px 18px;
+}
+
+.marble-card__header + .marble-card__body {
+  padding-top: 10px;
+}
+
+.marble-card__footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--marble-shadow);
+  background: var(--marble-inset);
+  font-size: 12px;
+  color: var(--stone-muted);
+}
