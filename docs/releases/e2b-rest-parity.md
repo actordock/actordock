@@ -17,10 +17,10 @@ Count Platform REST only. envd RPC (commands, filesystem) is separate but requir
 
 ## Metrics
 
-| Metric | v0.0.9 (now) | v0.1.0 target |
-|--------|--------------|---------------|
-| Operations | 22 / 56 (**39%**) | **≥34 / 56 (61%)** |
-| Fields (full-field ops only) | ~115 / ~220 (**~52%**) | **≥132 / ~220 (60%)** |
+| Metric | v0.0.10 (now) | v0.1.0 target |
+|--------|---------------|---------------|
+| Operations | 27 / 56 (**48%**) | **≥34 / 56 (61%)** |
+| Fields (full-field ops only) | ~123 / ~220 (**~56%**) | **≥132 / ~220 (60%)** |
 
 Field % = sum of fields in **fully implemented** operations ÷ total fields across all 56 operations.
 
@@ -60,10 +60,10 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 21 | GET | `/snapshots` | done (v0.0.8) |
 | 22 | POST | `/v3/templates` | defer |
 | 23 | POST | `/v2/templates` | defer |
-| 24 | GET | `/templates/{templateID}/files/{hash}` | v0.0.10 |
-| 25 | GET | `/templates` | v0.0.10 |
+| 24 | GET | `/templates/{templateID}/files/{hash}` | done (v0.0.10 stub) |
+| 25 | GET | `/templates` | done (v0.0.10) |
 | 26 | POST | `/templates` | v0.1.0 |
-| 27 | GET | `/templates/{templateID}` | v0.0.10 |
+| 27 | GET | `/templates/{templateID}` | done (v0.0.10) |
 | 28 | POST | `/templates/{templateID}` | defer |
 | 29 | DELETE | `/templates/{templateID}` | defer |
 | 30 | PATCH | `/templates/{templateID}` | v0.1.0 |
@@ -74,8 +74,8 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 35 | GET | `/templates/{templateID}/builds/{buildID}/logs` | defer |
 | 36 | POST | `/templates/tags` | defer |
 | 37 | DELETE | `/templates/tags` | defer |
-| 38 | GET | `/templates/{templateID}/tags` | v0.0.10 |
-| 39 | GET | `/templates/aliases/{alias}` | v0.0.10 |
+| 38 | GET | `/templates/{templateID}/tags` | done (v0.0.10) |
+| 39 | GET | `/templates/aliases/{alias}` | done (v0.0.10) |
 | 40 | GET | `/nodes` | defer |
 | 41 | GET | `/nodes/{nodeID}` | defer |
 | 42 | POST | `/nodes/{nodeID}` | defer |
@@ -116,7 +116,7 @@ These routes exist but are **`partial`** until all schema fields are wired:
 | Field | Status | Complete in |
 |-------|--------|-------------|
 | Core 10 (id, state, times, resources, …) | done | v0.0.4 |
-| `alias`, `domain` | partial | v0.0.10 / v0.1.0 |
+| `alias`, `domain` | partial (`alias` done v0.0.10) | v0.1.0 |
 | `allowInternetAccess`, `network` | done | v0.0.8 |
 | `envdAccessToken` | missing | v0.1.0 |
 | `lifecycle` | done | v0.0.5 |

@@ -75,23 +75,32 @@ type platformStore interface {
 }
 
 type Server struct {
-	cfg     config.Platform
-	actors  sandboxClient
-	store   platformStore
-	logger  *slog.Logger
-	nowFunc func() time.Time
+	cfg       config.Platform
+	actors    sandboxClient
+	store     platformStore
+	templates TemplateCatalog
+	logger    *slog.Logger
+	nowFunc   func() time.Time
 }
 
 func NewServer(cfg config.Platform, actors sandboxClient, st platformStore, logger *slog.Logger) *Server {
+	return NewServerWithCatalog(cfg, actors, st, nil, logger)
+}
+
+func NewServerWithCatalog(cfg config.Platform, actors sandboxClient, st platformStore, catalog TemplateCatalog, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if catalog == nil {
+		catalog = NewStaticTemplateCatalog(cfg)
+	}
 	return &Server{
-		cfg:     cfg,
-		actors:  actors,
-		store:   st,
-		logger:  logger,
-		nowFunc: time.Now,
+		cfg:       cfg,
+		actors:    actors,
+		store:     st,
+		templates: catalog,
+		logger:    logger,
+		nowFunc:   time.Now,
 	}
 }
 
@@ -118,6 +127,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /volumes", s.requireAPIKey(http.HandlerFunc(s.handleCreateVolume)))
 	mux.Handle("GET /volumes/{volumeID}", s.requireAPIKey(http.HandlerFunc(s.handleGetVolume)))
 	mux.Handle("DELETE /volumes/{volumeID}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteVolume)))
+	mux.Handle("GET /templates", s.requireAPIKey(http.HandlerFunc(s.handleListTemplates)))
+	mux.Handle("GET /templates/{path...}", s.requireAPIKey(http.HandlerFunc(s.handleTemplatePath)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
 }
@@ -222,8 +233,16 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadRequest, "templateID is required")
 		return
 	}
-	if req.TemplateID != s.cfg.TemplateName {
-		writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("unsupported template %q (only %q for v0.0.1)", req.TemplateID, s.cfg.TemplateName))
+
+	ctx := r.Context()
+	tmpl, err := s.templates.Get(ctx, req.TemplateID)
+	if err != nil {
+		if errors.Is(err, ErrTemplateNotFound) {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("unsupported template %q", req.TemplateID))
+			return
+		}
+		s.logger.Error("resolve template", "template_id", req.TemplateID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to create sandbox")
 		return
 	}
 
@@ -248,7 +267,6 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
 	volumeMounts, err := s.resolveVolumeMounts(ctx, req.VolumeMounts)
 	if err != nil {
 		if errors.Is(err, store.ErrUnknownVolume) {
@@ -270,7 +288,7 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.actors.CreateAndResumeSandbox(ctx, actorID, s.cfg.TemplateNamespace, s.cfg.TemplateName); err != nil {
+	if err := s.actors.CreateAndResumeSandbox(ctx, actorID, tmpl.Namespace, tmpl.Name); err != nil {
 		s.logger.Error("create sandbox", "actor_id", actorID, "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to create sandbox")
 		return
@@ -281,7 +299,7 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.Put(ctx, store.Sandbox{
 		SandboxID:    actorID,
 		ActorID:      actorID,
-		Template:     req.TemplateID,
+		Template:     tmpl.TemplateID,
 		CreatedAt:    now,
 		ExpiresAt:    expiresAt,
 		OnTimeout:    onTimeout,
@@ -299,7 +317,7 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 
 	resp := buildSandboxResponse(s.cfg, store.Sandbox{
 		SandboxID: actorID,
-		Template:  req.TemplateID,
+		Template:  tmpl.TemplateID,
 	})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -795,7 +813,7 @@ func (s *Server) syncSandboxRecord(ctx context.Context, sb store.Sandbox) (sandb
 		}
 	}
 
-	return buildSandboxDetail(s.cfg, sb, substrate.ActorStateE2B(actorStatus)), nil
+	return buildSandboxDetail(s.cfg, sb, substrate.ActorStateE2B(actorStatus), s.templateAlias(ctx, sb.Template)), nil
 }
 
 func (s *Server) requireAPIKey(next http.Handler) http.Handler {

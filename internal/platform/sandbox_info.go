@@ -44,6 +44,7 @@ type sandboxDetailResponse struct {
 	StartedAt           string                   `json:"startedAt"`
 	State               string                   `json:"state"`
 	TemplateID          string                   `json:"templateID"`
+	Alias               string                   `json:"alias,omitempty"`
 	Domain              string                   `json:"domain,omitempty"`
 	AllowInternetAccess *bool                    `json:"allowInternetAccess"`
 	Network             *store.NetworkConfig     `json:"network,omitempty"`
@@ -62,11 +63,12 @@ type listedSandboxResponse struct {
 	StartedAt    string                   `json:"startedAt"`
 	State        string                   `json:"state"`
 	TemplateID   string                   `json:"templateID"`
+	Alias        string                   `json:"alias,omitempty"`
 	VolumeMounts []store.VolumeMount      `json:"volumeMounts,omitempty"`
 	Lifecycle    sandboxLifecycleResponse `json:"lifecycle"`
 }
 
-func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string) sandboxDetailResponse {
+func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string, alias string) sandboxDetailResponse {
 	return sandboxDetailResponse{
 		ClientID:            cfg.ClientID,
 		CPUCount:            defaultCPUCount,
@@ -78,6 +80,7 @@ func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string) san
 		StartedAt:           sb.CreatedAt.UTC().Format(time.RFC3339),
 		State:               state,
 		TemplateID:          sb.Template,
+		Alias:               alias,
 		Domain:              cfg.Domain,
 		AllowInternetAccess: sb.AllowInternetAccess,
 		Network:             sb.Network,
@@ -124,6 +127,7 @@ func listedFromDetail(d sandboxDetailResponse) listedSandboxResponse {
 		StartedAt:    d.StartedAt,
 		State:        d.State,
 		TemplateID:   d.TemplateID,
+		Alias:        d.Alias,
 		VolumeMounts: append([]store.VolumeMount(nil), d.VolumeMounts...),
 		Lifecycle:    d.Lifecycle,
 	}

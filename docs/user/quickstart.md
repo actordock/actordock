@@ -1,4 +1,4 @@
-# Quickstart (v0.0.9)
+# Quickstart (v0.0.10)
 
 Run the E2B SDK against a local Actordock cluster on Kind.
 
@@ -183,6 +183,21 @@ cd e2e && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/pytest tests/ -v
 ```
 
+## Templates (v0.0.10)
+
+Templates are **pre-provisioned** `ActorTemplate` CRs in the cluster (default: `base`). There is no user template build pipeline in v0.0.10.
+
+```python
+from e2b import Template
+
+assert Template.exists("base")
+```
+
+```bash
+curl -sS -H "X-API-KEY: dev" http://localhost:8080/templates | jq .
+curl -sS -H "X-API-KEY: dev" http://localhost:8080/templates/aliases/base | jq .
+```
+
 ## Volumes (v0.0.9)
 
 ```python
@@ -206,4 +221,4 @@ vol.delete()
 
 - [Architecture](../architecture.md)
 - [Roadmap](../roadmap.md)
-- [v0.0.9 release notes](../releases/v0.0.9.md)
+- [v0.0.10 release notes](../releases/v0.0.10.md)

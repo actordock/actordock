@@ -27,6 +27,7 @@ spec:
       labels:
         app: platform
     spec:
+      serviceAccountName: platform
       containers:
         - name: platform
           image: ko://github.com/actordock/actordock/cmd/platform

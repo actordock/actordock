@@ -37,26 +37,30 @@ import (
 )
 
 type fakeActors struct {
-	lastActorID       string
-	lastDeletedID     string
-	lastSuspended     string
-	lastResumed       string
-	lastSnapshotActor string
-	backendAddr       string
-	createErr         error
-	deleteErr         error
-	suspendErr        error
-	resumeErr         error
-	createSnapshotErr error
-	getErr            error
-	backendErr        error
-	snapshotResult    substrate.SnapshotResult
-	actorStatuses     map[string]ateapipb.Actor_Status
-	defaultStatus     ateapipb.Actor_Status
+	lastActorID           string
+	lastTemplateNamespace string
+	lastTemplateName      string
+	lastDeletedID         string
+	lastSuspended         string
+	lastResumed           string
+	lastSnapshotActor     string
+	backendAddr           string
+	createErr             error
+	deleteErr             error
+	suspendErr            error
+	resumeErr             error
+	createSnapshotErr     error
+	getErr                error
+	backendErr            error
+	snapshotResult        substrate.SnapshotResult
+	actorStatuses         map[string]ateapipb.Actor_Status
+	defaultStatus         ateapipb.Actor_Status
 }
 
-func (f *fakeActors) CreateAndResumeSandbox(_ context.Context, actorID, _, _ string) error {
+func (f *fakeActors) CreateAndResumeSandbox(_ context.Context, actorID, templateNamespace, templateName string) error {
 	f.lastActorID = actorID
+	f.lastTemplateNamespace = templateNamespace
+	f.lastTemplateName = templateName
 	return f.createErr
 }
 

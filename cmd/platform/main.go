@@ -60,5 +60,11 @@ func run(ctx context.Context) error {
 	}
 	defer st.Close()
 
-	return platform.NewServer(cfg, ate, st, logger).Run(ctx)
+	catalog, err := platform.NewTemplateCatalogFromCluster(cfg)
+	if err != nil {
+		logger.Warn("kubernetes template catalog unavailable; using static catalog", "err", err)
+		catalog = platform.NewStaticTemplateCatalog(cfg)
+	}
+
+	return platform.NewServerWithCatalog(cfg, ate, st, catalog, logger).Run(ctx)
 }
