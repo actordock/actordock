@@ -27,7 +27,8 @@ from support.commands import run_command
 
 EXTERNAL_EGRESS_URL = "http://example.com/"
 EXTERNAL_EGRESS_MARKER = "Example Domain"
-SUCCESS_EGRESS_STATUSES = (200, 301, 302)
+SUCCESS_EGRESS_STATUSES = (200, 204, 301, 302)
+# Loopback hits router again; E2b-Sandbox-Id routes to envd /health (204), not router JSON.
 INTERNAL_EGRESS_URL = "http://127.0.0.1:8081/health"
 
 
@@ -192,8 +193,8 @@ def test_internal_egress_allowed_when_internet_disabled() -> None:
         _put_network_policy(sbx.sandbox_id, allow_internet_access=False)
 
         resp = _router_egress_get(sbx.sandbox_id, INTERNAL_EGRESS_URL)
-        assert resp.status_code == 200, resp.text
-        assert resp.json().get("status") == "ok"
+        assert resp.status_code != 403, resp.text
+        assert resp.status_code == 204, resp.text
     finally:
         sbx.kill()
 
