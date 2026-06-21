@@ -29,10 +29,10 @@ import (
 )
 
 var (
-	ErrVolumeNotFound   = errors.New("volume not found")
-	ErrVolumeNameTaken  = errors.New("volume name already exists")
-	ErrVolumeNameEmpty  = errors.New("volume name is required")
-	ErrVolumeIDEmpty    = errors.New("volume id is required")
+	ErrVolumeNotFound  = errors.New("volume not found")
+	ErrVolumeNameTaken = errors.New("volume name already exists")
+	ErrVolumeNameEmpty = errors.New("volume name is required")
+	ErrVolumeIDEmpty   = errors.New("volume id is required")
 )
 
 const (
