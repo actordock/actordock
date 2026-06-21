@@ -17,6 +17,7 @@ package store
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -53,7 +54,7 @@ func TestRedisPutGetDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if got != sb {
+	if !reflect.DeepEqual(got, sb) {
 		t.Fatalf("Get = %+v, want %+v", got, sb)
 	}
 

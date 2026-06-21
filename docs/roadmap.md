@@ -16,7 +16,7 @@ E2B-compatible self-hosted agent sandboxes on Kubernetes.
 
 **Full-field rule:** an operation counts as done only when **all** request/response schema fields for that route are implemented — no partial endpoints. Existing v0.0.1–v0.0.4 routes are marked `partial` until backfill completes (mostly v0.0.5–v0.1.0).
 
-Current (v0.0.8): **18 ops (32%)**, **~48% fields** (connect, network, snapshots shipped).
+Current (v0.0.9): **22 ops (39%)**, **~52% fields** (volumes + volumeMounts metadata shipped).
 
 ## Progression (pre-0.1.0)
 
@@ -32,7 +32,7 @@ Each release adds one capability layer. You should be able to demo the **Target*
 | [v0.0.6](releases/v0.0.6.md) | **Observability** | Logs, metrics, timeout refresh (stub OK) | 14 |
 | [v0.0.7](releases/v0.0.7.md) | **Real telemetry** | Real logs + metrics from envd | 14 |
 | [v0.0.8](releases/v0.0.8.md) | **Sandbox extras** | Connect, network, snapshots | 18 |
-| [v0.0.9](releases/v0.0.9.md) | **Volumes** | Volume CRUD (Platform) | 22 |
+| [v0.0.9](releases/v0.0.9.md) | **Volumes** | Volume CRUD; `volumeMounts` persist (no runtime mount) | 22 |
 | [v0.0.10](releases/v0.0.10.md) | **Templates (read)** | List/get template, alias, tags | 27 |
 | [v0.0.11](releases/v0.0.11.md) | **Ops dashboard** | Optional standalone UI for sandboxes | 27 |
 | [v0.1.0](releases/v0.1.0.md) | **Pilot + 60% REST** | Files, secure envd, Helm; full sandbox + auth fields | **34 ops, ≥60% fields** |

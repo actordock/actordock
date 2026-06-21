@@ -98,7 +98,7 @@ func (s *Server) handleCreateSandboxSnapshot(w http.ResponseWriter, r *http.Requ
 		Name:         req.Name,
 		CreatedAt:    now,
 	}
-	if err := s.snapshots.PutSnapshot(ctx, record); err != nil {
+	if err := s.store.PutSnapshot(ctx, record); err != nil {
 		s.logger.Error("persist snapshot", "sandbox_id", sandboxID, "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to create snapshot")
 		return
@@ -128,7 +128,7 @@ func (s *Server) handleListSnapshots(w http.ResponseWriter, r *http.Request) {
 	}
 	nextToken := strings.TrimSpace(r.URL.Query().Get("nextToken"))
 
-	snapshots, err := s.snapshots.ListSnapshots(r.Context())
+	snapshots, err := s.store.ListSnapshots(r.Context())
 	if err != nil {
 		s.logger.Error("list snapshots", "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to list snapshots")

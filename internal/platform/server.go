@@ -60,26 +60,38 @@ type snapshotStore interface {
 	ListSnapshots(ctx context.Context) ([]store.Snapshot, error)
 }
 
-type Server struct {
-	cfg       config.Platform
-	actors    sandboxClient
-	store     sandboxStore
-	snapshots snapshotStore
-	logger    *slog.Logger
-	nowFunc   func() time.Time
+type volumeStore interface {
+	PutVolume(ctx context.Context, vol store.Volume) error
+	GetVolume(ctx context.Context, volumeID string) (store.Volume, error)
+	GetVolumeByName(ctx context.Context, name string) (store.Volume, error)
+	ListVolumes(ctx context.Context) ([]store.Volume, error)
+	DeleteVolume(ctx context.Context, volumeID string) error
 }
 
-func NewServer(cfg config.Platform, actors sandboxClient, st sandboxStore, snapshots snapshotStore, logger *slog.Logger) *Server {
+type platformStore interface {
+	sandboxStore
+	snapshotStore
+	volumeStore
+}
+
+type Server struct {
+	cfg     config.Platform
+	actors  sandboxClient
+	store   platformStore
+	logger  *slog.Logger
+	nowFunc func() time.Time
+}
+
+func NewServer(cfg config.Platform, actors sandboxClient, st platformStore, logger *slog.Logger) *Server {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Server{
-		cfg:       cfg,
-		actors:    actors,
-		store:     st,
-		snapshots: snapshots,
-		logger:    logger,
-		nowFunc:   time.Now,
+		cfg:     cfg,
+		actors:  actors,
+		store:   st,
+		logger:  logger,
+		nowFunc: time.Now,
 	}
 }
 
@@ -102,6 +114,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PUT /sandboxes/{id}/network", s.requireAPIKey(http.HandlerFunc(s.handlePutSandboxNetwork)))
 	mux.Handle("POST /sandboxes/{id}/snapshots", s.requireAPIKey(http.HandlerFunc(s.handleCreateSandboxSnapshot)))
 	mux.Handle("GET /snapshots", s.requireAPIKey(http.HandlerFunc(s.handleListSnapshots)))
+	mux.Handle("GET /volumes", s.requireAPIKey(http.HandlerFunc(s.handleListVolumes)))
+	mux.Handle("POST /volumes", s.requireAPIKey(http.HandlerFunc(s.handleCreateVolume)))
+	mux.Handle("GET /volumes/{volumeID}", s.requireAPIKey(http.HandlerFunc(s.handleGetVolume)))
+	mux.Handle("DELETE /volumes/{volumeID}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteVolume)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
 }
@@ -154,12 +170,13 @@ type createSandboxLifecycle struct {
 }
 
 type createSandboxRequest struct {
-	TemplateID string                   `json:"templateID"`
-	Secure     *bool                    `json:"secure,omitempty"`
-	Timeout    *int                     `json:"timeout,omitempty"`
-	AutoPause  *bool                    `json:"autoPause,omitempty"`
-	AutoResume *createSandboxAutoResume `json:"autoResume,omitempty"`
-	Lifecycle  *createSandboxLifecycle  `json:"lifecycle,omitempty"`
+	TemplateID   string                   `json:"templateID"`
+	Secure       *bool                    `json:"secure,omitempty"`
+	Timeout      *int                     `json:"timeout,omitempty"`
+	AutoPause    *bool                    `json:"autoPause,omitempty"`
+	AutoResume   *createSandboxAutoResume `json:"autoResume,omitempty"`
+	Lifecycle    *createSandboxLifecycle  `json:"lifecycle,omitempty"`
+	VolumeMounts []store.VolumeMount      `json:"volumeMounts,omitempty"`
 }
 
 type setSandboxTimeoutRequest struct {
@@ -231,6 +248,21 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx := r.Context()
+	volumeMounts, err := s.resolveVolumeMounts(ctx, req.VolumeMounts)
+	if err != nil {
+		if errors.Is(err, store.ErrUnknownVolume) {
+			writeAPIError(w, http.StatusBadRequest, "volume not found")
+			return
+		}
+		if errors.Is(err, store.ErrInvalidMountPath) || errors.Is(err, store.ErrDuplicateMountPath) {
+			writeAPIError(w, http.StatusBadRequest, "invalid volumeMounts")
+			return
+		}
+		writeAPIError(w, http.StatusBadRequest, "invalid volumeMounts")
+		return
+	}
+
 	actorID, err := newActorID()
 	if err != nil {
 		s.logger.Error("generate actor id", "err", err)
@@ -238,7 +270,6 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ctx := r.Context()
 	if err := s.actors.CreateAndResumeSandbox(ctx, actorID, s.cfg.TemplateNamespace, s.cfg.TemplateName); err != nil {
 		s.logger.Error("create sandbox", "actor_id", actorID, "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to create sandbox")
@@ -248,14 +279,15 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	now := s.nowFunc()
 	expiresAt := store.ExpiresAt(now, timeoutSeconds)
 	if err := s.store.Put(ctx, store.Sandbox{
-		SandboxID:  actorID,
-		ActorID:    actorID,
-		Template:   req.TemplateID,
-		CreatedAt:  now,
-		ExpiresAt:  expiresAt,
-		OnTimeout:  onTimeout,
-		AutoResume: autoResume,
-		Status:     store.StatusRunning,
+		SandboxID:    actorID,
+		ActorID:      actorID,
+		Template:     req.TemplateID,
+		CreatedAt:    now,
+		ExpiresAt:    expiresAt,
+		OnTimeout:    onTimeout,
+		AutoResume:   autoResume,
+		Status:       store.StatusRunning,
+		VolumeMounts: volumeMounts,
 	}); err != nil {
 		s.logger.Error("persist sandbox", "actor_id", actorID, "err", err)
 		if delErr := s.actors.DeleteSandbox(ctx, actorID); delErr != nil {
@@ -849,8 +881,5 @@ func resolveResumeOnTimeout(currentOnTimeout string, req resumeSandboxRequest) (
 // Ensure substrate.Client satisfies sandboxClient.
 var _ sandboxClient = (*substrate.Client)(nil)
 
-// Ensure store.Redis satisfies sandboxStore and snapshotStore.
-var (
-	_ sandboxStore  = (*store.Redis)(nil)
-	_ snapshotStore = (*store.Redis)(nil)
-)
+// Ensure store.Redis satisfies platformStore.
+var _ platformStore = (*store.Redis)(nil)

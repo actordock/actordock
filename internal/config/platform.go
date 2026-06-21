@@ -33,6 +33,7 @@ type Platform struct {
 	EnvdPort              int
 	ClientID              string
 	DefaultSandboxTimeout int
+	VolumeRoot            string
 }
 
 func PlatformFromEnv() (Platform, error) {
@@ -50,6 +51,7 @@ func PlatformFromEnv() (Platform, error) {
 		TemplateName:      envOrDefault("ACTORDOCK_TEMPLATE_NAME", "base"),
 		EnvdVersion:       envOrDefault("ACTORDOCK_ENVD_VERSION", "0.1.0"),
 		ClientID:          envOrDefault("ACTORDOCK_CLIENT_ID", "actordock"),
+		VolumeRoot:        envOrDefault("ACTORDOCK_VOLUME_ROOT", "/var/lib/actordock/volumes"),
 	}
 	defaultTimeout, err := envIntOrDefault("ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT", 300)
 	if err != nil {

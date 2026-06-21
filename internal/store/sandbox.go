@@ -35,4 +35,5 @@ type Sandbox struct {
 	Status              string         `json:"status"`
 	Network             *NetworkConfig `json:"network,omitempty"`
 	AllowInternetAccess *bool          `json:"allow_internet_access,omitempty"`
+	VolumeMounts        []VolumeMount  `json:"volume_mounts,omitempty"`
 }

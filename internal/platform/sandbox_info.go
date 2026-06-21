@@ -47,21 +47,23 @@ type sandboxDetailResponse struct {
 	Domain              string                   `json:"domain,omitempty"`
 	AllowInternetAccess *bool                    `json:"allowInternetAccess"`
 	Network             *store.NetworkConfig     `json:"network,omitempty"`
+	VolumeMounts        []store.VolumeMount      `json:"volumeMounts,omitempty"`
 	Lifecycle           sandboxLifecycleResponse `json:"lifecycle"`
 }
 
 type listedSandboxResponse struct {
-	ClientID    string                   `json:"clientID"`
-	CPUCount    int                      `json:"cpuCount"`
-	DiskSizeMB  int                      `json:"diskSizeMB"`
-	EndAt       string                   `json:"endAt"`
-	EnvdVersion string                   `json:"envdVersion"`
-	MemoryMB    int                      `json:"memoryMB"`
-	SandboxID   string                   `json:"sandboxID"`
-	StartedAt   string                   `json:"startedAt"`
-	State       string                   `json:"state"`
-	TemplateID  string                   `json:"templateID"`
-	Lifecycle   sandboxLifecycleResponse `json:"lifecycle"`
+	ClientID     string                   `json:"clientID"`
+	CPUCount     int                      `json:"cpuCount"`
+	DiskSizeMB   int                      `json:"diskSizeMB"`
+	EndAt        string                   `json:"endAt"`
+	EnvdVersion  string                   `json:"envdVersion"`
+	MemoryMB     int                      `json:"memoryMB"`
+	SandboxID    string                   `json:"sandboxID"`
+	StartedAt    string                   `json:"startedAt"`
+	State        string                   `json:"state"`
+	TemplateID   string                   `json:"templateID"`
+	VolumeMounts []store.VolumeMount      `json:"volumeMounts,omitempty"`
+	Lifecycle    sandboxLifecycleResponse `json:"lifecycle"`
 }
 
 func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string) sandboxDetailResponse {
@@ -79,6 +81,7 @@ func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string) san
 		Domain:              cfg.Domain,
 		AllowInternetAccess: sb.AllowInternetAccess,
 		Network:             sb.Network,
+		VolumeMounts:        append([]store.VolumeMount(nil), sb.VolumeMounts...),
 		Lifecycle:           buildSandboxLifecycle(sb),
 	}
 }
@@ -111,17 +114,18 @@ func sandboxEndAt(cfg config.Platform, sb store.Sandbox) string {
 
 func listedFromDetail(d sandboxDetailResponse) listedSandboxResponse {
 	return listedSandboxResponse{
-		ClientID:    d.ClientID,
-		CPUCount:    d.CPUCount,
-		DiskSizeMB:  d.DiskSizeMB,
-		EndAt:       d.EndAt,
-		EnvdVersion: d.EnvdVersion,
-		MemoryMB:    d.MemoryMB,
-		SandboxID:   d.SandboxID,
-		StartedAt:   d.StartedAt,
-		State:       d.State,
-		TemplateID:  d.TemplateID,
-		Lifecycle:   d.Lifecycle,
+		ClientID:     d.ClientID,
+		CPUCount:     d.CPUCount,
+		DiskSizeMB:   d.DiskSizeMB,
+		EndAt:        d.EndAt,
+		EnvdVersion:  d.EnvdVersion,
+		MemoryMB:     d.MemoryMB,
+		SandboxID:    d.SandboxID,
+		StartedAt:    d.StartedAt,
+		State:        d.State,
+		TemplateID:   d.TemplateID,
+		VolumeMounts: append([]store.VolumeMount(nil), d.VolumeMounts...),
+		Lifecycle:    d.Lifecycle,
 	}
 }
 

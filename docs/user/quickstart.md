@@ -183,6 +183,18 @@ cd e2e && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/pytest tests/ -v
 ```
 
+## Volumes (v0.0.9)
+
+```python
+from e2b import Volume, Sandbox
+
+vol = Volume.create("my-data")
+sbx = Sandbox.create(template="base", volume_mounts={"/mnt/data": vol})
+# volumeMounts persisted on sandbox; runtime mount requires future Substrate support
+sbx.kill()
+vol.delete()
+```
+
 ## Troubleshooting
 
 - **Substrate pods not ready** — wait or re-run `./hack/install-local.sh`; cold start can exceed default rollout timeouts.

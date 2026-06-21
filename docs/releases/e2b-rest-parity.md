@@ -17,10 +17,10 @@ Count Platform REST only. envd RPC (commands, filesystem) is separate but requir
 
 ## Metrics
 
-| Metric | v0.0.7 (now) | v0.1.0 target |
+| Metric | v0.0.9 (now) | v0.1.0 target |
 |--------|--------------|---------------|
-| Operations | 18 / 56 (**32%**) | **≥34 / 56 (61%)** |
-| Fields (full-field ops only) | ~105 / ~220 (**~48%**) | **≥132 / ~220 (60%)** |
+| Operations | 22 / 56 (**39%**) | **≥34 / 56 (61%)** |
+| Fields (full-field ops only) | ~115 / ~220 (**~52%**) | **≥132 / ~220 (60%)** |
 
 Field % = sum of fields in **fully implemented** operations ÷ total fields across all 56 operations.
 
@@ -89,10 +89,10 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 50 | POST | `/api-keys` | v0.1.0 |
 | 51 | PATCH | `/api-keys/{apiKeyID}` | defer |
 | 52 | DELETE | `/api-keys/{apiKeyID}` | defer |
-| 53 | GET | `/volumes` | v0.0.9 |
-| 54 | POST | `/volumes` | v0.0.9 |
-| 55 | GET | `/volumes/{volumeID}` | v0.0.9 |
-| 56 | DELETE | `/volumes/{volumeID}` | v0.0.9 |
+| 53 | GET | `/volumes` | done (v0.0.9) |
+| 54 | POST | `/volumes` | done (v0.0.9) |
+| 55 | GET | `/volumes/{volumeID}` | done (v0.0.9) |
+| 56 | DELETE | `/volumes/{volumeID}` | done (v0.0.9) |
 
 ## Field backfill — already shipped routes
 
@@ -107,7 +107,7 @@ These routes exist but are **`partial`** until all schema fields are wired:
 | `autoPause`, `autoResume`, `lifecycle` | done | v0.0.5 |
 | `network`, `allow_internet_access` | missing | v0.0.8 |
 | `metadata`, `envVars` | missing | v0.1.0 |
-| `volumeMounts` | missing | v0.0.9 |
+| `volumeMounts` | done (persist; mount runtime deferred) | v0.0.9 |
 | `mcp` | missing | v0.1.0 (accept + persist; no MCP server) |
 | Response: all 8 `Sandbox` fields | partial | v0.1.0 |
 
@@ -120,7 +120,8 @@ These routes exist but are **`partial`** until all schema fields are wired:
 | `allowInternetAccess`, `network` | done | v0.0.8 |
 | `envdAccessToken` | missing | v0.1.0 |
 | `lifecycle` | done | v0.0.5 |
-| `metadata`, `volumeMounts` | missing | v0.0.9–v0.1.0 |
+| `metadata` | missing | v0.1.0 |
+| `volumeMounts` | done (persist; mount runtime deferred) | v0.0.9 |
 
 ### `GET /sandboxes`, `GET /v2/sandboxes` (`ListedSandbox` — 13 fields)
 
