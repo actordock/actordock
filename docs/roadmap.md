@@ -51,7 +51,7 @@ Each release adds one capability layer. You should be able to demo the **Target*
 | [v0.0.6](releases/v0.0.6.md) | released | Observability |
 | [v0.0.7](releases/v0.0.7.md) | released | Real telemetry |
 | [v0.0.8](releases/v0.0.8.md) | released | Sandbox extras |
-| [v0.0.9](releases/v0.0.9.md) | planned | Volumes |
+| [v0.0.9](releases/v0.0.9.md) | released | Volumes |
 | [v0.0.10](releases/v0.0.10.md) | planned | Templates (read) |
 | [v0.0.11](releases/v0.0.11.md) | planned | Ops dashboard (optional) |
 | [v0.1.0](releases/v0.1.0.md) | planned | Pilot + 60% REST |

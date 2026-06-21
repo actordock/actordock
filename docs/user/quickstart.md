@@ -1,4 +1,4 @@
-# Quickstart (v0.0.8)
+# Quickstart (v0.0.9)
 
 Run the E2B SDK against a local Actordock cluster on Kind.
 
@@ -206,4 +206,4 @@ vol.delete()
 
 - [Architecture](../architecture.md)
 - [Roadmap](../roadmap.md)
-- [v0.0.8 release notes](../releases/v0.0.8.md)
+- [v0.0.9 release notes](../releases/v0.0.9.md)
