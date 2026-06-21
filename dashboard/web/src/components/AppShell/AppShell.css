@@ -1,0 +1,108 @@
+.app-shell {
+  min-height: 100%;
+  display: flex;
+}
+
+.app-shell__frame {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell__header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: var(--header-height);
+  background: var(--marble-card);
+  border-bottom: 1px solid var(--marble-shadow);
+  box-shadow: 0 1px 0 rgba(44, 42, 38, 0.03);
+}
+
+.app-shell__header-inner {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+}
+
+.app-shell__title {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--stone-ink);
+}
+
+.app-shell__body {
+  flex: 1;
+  position: relative;
+  display: flex;
+  min-height: 0;
+}
+
+.app-shell__bg {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-position: center;
+  pointer-events: none;
+}
+
+.app-shell__main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+.app-shell__content {
+  padding: 28px 32px 48px;
+  max-width: 1200px;
+}
+
+.connection-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--marble-shadow);
+  background: var(--marble-base);
+  color: var(--stone-muted);
+}
+
+.connection-pill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--stone-faint);
+}
+
+.connection-pill--connected {
+  color: var(--laurel-ok);
+  border-color: rgba(107, 127, 94, 0.25);
+  background: var(--laurel-ok-bg);
+}
+
+.connection-pill--connected .connection-pill__dot {
+  background: var(--laurel-ok);
+}
+
+.connection-pill--disconnected {
+  color: var(--terracotta-danger);
+  border-color: rgba(166, 93, 78, 0.25);
+  background: var(--terracotta-danger-bg);
+}
+
+.connection-pill--disconnected .connection-pill__dot {
+  background: var(--terracotta-danger);
+}
+
+.connection-pill--checking .connection-pill__dot {
+  animation: shimmer var(--transition-shimmer) ease-in-out infinite;
+}

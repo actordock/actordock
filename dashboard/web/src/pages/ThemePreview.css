@@ -1,0 +1,129 @@
+.theme-preview__section {
+  margin-bottom: 32px;
+}
+
+.theme-preview__heading {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bronze-deep);
+  margin: 0 0 14px;
+}
+
+.theme-preview__swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.theme-preview__swatch {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.theme-preview__swatch-color {
+  height: 48px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--marble-shadow);
+}
+
+.theme-preview__swatch-name {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--stone-muted);
+}
+
+.theme-preview__display {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.theme-preview__body {
+  margin: 0 0 12px;
+  color: var(--stone-ink);
+}
+
+.theme-preview__mono {
+  margin: 0;
+  color: var(--stone-muted);
+}
+
+.theme-preview__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.theme-preview__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.theme-preview__metric {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.theme-preview__metric-value {
+  font-family: var(--font-display);
+  font-size: 36px;
+  font-weight: 600;
+  color: var(--bronze-deep);
+  line-height: 1;
+}
+
+.theme-preview__metric-label {
+  font-size: 13px;
+  color: var(--stone-muted);
+}
+
+.theme-preview__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.btn--primary {
+  background: var(--bronze-accent);
+  color: #fff;
+  border-color: var(--bronze-deep);
+}
+
+.btn--primary:hover {
+  background: var(--bronze-deep);
+}
+
+.btn--ghost {
+  background: var(--marble-base);
+  color: var(--stone-ink);
+  border-color: var(--marble-shadow);
+}
+
+.btn--ghost:hover {
+  border-color: var(--bronze-accent);
+  color: var(--bronze-deep);
+}
