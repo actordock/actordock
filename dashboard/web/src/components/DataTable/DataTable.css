@@ -3,11 +3,12 @@
   border: 1px solid var(--marble-shadow);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .data-table table {
   width: 100%;
+  min-width: 960px;
   border-collapse: collapse;
   font-size: 13px;
 }

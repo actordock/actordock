@@ -13,6 +13,26 @@ export type Sandbox = {
   memoryMB: number;
 };
 
+export type SandboxMetric = {
+  timestamp: string;
+  timestampUnix: number;
+  cpuCount: number;
+  cpuUsedPct: number;
+  memUsed: number;
+  memTotal: number;
+  memCache: number;
+  diskUsed: number;
+  diskTotal: number;
+};
+
+export type SandboxesMetricsResponse = {
+  sandboxes: Record<string, SandboxMetric>;
+};
+
+export type SandboxRow = Sandbox & {
+  metrics?: SandboxMetric;
+};
+
 export type Template = {
   templateID: string;
   buildStatus: string;

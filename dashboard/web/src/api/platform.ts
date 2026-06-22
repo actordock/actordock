@@ -2,6 +2,8 @@ import {
   type HealthResponse,
   PlatformAPIError,
   type Sandbox,
+  type SandboxMetric,
+  type SandboxesMetricsResponse,
   type Template,
   type Volume,
 } from "./types";
@@ -31,6 +33,27 @@ export async function fetchHealth(): Promise<HealthResponse> {
 
 export async function fetchSandboxes(): Promise<Sandbox[]> {
   return request<Sandbox[]>("/sandboxes");
+}
+
+const METRICS_BATCH_SIZE = 100;
+
+export async function fetchSandboxMetrics(
+  sandboxIds: string[],
+): Promise<Record<string, SandboxMetric>> {
+  if (sandboxIds.length === 0) {
+    return {};
+  }
+
+  const merged: Record<string, SandboxMetric> = {};
+  for (let i = 0; i < sandboxIds.length; i += METRICS_BATCH_SIZE) {
+    const chunk = sandboxIds.slice(i, i + METRICS_BATCH_SIZE);
+    const qs = new URLSearchParams({ sandbox_ids: chunk.join(",") });
+    const resp = await request<SandboxesMetricsResponse>(
+      `/sandboxes/metrics?${qs.toString()}`,
+    );
+    Object.assign(merged, resp.sandboxes);
+  }
+  return merged;
 }
 
 export async function fetchTemplates(): Promise<Template[]> {

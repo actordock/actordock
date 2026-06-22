@@ -3,6 +3,7 @@ import { AppShell } from "./components";
 import { useConnectionStatus } from "./hooks/useConnectionStatus";
 import { Overview } from "./pages/Overview";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { Sandboxes } from "./pages/Sandboxes";
 import { Settings } from "./pages/Settings";
 import { ThemePreview } from "./pages/ThemePreview";
 
@@ -13,12 +14,13 @@ export default function App() {
     <AppShell connectionStatus={connectionStatus}>
       <Routes>
         <Route path="/" element={<Overview />} />
+        <Route path="/sandboxes" element={<Sandboxes />} />
         <Route
-          path="/sandboxes"
+          path="/sandboxes/:id"
           element={
             <PlaceholderPage
-              title="Sandboxes"
-              subtitle="Sandbox list and filters — coming in WP4."
+              title="Sandbox detail"
+              subtitle="Overview, metrics, and logs — coming in WP5–WP7."
             />
           }
         />
