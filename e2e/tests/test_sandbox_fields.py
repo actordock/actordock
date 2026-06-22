@@ -22,8 +22,10 @@ from support.api import api_headers, api_url
 from support.parity import (
     LISTED_SANDBOX_FIELDS,
     LISTED_SANDBOX_OPTIONAL_FIELDS,
+    LISTED_SANDBOX_OMIT_EMPTY_FIELDS,
     SANDBOX_DETAIL_FIELDS,
     SANDBOX_DETAIL_OPTIONAL_FIELDS,
+    SANDBOX_DETAIL_OMIT_EMPTY_FIELDS,
 )
 
 
@@ -37,7 +39,6 @@ def _create_body() -> dict:
         "mcp": {},
         "network": {"allowPublicTraffic": True},
         "allow_internet_access": True,
-        "volumeMounts": [],
     }
 
 
@@ -65,6 +66,8 @@ def test_create_get_list_sandbox_fields() -> None:
         assert SANDBOX_DETAIL_FIELDS <= set(detail)
         for key in SANDBOX_DETAIL_OPTIONAL_FIELDS:
             assert key in detail, f"missing detail.{key}"
+        for key in SANDBOX_DETAIL_OMIT_EMPTY_FIELDS:
+            assert key not in detail, f"unexpected empty detail.{key}"
         assert detail["metadata"] == _create_body()["metadata"]
         assert detail["allowInternetAccess"] is True
         assert detail["lifecycle"]["onTimeout"] in ("kill", "pause")
@@ -82,6 +85,8 @@ def test_create_get_list_sandbox_fields() -> None:
         assert LISTED_SANDBOX_FIELDS <= set(match)
         for key in LISTED_SANDBOX_OPTIONAL_FIELDS:
             assert key in match, f"missing listed.{key}"
+        for key in LISTED_SANDBOX_OMIT_EMPTY_FIELDS:
+            assert key not in match, f"unexpected empty listed.{key}"
         assert match["metadata"] == _create_body()["metadata"]
 
         listed_v2 = httpx.get(

@@ -83,18 +83,19 @@ def test_patch_template_public() -> None:
         timeout=30.0,
     )
     assert create.status_code == 201, create.text
-    template_id = create.json()["templateID"]
-    assert create.json()["public"] is False
+    created = create.json()
+    template_id = created["templateID"]
+    assert created["public"] is True
 
     patch = httpx.patch(
         f"{api_url()}/templates/{template_id}",
         headers=api_headers(),
-        json={"public": True},
+        json={"public": False},
         timeout=30.0,
     )
     assert patch.status_code == 200, patch.text
     updated = patch.json()
-    assert updated["names"] == create.json()["names"]
+    assert updated["names"] == created["names"]
 
     get_resp = httpx.get(
         f"{api_url()}/templates/{template_id}",
@@ -102,4 +103,4 @@ def test_patch_template_public() -> None:
         timeout=30.0,
     )
     assert get_resp.status_code == 200, get_resp.text
-    assert get_resp.json()["public"] is True
+    assert get_resp.json()["public"] is False

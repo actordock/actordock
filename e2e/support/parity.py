@@ -54,10 +54,12 @@ SANDBOX_DETAIL_OPTIONAL_FIELDS = frozenset(
         "alias",
         "envdAccessToken",
         "network",
-        "volumeMounts",
         "metadata",
     }
 )
+
+# Omitted from JSON when empty (Go json omitempty); assert in volume-mount tests.
+SANDBOX_DETAIL_OMIT_EMPTY_FIELDS = frozenset({"volumeMounts"})
 
 LISTED_SANDBOX_FIELDS = frozenset(
     {
@@ -78,7 +80,8 @@ LISTED_SANDBOX_FIELDS = frozenset(
 LISTED_SANDBOX_OPTIONAL_FIELDS = frozenset(
     {
         "alias",
-        "volumeMounts",
         "metadata",
     }
 )
+
+LISTED_SANDBOX_OMIT_EMPTY_FIELDS = frozenset({"volumeMounts"})
