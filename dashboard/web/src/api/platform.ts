@@ -2,6 +2,9 @@ import {
   type HealthResponse,
   PlatformAPIError,
   type Sandbox,
+  type SandboxDetail,
+  type SandboxLogEntry,
+  type SandboxLogsV2Response,
   type SandboxMetric,
   type SandboxesMetricsResponse,
   type Template,
@@ -35,9 +38,55 @@ export async function fetchSandboxes(): Promise<Sandbox[]> {
   return request<Sandbox[]>("/sandboxes");
 }
 
+export async function fetchSandbox(sandboxID: string): Promise<SandboxDetail> {
+  return request<SandboxDetail>(`/sandboxes/${encodeURIComponent(sandboxID)}`);
+}
+
+export async function fetchSandboxMetricSamples(
+  sandboxID: string,
+): Promise<SandboxMetric[]> {
+  return request<SandboxMetric[]>(
+    `/sandboxes/${encodeURIComponent(sandboxID)}/metrics`,
+  );
+}
+
+export type SandboxLogsQuery = {
+  limit?: number;
+  level?: string;
+  search?: string;
+  cursor?: number;
+  direction?: "forward" | "backward";
+};
+
+export async function fetchSandboxLogsV2(
+  sandboxID: string,
+  query: SandboxLogsQuery = {},
+): Promise<SandboxLogEntry[]> {
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) {
+    params.set("limit", String(query.limit));
+  }
+  if (query.level) {
+    params.set("level", query.level);
+  }
+  if (query.search) {
+    params.set("search", query.search);
+  }
+  if (query.cursor !== undefined) {
+    params.set("cursor", String(query.cursor));
+  }
+  if (query.direction) {
+    params.set("direction", query.direction);
+  }
+  const qs = params.toString();
+  const path = `/v2/sandboxes/${encodeURIComponent(sandboxID)}/logs${qs ? `?${qs}` : ""}`;
+  const resp = await request<SandboxLogsV2Response>(path);
+  return resp.logs ?? [];
+}
+
 const METRICS_BATCH_SIZE = 100;
 
-export async function fetchSandboxMetrics(
+export async function fetchSandboxesMetrics(
   sandboxIds: string[],
 ): Promise<Record<string, SandboxMetric>> {
   if (sandboxIds.length === 0) {

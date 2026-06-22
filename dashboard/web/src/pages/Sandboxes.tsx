@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { fetchSandboxMetrics, fetchSandboxes } from "../api/platform";
+import { fetchSandboxesMetrics, fetchSandboxes } from "../api/platform";
 import type { SandboxRow } from "../api/types";
 import { DataTable, PageHeader, StatusBadge, type DataTableColumn } from "../components";
 import { useRefreshIntervalMs } from "../hooks/useRefreshInterval";
@@ -46,7 +46,7 @@ export function Sandboxes() {
     async function load() {
       try {
         const sandboxes = await fetchSandboxes();
-        const metrics = await fetchSandboxMetrics(
+        const metrics = await fetchSandboxesMetrics(
           sandboxes.map((sb) => sb.sandboxID),
         );
         if (cancelled) {

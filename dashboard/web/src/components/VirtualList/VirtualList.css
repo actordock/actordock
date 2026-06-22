@@ -1,0 +1,22 @@
+.virtual-list {
+  overflow: auto;
+  border: 1px solid var(--marble-shadow);
+  border-radius: var(--radius-sm);
+  background: var(--marble-inset);
+}
+
+.virtual-list__spacer {
+  position: relative;
+  width: 100%;
+}
+
+.virtual-list__window {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+
+.virtual-list__row {
+  box-sizing: border-box;
+}
