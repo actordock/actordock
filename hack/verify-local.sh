@@ -28,10 +28,12 @@ require_cmd python3 curl kubectl
 
 PF_PLATFORM=""
 PF_ROUTER=""
+PF_DASHBOARD=""
 
 cleanup() {
   [[ -n "${PF_PLATFORM}" ]] && kill "${PF_PLATFORM}" 2>/dev/null || true
   [[ -n "${PF_ROUTER}" ]] && kill "${PF_ROUTER}" 2>/dev/null || true
+  [[ -n "${PF_DASHBOARD}" ]] && kill "${PF_DASHBOARD}" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -47,14 +49,17 @@ wait_http() {
   die "timed out waiting for ${url}"
 }
 
-log_step "Port-forwarding platform (:8080) and router (:8081)"
+log_step "Port-forwarding platform (:8080), router (:8081), and dashboard (:3000)"
 kubectl_ctx port-forward -n actordock svc/platform 8080:8080 >/tmp/actordock-pf-platform.log 2>&1 &
 PF_PLATFORM=$!
 kubectl_ctx port-forward -n actordock svc/router 8081:8081 >/tmp/actordock-pf-router.log 2>&1 &
 PF_ROUTER=$!
+kubectl_ctx port-forward -n actordock svc/dashboard 3000:3000 >/tmp/actordock-pf-dashboard.log 2>&1 &
+PF_DASHBOARD=$!
 
 wait_http "http://localhost:8080/health"
 wait_http "http://localhost:8081/health"
+wait_http "http://localhost:3000/health"
 
 set -a
 # shellcheck disable=SC1090

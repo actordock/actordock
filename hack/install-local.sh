@@ -26,7 +26,7 @@ usage() {
   cat <<EOF
 Usage: $0 [options]
 
-One-command local dev stack: Kind cluster + pinned Substrate + Actordock.
+One-command local dev stack: Kind cluster + pinned Substrate + Actordock + dashboard.
 
 Options:
   --skip-substrate   Skip Kind/Substrate install; deploy Actordock only
@@ -97,4 +97,4 @@ echo ""
 echo "Actordock workloads:"
 kubectl_ctx get pods -n actordock
 echo ""
-echo "Next: ./hack/verify-local.sh (or source hack/.env.local and port-forward manually)."
+echo "Next: ./hack/verify-local.sh (or source hack/.env.local and port-forward platform :8080, router :8081, dashboard :3000)."

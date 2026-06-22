@@ -67,6 +67,13 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/web/package-lock.json
+
       - name: Install Kind cluster + Substrate + Actordock
         run: ./hack/install-local.sh
 

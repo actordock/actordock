@@ -123,7 +123,11 @@ deploy_actordock_images() {
     | (cd "${root}" && ko resolve -f -) \
     | kubectl_ctx apply -f -
 
-  log_step "Deploying Actordock platform, router, and scheduler"
+  log_step "Building dashboard web assets"
+  require_cmd npm
+  (cd "${root}/dashboard/web" && npm ci && npm run build)
+
+  log_step "Deploying Actordock platform, router, scheduler, and dashboard"
   kubectl kustomize "${root}/manifests/local" --load-restrictor LoadRestrictionsNone \
     | (cd "${root}" && ko resolve -f -) \
     | kubectl_ctx apply -f -
@@ -133,6 +137,7 @@ deploy_actordock_images() {
   kubectl_ctx rollout status deployment/platform -n actordock --timeout=180s
   kubectl_ctx rollout status deployment/router -n actordock --timeout=180s
   kubectl_ctx rollout status deployment/scheduler -n actordock --timeout=180s
+  kubectl_ctx rollout status deployment/dashboard -n actordock --timeout=180s
 
   wait_actortemplate_base
 }
@@ -151,6 +156,7 @@ export E2B_SANDBOX_URL=http://localhost:8081
 export E2B_DOMAIN=localhost
 export E2B_API_KEY=dev
 export E2B_VALIDATE_API_KEY=false
+export DASHBOARD_URL=http://localhost:3000
 export KUBECONFIG=\${KUBECONFIG:-~/.kube/config}
 EOF
 }

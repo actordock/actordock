@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Optional ops dashboard — not included in manifests/local/kustomization.yaml.
+# Optional ops dashboard — use manifests/dashboard/ for Secret-based deploy outside local install.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 

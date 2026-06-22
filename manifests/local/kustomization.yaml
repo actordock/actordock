@@ -22,3 +22,4 @@ resources:
   - platform.yaml
   - router.yaml
   - scheduler.yaml
+  - dashboard.yaml

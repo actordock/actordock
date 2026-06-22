@@ -15,7 +15,7 @@ Run the E2B SDK against a local Actordock cluster on Kind.
 ./hack/install-local.sh
 ```
 
-This creates Kind cluster `actordock`, deploys pinned [Substrate](https://github.com/agent-substrate/substrate), and deploys Actordock (platform, router, scheduler, envd template `base`).
+This creates Kind cluster `actordock`, deploys pinned [Substrate](https://github.com/agent-substrate/substrate), and deploys Actordock (platform, router, scheduler, dashboard, envd template `base`).
 
 Re-deploy Actordock only (cluster already exists):
 
@@ -34,6 +34,7 @@ Re-deploy Actordock only (cluster already exists):
 | `E2B_DOMAIN` | `localhost` |
 | `E2B_API_KEY` | `dev` |
 | `E2B_VALIDATE_API_KEY` | `false` |
+| `DASHBOARD_URL` | `http://localhost:3000` |
 
 Run the E2E demo (port-forward + E2B Python SDK):
 
@@ -41,13 +42,13 @@ Run the E2E demo (port-forward + E2B Python SDK):
 ./hack/verify-local.sh
 ```
 
-Covers commands, visibility, timeout metadata, scheduler auto-cleanup, idle suspend (pause lifecycle + router auto-resume), observability routes (metrics, logs, refreshes), and sandbox extras (connect PTY, network policy, snapshots).
+Covers commands, visibility, timeout metadata, scheduler auto-cleanup, idle suspend (pause lifecycle + router auto-resume), observability routes (metrics, logs, refreshes), sandbox extras (connect PTY, network policy, snapshots), and dashboard smoke (`tests/test_dashboard.py`).
 
-Optional dashboard smoke (skip if dashboard is not deployed):
+Port-forward dashboard UI:
 
 ```bash
-kubectl --context kind-actordock port-forward -n actordock svc/dashboard 3000:3000 &
-cd e2e && .venv/bin/pytest tests/test_dashboard.py -v
+kubectl --context kind-actordock port-forward -n actordock svc/dashboard 3000:3000
+open http://localhost:3000
 ```
 
 ### Timeout
@@ -217,27 +218,29 @@ sbx.kill()
 vol.delete()
 ```
 
-## Dashboard (optional, v0.0.11)
+## Dashboard (v0.0.11)
 
-The ops dashboard is **not** installed by `./hack/install-local.sh`. Opt in after the core stack is running:
+`./hack/install-local.sh` deploys the dashboard Service in the `actordock` namespace. Port-forward to use the UI:
 
 ```bash
-kubectl apply -f manifests/dashboard/secret.example.yaml
-
-kubectl kustomize manifests/dashboard --load-restrictor LoadRestrictionsNone \
-  | ko resolve -f - \
-  | kubectl --context kind-actordock apply -f -
-
 kubectl --context kind-actordock port-forward -n actordock svc/dashboard 3000:3000
 open http://localhost:3000
 ```
 
-Local dev without deploying the dashboard image:
+For local frontend development with hot reload (port-forward platform `:8080` and router `:8081`):
 
 ```bash
-# port-forward platform (:8080) and router (:8081), then:
 cd dashboard/web && npm ci && npm run dev
 # → http://localhost:5173
+```
+
+Standalone deploy with a Kubernetes Secret (e.g. non-Kind clusters):
+
+```bash
+kubectl apply -f manifests/dashboard/secret.example.yaml
+kubectl kustomize manifests/dashboard --load-restrictor LoadRestrictionsNone \
+  | ko resolve -f - \
+  | kubectl apply -f -
 ```
 
 See [dashboard/README.md](../../dashboard/README.md) for build targets (`make verify-dashboard`) and configuration.

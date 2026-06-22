@@ -14,7 +14,7 @@
 
 # Actordock ops dashboard
 
-Optional browser UI for sandboxes, templates, volumes, snapshots, metrics, logs, and terminal access. The dashboard is **not** deployed by default `./hack/install-local.sh`; opt in via `manifests/dashboard/`.
+Optional browser UI for sandboxes, templates, volumes, snapshots, metrics, logs, and terminal access. `./hack/install-local.sh` deploys the dashboard with the core stack; production clusters can use `manifests/dashboard/` with a Secret for the API key.
 
 ## Layout
 
