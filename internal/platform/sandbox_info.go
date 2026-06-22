@@ -50,6 +50,7 @@ type sandboxDetailResponse struct {
 	AllowInternetAccess *bool                    `json:"allowInternetAccess"`
 	Network             *store.NetworkConfig     `json:"network,omitempty"`
 	VolumeMounts        []store.VolumeMount      `json:"volumeMounts,omitempty"`
+	Metadata            map[string]string        `json:"metadata,omitempty"`
 	Lifecycle           sandboxLifecycleResponse `json:"lifecycle"`
 }
 
@@ -66,6 +67,7 @@ type listedSandboxResponse struct {
 	TemplateID   string                   `json:"templateID"`
 	Alias        string                   `json:"alias,omitempty"`
 	VolumeMounts []store.VolumeMount      `json:"volumeMounts,omitempty"`
+	Metadata     map[string]string        `json:"metadata,omitempty"`
 	Lifecycle    sandboxLifecycleResponse `json:"lifecycle"`
 }
 
@@ -87,6 +89,7 @@ func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string, ali
 		AllowInternetAccess: sb.AllowInternetAccess,
 		Network:             sb.Network,
 		VolumeMounts:        append([]store.VolumeMount(nil), sb.VolumeMounts...),
+		Metadata:            cloneStringMap(sb.Metadata),
 		Lifecycle:           buildSandboxLifecycle(sb),
 	}
 }
@@ -99,13 +102,14 @@ func buildSandboxLifecycle(sb store.Sandbox) sandboxLifecycleResponse {
 	}
 }
 
-func buildSandboxResponse(cfg config.Platform, sb store.Sandbox) sandboxResponse {
+func buildSandboxResponse(cfg config.Platform, sb store.Sandbox, alias string) sandboxResponse {
 	resp := sandboxResponse{
 		ClientID:    cfg.ClientID,
 		EnvdVersion: cfg.EnvdVersion,
 		SandboxID:   sb.SandboxID,
 		TemplateID:  sb.Template,
 		Domain:      cfg.Domain,
+		Alias:       alias,
 	}
 	if sb.Secure {
 		resp.EnvdAccessToken = sb.EnvdAccessToken
@@ -136,8 +140,20 @@ func listedFromDetail(d sandboxDetailResponse) listedSandboxResponse {
 		TemplateID:   d.TemplateID,
 		Alias:        d.Alias,
 		VolumeMounts: append([]store.VolumeMount(nil), d.VolumeMounts...),
+		Metadata:     cloneStringMap(d.Metadata),
 		Lifecycle:    d.Lifecycle,
 	}
+}
+
+func cloneStringMap(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 func storeStatusFromActor(status ateapipb.Actor_Status) string {

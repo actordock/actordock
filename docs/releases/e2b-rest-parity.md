@@ -96,7 +96,7 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 
 ## Field backfill — already shipped routes
 
-These routes exist but are **`partial`** until all schema fields are wired:
+These routes were **`partial`** until v0.1.0 completed schema field wiring:
 
 ### `POST /sandboxes` (`NewSandbox` → `Sandbox`)
 
@@ -105,22 +105,22 @@ These routes exist but are **`partial`** until all schema fields are wired:
 | `templateID`, `timeout` | done | v0.0.3 |
 | `secure` | partial (reject) | v0.1.0 (full secure path) |
 | `autoPause`, `autoResume`, `lifecycle` | done | v0.0.5 |
-| `network`, `allow_internet_access` | missing | v0.0.8 |
-| `metadata`, `envVars` | missing | v0.1.0 |
+| `network`, `allow_internet_access` | done (persist; runtime deferred) | v0.1.0 |
+| `metadata`, `envVars` | done (persist; envVars runtime deferred) | v0.1.0 |
 | `volumeMounts` | done (persist; mount runtime deferred) | v0.0.9 |
-| `mcp` | missing | v0.1.0 (accept + persist; no MCP server) |
-| Response: all 8 `Sandbox` fields | partial | v0.1.0 |
+| `mcp` | done (accept + persist; no MCP server) | v0.1.0 |
+| Response: all 8 `Sandbox` fields | done | v0.1.0 |
 
 ### `GET /sandboxes/{id}` (`SandboxDetail` — 18 fields)
 
 | Field | Status | Complete in |
 |-------|--------|-------------|
 | Core 10 (id, state, times, resources, …) | done | v0.0.4 |
-| `alias`, `domain` | partial (`alias` done v0.0.10) | v0.1.0 |
+| `alias`, `domain` | done | v0.1.0 |
 | `allowInternetAccess`, `network` | done | v0.0.8 |
-| `envdAccessToken` | missing | v0.1.0 |
+| `envdAccessToken` | done | v0.1.0 |
 | `lifecycle` | done | v0.0.5 |
-| `metadata` | missing | v0.1.0 |
+| `metadata` | done | v0.1.0 |
 | `volumeMounts` | done (persist; mount runtime deferred) | v0.0.9 |
 
 ### `GET /sandboxes`, `GET /v2/sandboxes` (`ListedSandbox` — 13 fields)
@@ -145,7 +145,7 @@ All 13 fields **done** in the release that completes list item schema — **v0.1
 |-------|--------|
 | Request: `timeout`, `autoPause` | done (v0.0.5) |
 | Response: core `Sandbox` fields (`clientID`, `envdVersion`, `sandboxID`, `templateID`, `domain`) | done (v0.0.5) |
-| Response: `alias`, `envdAccessToken`, `trafficAccessToken` | partial (v0.1.0) |
+| Response: `alias`, `envdAccessToken`, `trafficAccessToken` | done | v0.1.0 |
 
 ### `GET /sandboxes/metrics` (`SandboxesWithMetrics`)
 

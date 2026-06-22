@@ -18,6 +18,31 @@ import (
 	"testing"
 )
 
+func TestValidateNetworkConfig(t *testing.T) {
+	t.Parallel()
+	if err := ValidateNetworkConfig(&NetworkConfig{
+		DenyOut: []string{"example.com"},
+	}); err == nil {
+		t.Fatal("expected deny domain error")
+	}
+	if err := ValidateNetworkConfig(&NetworkConfig{
+		AllowOut: []string{"1.1.1.1"},
+	}); err != nil {
+		t.Fatalf("valid config: %v", err)
+	}
+}
+
+func TestNormalizeNetwork(t *testing.T) {
+	t.Parallel()
+	if got := NormalizeNetwork(&NetworkConfig{}); got != nil {
+		t.Fatalf("empty config = %+v, want nil", got)
+	}
+	nc := &NetworkConfig{AllowOut: []string{"1.1.1.1"}}
+	if got := NormalizeNetwork(nc); got != nc {
+		t.Fatalf("non-empty config = %+v", got)
+	}
+}
+
 func TestParseNetworkUpdateClearsOmittedFields(t *testing.T) {
 	t.Parallel()
 	upd, err := ParseNetworkUpdate([]byte(`{}`))

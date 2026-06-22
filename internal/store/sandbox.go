@@ -14,7 +14,10 @@
 
 package store
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const (
 	StatusRunning = "running"
@@ -25,18 +28,21 @@ const (
 
 // Sandbox is persisted sandbox metadata for v0.0.2+ visibility APIs.
 type Sandbox struct {
-	SandboxID           string         `json:"sandbox_id"`
-	ActorID             string         `json:"actor_id"`
-	Template            string         `json:"template"`
-	CreatedAt           time.Time      `json:"created_at"`
-	ExpiresAt           time.Time      `json:"expires_at"`
-	OnTimeout           string         `json:"on_timeout"`
-	AutoResume          bool           `json:"auto_resume,omitempty"`
-	Status              string         `json:"status"`
-	Secure              bool           `json:"secure,omitempty"`
-	EnvdAccessToken     string         `json:"envd_access_token,omitempty"`
-	TrafficAccessToken  string         `json:"traffic_access_token,omitempty"`
-	Network             *NetworkConfig `json:"network,omitempty"`
-	AllowInternetAccess *bool          `json:"allow_internet_access,omitempty"`
-	VolumeMounts        []VolumeMount  `json:"volume_mounts,omitempty"`
+	SandboxID           string            `json:"sandbox_id"`
+	ActorID             string            `json:"actor_id"`
+	Template            string            `json:"template"`
+	CreatedAt           time.Time         `json:"created_at"`
+	ExpiresAt           time.Time         `json:"expires_at"`
+	OnTimeout           string            `json:"on_timeout"`
+	AutoResume          bool              `json:"auto_resume,omitempty"`
+	Status              string            `json:"status"`
+	Secure              bool              `json:"secure,omitempty"`
+	EnvdAccessToken     string            `json:"envd_access_token,omitempty"`
+	TrafficAccessToken  string            `json:"traffic_access_token,omitempty"`
+	Network             *NetworkConfig    `json:"network,omitempty"`
+	AllowInternetAccess *bool             `json:"allow_internet_access,omitempty"`
+	VolumeMounts        []VolumeMount     `json:"volume_mounts,omitempty"`
+	Metadata            map[string]string `json:"metadata,omitempty"`
+	EnvVars             map[string]string `json:"env_vars,omitempty"`
+	Mcp                 json.RawMessage   `json:"mcp,omitempty"`
 }

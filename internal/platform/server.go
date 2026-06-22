@@ -182,13 +182,18 @@ type createSandboxLifecycle struct {
 }
 
 type createSandboxRequest struct {
-	TemplateID   string                   `json:"templateID"`
-	Secure       *bool                    `json:"secure,omitempty"`
-	Timeout      *int                     `json:"timeout,omitempty"`
-	AutoPause    *bool                    `json:"autoPause,omitempty"`
-	AutoResume   *createSandboxAutoResume `json:"autoResume,omitempty"`
-	Lifecycle    *createSandboxLifecycle  `json:"lifecycle,omitempty"`
-	VolumeMounts []store.VolumeMount      `json:"volumeMounts,omitempty"`
+	TemplateID          string                   `json:"templateID"`
+	Secure              *bool                    `json:"secure,omitempty"`
+	Timeout             *int                     `json:"timeout,omitempty"`
+	AutoPause           *bool                    `json:"autoPause,omitempty"`
+	AutoResume          *createSandboxAutoResume `json:"autoResume,omitempty"`
+	Lifecycle           *createSandboxLifecycle  `json:"lifecycle,omitempty"`
+	VolumeMounts        []store.VolumeMount      `json:"volumeMounts,omitempty"`
+	Network             *store.NetworkConfig     `json:"network,omitempty"`
+	AllowInternetAccess *bool                    `json:"allow_internet_access,omitempty"`
+	Metadata            map[string]string        `json:"metadata,omitempty"`
+	EnvVars             map[string]string        `json:"envVars,omitempty"`
+	Mcp                 json.RawMessage          `json:"mcp,omitempty"`
 }
 
 type setSandboxTimeoutRequest struct {
@@ -215,6 +220,7 @@ type sandboxResponse struct {
 	EnvdVersion        string `json:"envdVersion"`
 	SandboxID          string `json:"sandboxID"`
 	TemplateID         string `json:"templateID"`
+	Alias              string `json:"alias,omitempty"`
 	Domain             string `json:"domain"`
 	EnvdAccessToken    string `json:"envdAccessToken,omitempty"`
 	TrafficAccessToken string `json:"trafficAccessToken,omitempty"`
@@ -297,6 +303,11 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := store.ValidateNetworkConfig(req.Network); err != nil {
+		writeAPIError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	actorID, err := newActorID()
 	if err != nil {
 		s.logger.Error("generate actor id", "err", err)
@@ -321,20 +332,27 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 
 	now := s.nowFunc()
 	expiresAt := store.ExpiresAt(now, timeoutSeconds)
-	if err := s.store.Put(ctx, store.Sandbox{
-		SandboxID:          actorID,
-		ActorID:            actorID,
-		Template:           tmpl.TemplateID,
-		CreatedAt:          now,
-		ExpiresAt:          expiresAt,
-		OnTimeout:          onTimeout,
-		AutoResume:         autoResume,
-		Status:             store.StatusRunning,
-		Secure:             secure,
-		EnvdAccessToken:    envdAccessToken,
-		TrafficAccessToken: trafficAccessToken,
-		VolumeMounts:       volumeMounts,
-	}); err != nil {
+	alias := s.templateAlias(ctx, tmpl.TemplateID)
+	sbRecord := store.Sandbox{
+		SandboxID:           actorID,
+		ActorID:             actorID,
+		Template:            tmpl.TemplateID,
+		CreatedAt:           now,
+		ExpiresAt:           expiresAt,
+		OnTimeout:           onTimeout,
+		AutoResume:          autoResume,
+		Status:              store.StatusRunning,
+		Secure:              secure,
+		EnvdAccessToken:     envdAccessToken,
+		TrafficAccessToken:  trafficAccessToken,
+		VolumeMounts:        volumeMounts,
+		Network:             store.NormalizeNetwork(req.Network),
+		AllowInternetAccess: req.AllowInternetAccess,
+		Metadata:            cloneStringMap(req.Metadata),
+		EnvVars:             cloneStringMap(req.EnvVars),
+		Mcp:                 normalizeMcp(req.Mcp),
+	}
+	if err := s.store.Put(ctx, sbRecord); err != nil {
 		s.logger.Error("persist sandbox", "actor_id", actorID, "err", err)
 		if delErr := s.actors.DeleteSandbox(ctx, actorID); delErr != nil {
 			s.logger.Error("rollback sandbox after store failure", "actor_id", actorID, "err", delErr)
@@ -343,13 +361,7 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := buildSandboxResponse(s.cfg, store.Sandbox{
-		SandboxID:          actorID,
-		Template:           tmpl.TemplateID,
-		Secure:             secure,
-		EnvdAccessToken:    envdAccessToken,
-		TrafficAccessToken: trafficAccessToken,
-	})
+	resp := buildSandboxResponse(s.cfg, sbRecord, alias)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
@@ -422,7 +434,7 @@ func (s *Server) handleConnectSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := buildSandboxResponse(s.cfg, sb)
+	resp := buildSandboxResponse(s.cfg, sb, s.templateAlias(ctx, sb.Template))
 	w.Header().Set("Content-Type", "application/json")
 	if wasPaused {
 		w.WriteHeader(http.StatusCreated)
@@ -556,10 +568,17 @@ func (s *Server) handleResumeSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := buildSandboxResponse(s.cfg, sb)
+	resp := buildSandboxResponse(s.cfg, sb, s.templateAlias(ctx, sb.Template))
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func normalizeMcp(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	return raw
 }
 
 func (s *Server) handleDeleteSandbox(w http.ResponseWriter, r *http.Request) {

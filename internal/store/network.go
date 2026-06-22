@@ -93,6 +93,38 @@ func ParseNetworkUpdate(body []byte) (NetworkUpdate, error) {
 	return upd, nil
 }
 
+// ValidateNetworkConfig checks a full SandboxNetworkConfig payload.
+func ValidateNetworkConfig(nc *NetworkConfig) error {
+	if nc == nil {
+		return nil
+	}
+	if err := validateEgressList("allowOut", nc.AllowOut, false); err != nil {
+		return err
+	}
+	if err := validateEgressList("denyOut", nc.DenyOut, true); err != nil {
+		return err
+	}
+	for domain, rules := range nc.Rules {
+		if strings.TrimSpace(domain) == "" {
+			return fmt.Errorf("rules: domain key must be non-empty")
+		}
+		for i, rule := range rules {
+			if rule.Transform == nil {
+				return fmt.Errorf("rules[%q][%d]: transform is required", domain, i)
+			}
+		}
+	}
+	return nil
+}
+
+// NormalizeNetwork returns nil when nc is empty.
+func NormalizeNetwork(nc *NetworkConfig) *NetworkConfig {
+	if nc == nil || networkConfigEmpty(nc) {
+		return nil
+	}
+	return nc
+}
+
 // ValidateNetworkUpdate checks update payload constraints.
 func ValidateNetworkUpdate(upd NetworkUpdate) error {
 	if upd.SetAllowOut {

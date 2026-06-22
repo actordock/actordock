@@ -248,6 +248,102 @@ func TestHealth(t *testing.T) {
 	}
 }
 
+func TestSandboxCreateGetListFieldParity(t *testing.T) {
+	t.Parallel()
+	actors := &fakeActors{}
+	st := newFakeStore()
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	createBody := []byte(`{
+		"templateID":"base",
+		"metadata":{"team":"acme","env":"dev"},
+		"envVars":{"FOO":"bar"},
+		"mcp":{"server":"demo"},
+		"allow_internet_access":false,
+		"network":{"allowOut":["1.1.1.1"]}
+	}`)
+	createReq := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-API-KEY", "dev")
+	createRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, body = %s", createRec.Code, createRec.Body.String())
+	}
+
+	var created sandboxResponse
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	if created.Alias != "base" {
+		t.Fatalf("alias = %q, want base", created.Alias)
+	}
+	if created.SandboxID == "" {
+		t.Fatal("sandboxID is empty")
+	}
+
+	stored := st.records[created.SandboxID]
+	if stored.Metadata["team"] != "acme" || stored.Metadata["env"] != "dev" {
+		t.Fatalf("metadata = %+v", stored.Metadata)
+	}
+	if stored.EnvVars["FOO"] != "bar" {
+		t.Fatalf("envVars = %+v", stored.EnvVars)
+	}
+	if string(stored.Mcp) != `{"server":"demo"}` {
+		t.Fatalf("mcp = %s", stored.Mcp)
+	}
+	if stored.AllowInternetAccess == nil || *stored.AllowInternetAccess {
+		t.Fatalf("allow_internet_access = %v", stored.AllowInternetAccess)
+	}
+	if stored.Network == nil || len(stored.Network.AllowOut) != 1 {
+		t.Fatalf("network = %+v", stored.Network)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/sandboxes/"+created.SandboxID, nil)
+	getReq.Header.Set("X-API-KEY", "dev")
+	getRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, body = %s", getRec.Code, getRec.Body.String())
+	}
+	var detail sandboxDetailResponse
+	if err := json.NewDecoder(getRec.Body).Decode(&detail); err != nil {
+		t.Fatalf("decode get: %v", err)
+	}
+	if detail.Metadata["team"] != "acme" {
+		t.Fatalf("detail metadata = %+v", detail.Metadata)
+	}
+	if detail.Alias != "base" || detail.Domain != "localhost" {
+		t.Fatalf("detail alias/domain = %q/%q", detail.Alias, detail.Domain)
+	}
+	if detail.AllowInternetAccess == nil || *detail.AllowInternetAccess {
+		t.Fatalf("detail allowInternetAccess = %v", detail.AllowInternetAccess)
+	}
+	if detail.Network == nil || detail.Network.AllowOut[0] != "1.1.1.1" {
+		t.Fatalf("detail network = %+v", detail.Network)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/sandboxes", nil)
+	listReq.Header.Set("X-API-KEY", "dev")
+	listRec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d", listRec.Code)
+	}
+	var listed []listedSandboxResponse
+	if err := json.NewDecoder(listRec.Body).Decode(&listed); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(listed) != 1 {
+		t.Fatalf("listed len = %d", len(listed))
+	}
+	if listed[0].Metadata["team"] != "acme" || listed[0].Alias != "base" {
+		t.Fatalf("listed item = %+v", listed[0])
+	}
+}
+
 func TestCreateSandbox(t *testing.T) {
 	t.Parallel()
 	actors := &fakeActors{}
