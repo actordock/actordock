@@ -1,0 +1,130 @@
+.settings-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.settings-note {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--stone-muted);
+  line-height: 1.6;
+}
+
+.settings-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--stone-ink);
+}
+
+.settings-field span {
+  font-weight: 500;
+}
+
+.settings-field input,
+.settings-field select {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--marble-shadow);
+  border-radius: var(--radius-sm);
+  background: var(--marble-base);
+  color: var(--stone-ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.settings-field input:focus,
+.settings-field select:focus {
+  outline: none;
+  border-color: var(--bronze-accent);
+  box-shadow: 0 0 0 2px rgba(184, 149, 106, 0.15);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.settings-panel {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-panel--ok {
+  color: var(--laurel-ok);
+  background: var(--laurel-ok-bg);
+  border: 1px solid rgba(107, 127, 94, 0.25);
+}
+
+.settings-panel--error {
+  color: var(--terracotta-danger);
+  background: var(--terracotta-danger-bg);
+  border: 1px solid rgba(166, 93, 78, 0.3);
+}
+
+.settings-panel--error p {
+  margin: 8px 0;
+}
+
+.settings-panel--error ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.settings-saved {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: var(--laurel-ok);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: var(--bronze-accent);
+  color: #fff;
+  border-color: var(--bronze-deep);
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: var(--bronze-deep);
+}
+
+.btn--ghost {
+  background: var(--marble-base);
+  color: var(--stone-ink);
+  border-color: var(--marble-shadow);
+}
+
+.btn--ghost:hover:not(:disabled) {
+  border-color: var(--bronze-accent);
+  color: var(--bronze-deep);
+}

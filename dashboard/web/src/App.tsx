@@ -1,21 +1,18 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components";
+import { useConnectionStatus } from "./hooks/useConnectionStatus";
+import { Overview } from "./pages/Overview";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { Settings } from "./pages/Settings";
 import { ThemePreview } from "./pages/ThemePreview";
 
 export default function App() {
+  const connectionStatus = useConnectionStatus();
+
   return (
-    <AppShell connectionStatus="checking">
+    <AppShell connectionStatus={connectionStatus}>
       <Routes>
-        <Route
-          path="/"
-          element={
-            <PlaceholderPage
-              title="Overview"
-              subtitle="Sandbox counts and platform health — coming in WP3."
-            />
-          }
-        />
+        <Route path="/" element={<Overview />} />
         <Route
           path="/sandboxes"
           element={
@@ -61,15 +58,7 @@ export default function App() {
             />
           }
         />
-        <Route
-          path="/settings"
-          element={
-            <PlaceholderPage
-              title="Settings"
-              subtitle="Platform connection — coming in WP2."
-            />
-          }
-        />
+        <Route path="/settings" element={<Settings />} />
         <Route path="/theme-preview" element={<ThemePreview />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
