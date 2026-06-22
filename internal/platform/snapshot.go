@@ -43,6 +43,8 @@ type createSnapshotRequest struct {
 type snapshotInfoResponse struct {
 	SnapshotID string   `json:"snapshotID"`
 	Names      []string `json:"names"`
+	SandboxID  string   `json:"sandboxID,omitempty"`
+	CreatedAt  string   `json:"createdAt,omitempty"`
 }
 
 func (s *Server) handleCreateSandboxSnapshot(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +160,8 @@ func snapshotInfoFromRecord(s store.Snapshot) snapshotInfoResponse {
 	return snapshotInfoResponse{
 		SnapshotID: s.SnapshotID,
 		Names:      names,
+		SandboxID:  s.SandboxID,
+		CreatedAt:  formatRFC3339(s.CreatedAt),
 	}
 }
 

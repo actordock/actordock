@@ -30,14 +30,17 @@ type createVolumeRequest struct {
 }
 
 type volumeResponse struct {
-	VolumeID string `json:"volumeID"`
-	Name     string `json:"name"`
+	VolumeID  string `json:"volumeID"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"createdAt,omitempty"`
 }
 
 type volumeAndTokenResponse struct {
-	VolumeID string `json:"volumeID"`
-	Name     string `json:"name"`
-	Token    string `json:"token"`
+	VolumeID  string `json:"volumeID"`
+	Name      string `json:"name"`
+	Token     string `json:"token"`
+	HostPath  string `json:"hostPath,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
 }
 
 func (s *Server) handleCreateVolume(w http.ResponseWriter, r *http.Request) {
@@ -100,8 +103,9 @@ func (s *Server) handleListVolumes(w http.ResponseWriter, r *http.Request) {
 	resp := make([]volumeResponse, 0, len(volumes))
 	for _, vol := range volumes {
 		resp = append(resp, volumeResponse{
-			VolumeID: vol.VolumeID,
-			Name:     vol.Name,
+			VolumeID:  vol.VolumeID,
+			Name:      vol.Name,
+			CreatedAt: formatRFC3339(vol.CreatedAt),
 		})
 	}
 
@@ -129,9 +133,11 @@ func (s *Server) handleGetVolume(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(volumeAndTokenResponse{
-		VolumeID: vol.VolumeID,
-		Name:     vol.Name,
-		Token:    vol.Token,
+		VolumeID:  vol.VolumeID,
+		Name:      vol.Name,
+		Token:     vol.Token,
+		HostPath:  vol.HostPath,
+		CreatedAt: formatRFC3339(vol.CreatedAt),
 	})
 }
 

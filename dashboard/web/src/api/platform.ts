@@ -12,6 +12,8 @@ import {
   type TemplateDetail,
   type TemplateTag,
   type Volume,
+  type VolumeDetail,
+  type Snapshot,
 } from "./types";
 
 const API_PREFIX = "/api/platform";
@@ -142,6 +144,20 @@ export async function connectSandbox(
 
 export async function fetchVolumes(): Promise<Volume[]> {
   return request<Volume[]>("/volumes");
+}
+
+export async function fetchVolume(volumeID: string): Promise<VolumeDetail> {
+  return request<VolumeDetail>(`/volumes/${encodeURIComponent(volumeID)}`);
+}
+
+export async function fetchSnapshots(
+  sandboxID?: string,
+): Promise<Snapshot[]> {
+  const params = new URLSearchParams({ limit: "100" });
+  if (sandboxID) {
+    params.set("sandboxID", sandboxID);
+  }
+  return request<Snapshot[]>(`/snapshots?${params.toString()}`);
 }
 
 export async function testConnection(): Promise<{

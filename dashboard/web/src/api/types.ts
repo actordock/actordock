@@ -28,6 +28,7 @@ export type Sandbox = {
   alias?: string;
   cpuCount: number;
   memoryMB: number;
+  volumeMounts?: SandboxVolumeMount[];
 };
 
 export type SandboxDetail = Sandbox & {
@@ -130,6 +131,19 @@ export type ConnectSandboxResponse = {
 export type Volume = {
   volumeID: string;
   name: string;
+  createdAt?: string;
+};
+
+export type VolumeDetail = Volume & {
+  token: string;
+  hostPath?: string;
+};
+
+export type Snapshot = {
+  snapshotID: string;
+  names: string[];
+  sandboxID?: string;
+  createdAt?: string;
 };
 
 export type APIError = {

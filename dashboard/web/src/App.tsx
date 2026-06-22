@@ -15,6 +15,9 @@ import { TemplateDetailBuilds } from "./pages/TemplateDetailBuilds";
 import { TemplateDetailOverview } from "./pages/TemplateDetailOverview";
 import { TemplateDetailTags } from "./pages/TemplateDetailTags";
 import { Templates } from "./pages/Templates";
+import { Snapshots } from "./pages/Snapshots";
+import { VolumeDetail } from "./pages/VolumeDetail";
+import { Volumes } from "./pages/Volumes";
 import { ThemePreview } from "./pages/ThemePreview";
 
 export default function App() {
@@ -37,24 +40,9 @@ export default function App() {
           <Route path="builds" element={<TemplateDetailBuilds />} />
           <Route path="tags" element={<TemplateDetailTags />} />
         </Route>
-        <Route
-          path="/volumes"
-          element={
-            <PlaceholderPage
-              title="Volumes"
-              subtitle="Volume list — coming in WP9."
-            />
-          }
-        />
-        <Route
-          path="/snapshots"
-          element={
-            <PlaceholderPage
-              title="Snapshots"
-              subtitle="Snapshot list — coming in WP10."
-            />
-          }
-        />
+        <Route path="/volumes" element={<Volumes />} />
+        <Route path="/volumes/:id" element={<VolumeDetail />} />
+        <Route path="/snapshots" element={<Snapshots />} />
         <Route
           path="/monitoring"
           element={
