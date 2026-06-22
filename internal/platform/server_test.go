@@ -118,6 +118,11 @@ func (f *fakeActors) GetActorBackend(_ context.Context, actorID string, _ int) (
 	return f.backendAddr, nil
 }
 
+func (f *fakeActors) ResumeSandboxBackend(ctx context.Context, actorID string, envdPort int) (string, bool, error) {
+	backend, err := f.GetActorBackend(ctx, actorID, envdPort)
+	return backend, false, err
+}
+
 type fakeStore struct {
 	records   map[string]store.Sandbox
 	snapshots map[string]store.Snapshot

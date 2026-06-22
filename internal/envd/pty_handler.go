@@ -26,6 +26,7 @@ import (
 	"syscall"
 
 	"connectrpc.com/connect"
+	"github.com/actordock/actordock/internal/logs"
 	processv1 "github.com/actordock/actordock/pkg/envd/process"
 	"github.com/creack/pty"
 )
@@ -43,13 +44,14 @@ type ptyHandler struct {
 	tty  *os.File
 	data *MultiplexedChannel[processv1.ProcessEvent_Data]
 	end  *MultiplexedChannel[processv1.ProcessEvent_End]
+	logs *logs.Buffer
 
 	outCtx    context.Context
 	outCancel context.CancelFunc
 	outWG     sync.WaitGroup
 }
 
-func newPTYHandler(ctx context.Context, req *processv1.StartRequest) (*ptyHandler, error) {
+func newPTYHandler(ctx context.Context, req *processv1.StartRequest, logBuf *logs.Buffer) (*ptyHandler, error) {
 	cfg := req.GetProcess()
 	if cfg == nil || cfg.GetCmd() == "" {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("process.cmd is required"))
@@ -91,6 +93,7 @@ func newPTYHandler(ctx context.Context, req *processv1.StartRequest) (*ptyHandle
 		tty:       tty,
 		data:      outMultiplex,
 		end:       NewMultiplexedChannel[processv1.ProcessEvent_End](0),
+		logs:      logBuf,
 		outCtx:    outCtx,
 		outCancel: outCancel,
 	}
@@ -101,6 +104,9 @@ func newPTYHandler(ctx context.Context, req *processv1.StartRequest) (*ptyHandle
 			n, readErr := tty.Read(readBuf)
 			if n > 0 && outMultiplex.HasSubscribers() {
 				data := slices.Clone(readBuf[:n])
+				if h.logs != nil {
+					h.logs.AppendOutput("pty", data)
+				}
 				outMultiplex.Source <- processv1.ProcessEvent_Data{
 					Data: &processv1.ProcessEvent_DataEvent{
 						Output: &processv1.ProcessEvent_DataEvent_Pty{Pty: data},

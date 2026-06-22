@@ -38,10 +38,16 @@ func parseLogsV2Query(r *http.Request) error {
 }
 
 func (s *Server) fetchSandboxLogEntries(ctx context.Context, sb store.Sandbox, rawQuery string) []logs.Entry {
-	backend, err := s.actors.GetActorBackend(ctx, sb.ActorID, s.cfg.EnvdPort)
+	backend, waitEnvd, err := s.actors.ResumeSandboxBackend(ctx, sb.ActorID, s.cfg.EnvdPort)
 	if err != nil {
 		s.logger.Warn("get sandbox logs backend", "sandbox_id", sb.SandboxID, "err", err)
 		return nil
+	}
+	if waitEnvd {
+		if err := envd.WaitForReady(ctx, "http://"+backend, envd.DefaultReadyTimeout); err != nil {
+			s.logger.Warn("wait for sandbox logs envd", "sandbox_id", sb.SandboxID, "backend", backend, "err", err)
+			return nil
+		}
 	}
 	entries, err := envd.FetchLogs(ctx, "http://"+backend, rawQuery)
 	if err != nil {

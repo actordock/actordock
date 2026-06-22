@@ -226,7 +226,7 @@ func (s *processService) startPTY(
 	defer cancel(nil)
 
 	procCtx := context.WithoutCancel(ctx)
-	proc, err := newPTYHandler(procCtx, req.Msg)
+	proc, err := newPTYHandler(procCtx, req.Msg, s.logs)
 	if err != nil {
 		return err
 	}

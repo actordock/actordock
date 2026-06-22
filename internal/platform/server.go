@@ -43,6 +43,7 @@ type sandboxClient interface {
 	DeleteSandbox(ctx context.Context, actorID string) error
 	GetActor(ctx context.Context, actorID string) (ateapipb.Actor_Status, error)
 	GetActorBackend(ctx context.Context, actorID string, envdPort int) (string, error)
+	ResumeSandboxBackend(ctx context.Context, actorID string, envdPort int) (backend string, waitEnvd bool, err error)
 	SuspendSandbox(ctx context.Context, actorID string) error
 	ResumeSandbox(ctx context.Context, actorID string) error
 }
