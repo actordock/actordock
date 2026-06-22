@@ -34,7 +34,7 @@ Each release adds one capability layer. You should be able to demo the **Target*
 | [v0.0.8](releases/v0.0.8.md) | **Sandbox extras** | Connect, network, snapshots | 18 |
 | [v0.0.9](releases/v0.0.9.md) | **Volumes** | Volume CRUD; `volumeMounts` persist (no runtime mount) | 22 |
 | [v0.0.10](releases/v0.0.10.md) | **Templates (read)** | List/get template, alias, tags | 27 |
-| [v0.0.11](releases/v0.0.11.md) | **Ops dashboard** | Optional standalone UI for sandboxes | 27 |
+| [v0.0.11](releases/v0.0.11.md) | **Ops dashboard** | Browser UI for sandboxes; local install includes dashboard | 27 |
 | [v0.1.0](releases/v0.1.0.md) | **Pilot + 60% REST** | Files, secure envd, Helm; full sandbox + auth fields | **34 ops, ≥60% fields** |
 
 \*v0.0.1–v0.0.4 cumulative count is measured at v0.0.4.
@@ -53,10 +53,10 @@ Each release adds one capability layer. You should be able to demo the **Target*
 | [v0.0.8](releases/v0.0.8.md) | released | Sandbox extras |
 | [v0.0.9](releases/v0.0.9.md) | released | Volumes |
 | [v0.0.10](releases/v0.0.10.md) | released | Templates (read) |
-| [v0.0.11](releases/v0.0.11.md) | planned | Ops dashboard (optional) |
+| [v0.0.11](releases/v0.0.11.md) | released | Ops dashboard |
 | [v0.1.0](releases/v0.1.0.md) | planned | Pilot + 60% REST |
 
-**Current focus:** [v0.0.11](releases/v0.0.11.md)
+**Current focus:** [v0.1.0](releases/v0.1.0.md)
 
 ## Backlog
 
