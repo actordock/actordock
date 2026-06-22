@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduler
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.componentLabels" (dict "component" "scheduler" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  replicas: {{ .Values.scheduler.replicas }}
+  selector:
+    matchLabels:
+      {{- include "actordock-stack.componentSelectorLabels" (dict "component" "scheduler" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "actordock-stack.componentSelectorLabels" (dict "component" "scheduler" "root" .) | nindent 8 }}
+    spec:
+      containers:
+        - name: scheduler
+          image: {{ include "actordock-stack.image" (dict "image" .Values.images.scheduler "root" .) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: SCHEDULER_LOG_LEVEL
+              value: {{ .Values.scheduler.logLevel | quote }}
+            - name: SCHEDULER_REDIS_ADDR
+              value: {{ include "actordock-stack.redisAddr" . | quote }}
+            - name: SCHEDULER_ATEAPI_ADDR
+              value: {{ .Values.actordock.ateapiAddr | quote }}
+            - name: SCHEDULER_POLL_INTERVAL
+              value: {{ .Values.scheduler.pollInterval | quote }}
+          {{- with .Values.scheduler.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

@@ -1,0 +1,16 @@
+apiVersion: v2
+name: actordock-stack
+description: Actordock control plane (platform, router, scheduler, redis) on Agent Substrate
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.28.0"
+keywords:
+  - actordock
+  - sandbox
+  - e2b
+maintainers:
+  - name: Actordock Authors
+    url: https://github.com/actordock/actordock
+annotations:
+  actordock.dev/substrate-commit: "9f8475493b6eeab9ecda837e114078a3dd0a4e41"

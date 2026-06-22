@@ -28,7 +28,7 @@ BINARIES := platform router envd scheduler
 DASHBOARD_WEB := dashboard/web
 DASHBOARD_BIN := $(BINDIR)/dashboard
 
-.PHONY: all build build-images build-dashboard build-dashboard-image test fmt verify-fmt vet verify-dashboard
+.PHONY: all build build-images build-dashboard build-dashboard-image test fmt verify-fmt vet verify-dashboard verify-helm
 
 all: build
 
@@ -61,6 +61,11 @@ verify-dashboard:
 	$(GO) test ./dashboard/...
 	cd $(DASHBOARD_WEB) && npm ci && npm run lint && npm run build
 
+verify-helm:
+	@command -v helm >/dev/null 2>&1 || { echo "helm not found; install https://helm.sh"; exit 1; }
+	helm lint ./charts/actordock-stack
+	helm template actordock ./charts/actordock-stack -n actordock >/dev/null
+
 test:
 	$(GO) test ./...
 
@@ -78,4 +83,4 @@ verify-fmt:
 		exit 1; \
 	fi
 
-verify: verify-fmt vet test
+verify: verify-fmt vet test verify-helm

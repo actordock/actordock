@@ -1,0 +1,68 @@
+{{- if .Values.dashboard.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.componentLabels" (dict "component" "dashboard" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  replicas: {{ .Values.dashboard.replicas }}
+  selector:
+    matchLabels:
+      {{- include "actordock-stack.componentSelectorLabels" (dict "component" "dashboard" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "actordock-stack.componentSelectorLabels" (dict "component" "dashboard" "root" .) | nindent 8 }}
+    spec:
+      containers:
+        - name: dashboard
+          image: {{ include "actordock-stack.image" (dict "image" .Values.images.dashboard "root" .) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: ACTORDOCK_DASHBOARD_ADDR
+              value: ":3000"
+            - name: ACTORDOCK_PLATFORM_URL
+              value: "http://platform:{{ .Values.platform.service.port }}"
+            - name: ACTORDOCK_ROUTER_URL
+              value: "http://router:{{ .Values.router.service.port }}"
+            - name: ACTORDOCK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "actordock-stack.apiKeySecretName" . }}
+                  key: ACTORDOCK_API_KEY
+            - name: ACTORDOCK_DASHBOARD_PROXY_PLATFORM
+              value: {{ .Values.dashboard.proxyPlatform | quote }}
+            - name: ACTORDOCK_DASHBOARD_PROXY_ROUTER
+              value: {{ .Values.dashboard.proxyRouter | quote }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.dashboard.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.dashboard.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.dashboard.probes.readiness.periodSeconds }}
+          {{- with .Values.dashboard.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.componentLabels" (dict "component" "dashboard" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  type: {{ .Values.dashboard.service.type }}
+  selector:
+    {{- include "actordock-stack.componentSelectorLabels" (dict "component" "dashboard" "root" .) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.dashboard.service.port }}
+      targetPort: http
+{{- end }}

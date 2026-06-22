@@ -1,0 +1,117 @@
+# Default install namespace. Use: helm install -n actordock --create-namespace
+namespace: actordock
+createNamespace: true
+
+global:
+  imagePullPolicy: IfNotPresent
+
+# Shared Actordock configuration (env vars on platform/router/scheduler).
+actordock:
+  domain: localhost
+  ateapiAddr: api.ate-system.svc:443
+  redis:
+    addr: "" # default: redis.<namespace>.svc:6379
+  envdPort: "80"
+  envdVersion: "0.1.0"
+  defaultSandboxTimeout: "300"
+  templateNamespace: actordock
+  templateName: base
+  clientID: actordock
+
+secrets:
+  create: true
+  # Platform + dashboard API key. Override in production.
+  apiKey: changeme
+  existingSecret: ""
+
+images:
+  platform:
+    repository: ghcr.io/actordock/platform
+    tag: ""
+  router:
+    repository: ghcr.io/actordock/router
+    tag: ""
+  scheduler:
+    repository: ghcr.io/actordock/scheduler
+    tag: ""
+  envd:
+    repository: ghcr.io/actordock/envd
+    tag: ""
+  dashboard:
+    repository: ghcr.io/actordock/dashboard
+    tag: ""
+
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-alpine
+  resources: {}
+  probes:
+    readiness:
+      initialDelaySeconds: 2
+      periodSeconds: 5
+  service:
+    type: ClusterIP
+    port: 6379
+
+platform:
+  replicas: 1
+  resources: {}
+  service:
+    type: ClusterIP
+    port: 8080
+  probes:
+    readiness:
+      path: /health
+      initialDelaySeconds: 2
+      periodSeconds: 5
+
+router:
+  replicas: 1
+  resources: {}
+  service:
+    type: ClusterIP
+    port: 8081
+  probes:
+    readiness:
+      path: /health
+      initialDelaySeconds: 2
+      periodSeconds: 5
+
+scheduler:
+  replicas: 1
+  logLevel: info
+  pollInterval: 5s
+  resources: {}
+
+dashboard:
+  enabled: true
+  replicas: 1
+  resources: {}
+  service:
+    type: ClusterIP
+    port: 3000
+  proxyPlatform: true
+  proxyRouter: true
+  probes:
+    readiness:
+      path: /health
+      initialDelaySeconds: 2
+      periodSeconds: 5
+
+# Substrate CRs in the actordock namespace. Requires ate-system already installed.
+substrate:
+  enabled: true
+  lock:
+    repository: https://github.com/agent-substrate/substrate
+    commit: 9f8475493b6eeab9ecda837e114078a3dd0a4e41
+  workerPool:
+    name: actordock
+    replicas: 2
+    # Set to your built ateom-gvisor image (ko://.../cmd/ateom-gvisor).
+    ateomImage: ghcr.io/agent-substrate/ateom-gvisor:latest
+  actorTemplate:
+    name: base
+    pauseImage: registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
+    snapshotsBucket: ate-snapshots

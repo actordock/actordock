@@ -1,0 +1,21 @@
+Actordock stack installed in namespace {{ include "actordock-stack.namespace" . }}.
+
+{{- if .Values.substrate.enabled }}
+
+Substrate CRs (WorkerPool + ActorTemplate) were applied. Ensure ate-system is
+running and images in values.yaml match your registry before creating sandboxes.
+{{- end }}
+
+Platform API:
+  kubectl port-forward -n {{ include "actordock-stack.namespace" . }} svc/platform {{ .Values.platform.service.port }}:{{ .Values.platform.service.port }}
+
+Router:
+  kubectl port-forward -n {{ include "actordock-stack.namespace" . }} svc/router {{ .Values.router.service.port }}:{{ .Values.router.service.port }}
+
+{{- if .Values.dashboard.enabled }}
+
+Dashboard:
+  kubectl port-forward -n {{ include "actordock-stack.namespace" . }} svc/dashboard {{ .Values.dashboard.service.port }}:{{ .Values.dashboard.service.port }}
+{{- end }}
+
+Set E2B_API_KEY to the value of secrets.apiKey (or your existing secret).

@@ -1,0 +1,51 @@
+{{- if .Values.redis.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.componentLabels" (dict "component" "redis" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "actordock-stack.componentSelectorLabels" (dict "component" "redis" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "actordock-stack.componentSelectorLabels" (dict "component" "redis" "root" .) | nindent 8 }}
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: redis
+              containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: {{ .Values.redis.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.redis.probes.readiness.periodSeconds }}
+          {{- with .Values.redis.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.componentLabels" (dict "component" "redis" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  type: {{ .Values.redis.service.type }}
+  selector:
+    {{- include "actordock-stack.componentSelectorLabels" (dict "component" "redis" "root" .) | nindent 4 }}
+  ports:
+    - name: redis
+      port: {{ .Values.redis.service.port }}
+      targetPort: redis
+{{- end }}

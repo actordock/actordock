@@ -1,0 +1,39 @@
+{{- if .Values.substrate.enabled }}
+apiVersion: ate.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: {{ .Values.substrate.workerPool.name }}
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    workload: actordock
+    {{- include "actordock-stack.labels" . | nindent 4 }}
+  annotations:
+    actordock.dev/substrate-commit: {{ .Values.substrate.lock.commit | quote }}
+spec:
+  replicas: {{ .Values.substrate.workerPool.replicas }}
+  ateomImage: {{ .Values.substrate.workerPool.ateomImage | quote }}
+---
+apiVersion: ate.dev/v1alpha1
+kind: ActorTemplate
+metadata:
+  name: {{ .Values.substrate.actorTemplate.name }}
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.labels" . | nindent 4 }}
+  annotations:
+    actordock.dev/substrate-commit: {{ .Values.substrate.lock.commit | quote }}
+spec:
+  workerSelector:
+    matchLabels:
+      workload: actordock
+  pauseImage: {{ .Values.substrate.actorTemplate.pauseImage | quote }}
+  containers:
+    - name: envd
+      image: {{ include "actordock-stack.image" (dict "image" .Values.images.envd "root" .) }}
+      command: ["/ko-app/envd"]
+      env:
+        - name: ENVD_LISTEN_ADDR
+          value: ":80"
+  snapshotsConfig:
+    location: gs://{{ .Values.substrate.actorTemplate.snapshotsBucket }}/actordock/
+{{- end }}

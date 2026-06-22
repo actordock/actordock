@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.componentLabels" (dict "component" "platform" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  replicas: {{ .Values.platform.replicas }}
+  selector:
+    matchLabels:
+      {{- include "actordock-stack.componentSelectorLabels" (dict "component" "platform" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "actordock-stack.componentSelectorLabels" (dict "component" "platform" "root" .) | nindent 8 }}
+    spec:
+      serviceAccountName: platform
+      containers:
+        - name: platform
+          image: {{ include "actordock-stack.image" (dict "image" .Values.images.platform "root" .) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: PLATFORM_LISTEN_ADDR
+              value: ":8080"
+            - name: ACTORDOCK_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "actordock-stack.apiKeySecretName" . }}
+                  key: ACTORDOCK_API_KEY
+            - name: ACTORDOCK_ATEAPI_ADDR
+              value: {{ .Values.actordock.ateapiAddr | quote }}
+            - name: ACTORDOCK_DOMAIN
+              value: {{ .Values.actordock.domain | quote }}
+            - name: ACTORDOCK_TEMPLATE_NAMESPACE
+              value: {{ .Values.actordock.templateNamespace | quote }}
+            - name: ACTORDOCK_TEMPLATE_NAME
+              value: {{ .Values.actordock.templateName | quote }}
+            - name: ACTORDOCK_ENVD_VERSION
+              value: {{ .Values.actordock.envdVersion | quote }}
+            - name: ACTORDOCK_ENVD_PORT
+              value: {{ .Values.actordock.envdPort | quote }}
+            - name: ACTORDOCK_REDIS_ADDR
+              value: {{ include "actordock-stack.redisAddr" . | quote }}
+            - name: ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT
+              value: {{ .Values.actordock.defaultSandboxTimeout | quote }}
+            - name: ACTORDOCK_CLIENT_ID
+              value: {{ .Values.actordock.clientID | quote }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.platform.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.platform.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.platform.probes.readiness.periodSeconds }}
+          {{- with .Values.platform.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.componentLabels" (dict "component" "platform" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  type: {{ .Values.platform.service.type }}
+  selector:
+    {{- include "actordock-stack.componentSelectorLabels" (dict "component" "platform" "root" .) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.platform.service.port }}
+      targetPort: http

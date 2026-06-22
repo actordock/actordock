@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: router
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.componentLabels" (dict "component" "router" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  replicas: {{ .Values.router.replicas }}
+  selector:
+    matchLabels:
+      {{- include "actordock-stack.componentSelectorLabels" (dict "component" "router" "root" .) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "actordock-stack.componentSelectorLabels" (dict "component" "router" "root" .) | nindent 8 }}
+    spec:
+      containers:
+        - name: router
+          image: {{ include "actordock-stack.image" (dict "image" .Values.images.router "root" .) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8081
+          env:
+            - name: ROUTER_LISTEN_ADDR
+              value: ":8081"
+            - name: ACTORDOCK_ATEAPI_ADDR
+              value: {{ .Values.actordock.ateapiAddr | quote }}
+            - name: ACTORDOCK_DOMAIN
+              value: {{ .Values.actordock.domain | quote }}
+            - name: ACTORDOCK_ENVD_PORT
+              value: {{ .Values.actordock.envdPort | quote }}
+            - name: ACTORDOCK_REDIS_ADDR
+              value: {{ include "actordock-stack.redisAddr" . | quote }}
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.router.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.router.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.router.probes.readiness.periodSeconds }}
+          {{- with .Values.router.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: router
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.componentLabels" (dict "component" "router" "Chart" .Chart "Release" .Release "Values" .Values) | nindent 4 }}
+spec:
+  type: {{ .Values.router.service.type }}
+  selector:
+    {{- include "actordock-stack.componentSelectorLabels" (dict "component" "router" "root" .) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.router.service.port }}
+      targetPort: http
