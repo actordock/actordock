@@ -62,11 +62,11 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 23 | POST | `/v2/templates` | defer |
 | 24 | GET | `/templates/{templateID}/files/{hash}` | done (v0.0.10 stub) |
 | 25 | GET | `/templates` | done (v0.0.10) |
-| 26 | POST | `/templates` | v0.1.0 |
+| 26 | POST | `/templates` | done (v0.1.0; metadata only, no build) |
 | 27 | GET | `/templates/{templateID}` | done (v0.0.10) |
 | 28 | POST | `/templates/{templateID}` | defer |
 | 29 | DELETE | `/templates/{templateID}` | defer |
-| 30 | PATCH | `/templates/{templateID}` | v0.1.0 |
+| 30 | PATCH | `/templates/{templateID}` | done (v0.1.0; metadata only) |
 | 31 | POST | `/templates/{templateID}/builds/{buildID}` | defer |
 | 32 | POST | `/v2/templates/{templateID}/builds/{buildID}` | defer |
 | 33 | PATCH | `/v2/templates/{templateID}` | defer |

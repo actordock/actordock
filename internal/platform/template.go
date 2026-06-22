@@ -20,6 +20,9 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/actordock/actordock/internal/store"
+	"github.com/google/uuid"
 )
 
 type templateResponse struct {
@@ -79,6 +82,30 @@ type templateTagResponse struct {
 type templateBuildFileUploadResponse struct {
 	Present bool    `json:"present"`
 	URL     *string `json:"url,omitempty"`
+}
+
+type createTemplateRequest struct {
+	Alias      string `json:"alias,omitempty"`
+	Dockerfile string `json:"dockerfile"`
+	TeamID     string `json:"teamID,omitempty"`
+	StartCmd   string `json:"startCmd,omitempty"`
+	ReadyCmd   string `json:"readyCmd,omitempty"`
+	CPUCount   int    `json:"cpuCount,omitempty"`
+	MemoryMB   int    `json:"memoryMB,omitempty"`
+}
+
+type patchTemplateRequest struct {
+	Public *bool `json:"public,omitempty"`
+}
+
+type templateUpdateResponse struct {
+	Names []string `json:"names"`
+}
+
+func buildTemplateUpdateResponse(tmpl CatalogTemplate) templateUpdateResponse {
+	return templateUpdateResponse{
+		Names: append([]string(nil), tmpl.Names...),
+	}
 }
 
 func buildTemplateResponse(tmpl CatalogTemplate) templateResponse {
@@ -174,6 +201,78 @@ func (s *Server) handleListTemplates(w http.ResponseWriter, r *http.Request) {
 		resp = append(resp, buildTemplateResponse(tmpl))
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleCreateTemplate(w http.ResponseWriter, r *http.Request) {
+	var req createTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if strings.TrimSpace(req.Dockerfile) == "" {
+		writeAPIError(w, http.StatusBadRequest, "dockerfile is required")
+		return
+	}
+
+	templateID := strings.TrimSpace(req.Alias)
+	if templateID == "" {
+		templateID = "tpl-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	}
+
+	ctx := r.Context()
+	tmpl, err := s.templates.Create(ctx, CreateTemplateInput{
+		TemplateID: templateID,
+		Alias:      req.Alias,
+		Dockerfile: req.Dockerfile,
+		StartCmd:   req.StartCmd,
+		ReadyCmd:   req.ReadyCmd,
+		CPUCount:   req.CPUCount,
+		MemoryMB:   req.MemoryMB,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrCatalogTemplateExists):
+			writeAPIError(w, http.StatusConflict, "template already exists")
+		case errors.Is(err, store.ErrCatalogTemplateDockerfile),
+			strings.Contains(err.Error(), "cpuCount"),
+			strings.Contains(err.Error(), "memoryMB"):
+			writeAPIError(w, http.StatusBadRequest, err.Error())
+		default:
+			s.logger.Error("create template", "template_id", templateID, "err", err)
+			writeAPIError(w, http.StatusInternalServerError, "failed to create template")
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, buildTemplateResponse(tmpl))
+}
+
+func (s *Server) handlePatchTemplate(w http.ResponseWriter, r *http.Request) {
+	templateID := strings.TrimSpace(r.PathValue("id"))
+	if templateID == "" {
+		writeAPIError(w, http.StatusBadRequest, "template id is required")
+		return
+	}
+
+	var req patchTemplateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	ctx := r.Context()
+	tmpl, err := s.templates.Update(ctx, templateID, req.Public)
+	if errors.Is(err, ErrTemplateNotFound) {
+		writeAPIError(w, http.StatusNotFound, "template not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("update template", "template_id", templateID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to update template")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, buildTemplateUpdateResponse(tmpl))
 }
 
 func (s *Server) handleGetTemplate(w http.ResponseWriter, r *http.Request) {

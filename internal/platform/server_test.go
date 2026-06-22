@@ -124,20 +124,24 @@ func (f *fakeActors) ResumeSandboxBackend(ctx context.Context, actorID string, e
 }
 
 type fakeStore struct {
-	records   map[string]store.Sandbox
-	snapshots map[string]store.Snapshot
-	volumes   map[string]store.Volume
-	volNames  map[string]string
-	putErr    error
-	delErr    error
+	records          map[string]store.Sandbox
+	snapshots        map[string]store.Snapshot
+	volumes          map[string]store.Volume
+	volNames         map[string]string
+	catalogTemplates map[string]store.CatalogTemplateRecord
+	putErr           error
+	delErr           error
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		records:   make(map[string]store.Sandbox),
-		snapshots: make(map[string]store.Snapshot),
-		volumes:   make(map[string]store.Volume),
-		volNames:  make(map[string]string),
+		records:          make(map[string]store.Sandbox),
+		snapshots:        make(map[string]store.Snapshot),
+		volumes:          make(map[string]store.Volume),
+		volNames:         make(map[string]string),
+		catalogTemplates: make(map[string]store.CatalogTemplateRecord),
+		putErr:           nil,
+		delErr:           nil,
 	}
 }
 
@@ -234,6 +238,38 @@ func (f *fakeStore) DeleteVolume(_ context.Context, volumeID string) error {
 	}
 	delete(f.volumes, volumeID)
 	delete(f.volNames, vol.Name)
+	return nil
+}
+
+func (f *fakeStore) PutCatalogTemplate(_ context.Context, rec store.CatalogTemplateRecord) error {
+	if _, ok := f.catalogTemplates[rec.TemplateID]; ok {
+		return store.ErrCatalogTemplateExists
+	}
+	f.catalogTemplates[rec.TemplateID] = rec
+	return nil
+}
+
+func (f *fakeStore) GetCatalogTemplate(_ context.Context, templateID string) (store.CatalogTemplateRecord, error) {
+	rec, ok := f.catalogTemplates[templateID]
+	if !ok {
+		return store.CatalogTemplateRecord{}, store.ErrCatalogTemplateNotFound
+	}
+	return rec, nil
+}
+
+func (f *fakeStore) ListCatalogTemplates(_ context.Context) ([]store.CatalogTemplateRecord, error) {
+	out := make([]store.CatalogTemplateRecord, 0, len(f.catalogTemplates))
+	for _, rec := range f.catalogTemplates {
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) UpdateCatalogTemplate(_ context.Context, rec store.CatalogTemplateRecord) error {
+	if _, ok := f.catalogTemplates[rec.TemplateID]; !ok {
+		return store.ErrCatalogTemplateNotFound
+	}
+	f.catalogTemplates[rec.TemplateID] = rec
 	return nil
 }
 

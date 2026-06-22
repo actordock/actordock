@@ -69,10 +69,18 @@ type volumeStore interface {
 	DeleteVolume(ctx context.Context, volumeID string) error
 }
 
+type catalogTemplateStore interface {
+	PutCatalogTemplate(ctx context.Context, rec store.CatalogTemplateRecord) error
+	GetCatalogTemplate(ctx context.Context, templateID string) (store.CatalogTemplateRecord, error)
+	ListCatalogTemplates(ctx context.Context) ([]store.CatalogTemplateRecord, error)
+	UpdateCatalogTemplate(ctx context.Context, rec store.CatalogTemplateRecord) error
+}
+
 type platformStore interface {
 	sandboxStore
 	snapshotStore
 	volumeStore
+	catalogTemplateStore
 }
 
 type Server struct {
@@ -94,6 +102,9 @@ func NewServerWithCatalog(cfg config.Platform, actors sandboxClient, st platform
 	}
 	if catalog == nil {
 		catalog = NewStaticTemplateCatalog(cfg)
+	}
+	if cs, ok := st.(catalogTemplateStore); ok {
+		catalog = NewWritableTemplateCatalog(cfg, catalog, cs)
 	}
 	return &Server{
 		cfg:       cfg,
@@ -129,6 +140,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /volumes/{volumeID}", s.requireAPIKey(http.HandlerFunc(s.handleGetVolume)))
 	mux.Handle("DELETE /volumes/{volumeID}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteVolume)))
 	mux.Handle("GET /templates", s.requireAPIKey(http.HandlerFunc(s.handleListTemplates)))
+	mux.Handle("POST /templates", s.requireAPIKey(http.HandlerFunc(s.handleCreateTemplate)))
+	mux.Handle("PATCH /templates/{id}", s.requireAPIKey(http.HandlerFunc(s.handlePatchTemplate)))
 	mux.Handle("GET /templates/{path...}", s.requireAPIKey(http.HandlerFunc(s.handleTemplatePath)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux

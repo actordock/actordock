@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/internal/config"
+	"github.com/actordock/actordock/internal/store"
 	v1alpha1 "github.com/agent-substrate/substrate/pkg/api/v1alpha1"
 	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -53,6 +54,20 @@ type TemplateCatalog interface {
 	List(ctx context.Context) ([]CatalogTemplate, error)
 	Get(ctx context.Context, templateID string) (CatalogTemplate, error)
 	ResolveAlias(ctx context.Context, alias string) (CatalogTemplate, error)
+	Create(ctx context.Context, input CreateTemplateInput) (CatalogTemplate, error)
+	Update(ctx context.Context, templateID string, public *bool) (CatalogTemplate, error)
+}
+
+// CreateTemplateInput is metadata accepted by POST /templates (no build).
+type CreateTemplateInput struct {
+	TemplateID string
+	Alias      string
+	Dockerfile string
+	StartCmd   string
+	ReadyCmd   string
+	CPUCount   int
+	MemoryMB   int
+	Public     bool
 }
 
 type staticTemplateCatalog struct {
@@ -107,6 +122,219 @@ func (c *staticTemplateCatalog) ResolveAlias(_ context.Context, alias string) (C
 		return tmpl, nil
 	}
 	return CatalogTemplate{}, ErrTemplateNotFound
+}
+
+func (c *staticTemplateCatalog) Create(context.Context, CreateTemplateInput) (CatalogTemplate, error) {
+	return CatalogTemplate{}, errTemplateCatalogReadOnly
+}
+
+func (c *staticTemplateCatalog) Update(context.Context, string, *bool) (CatalogTemplate, error) {
+	return CatalogTemplate{}, errTemplateCatalogReadOnly
+}
+
+var errTemplateCatalogReadOnly = errors.New("template catalog is read-only")
+
+type writableTemplateCatalog struct {
+	base  TemplateCatalog
+	store catalogTemplateStore
+	cfg   config.Platform
+}
+
+// NewWritableTemplateCatalog overlays Redis-backed user templates on a base catalog.
+func NewWritableTemplateCatalog(cfg config.Platform, base TemplateCatalog, st catalogTemplateStore) TemplateCatalog {
+	if base == nil {
+		base = NewStaticTemplateCatalog(cfg)
+	}
+	return &writableTemplateCatalog{base: base, store: st, cfg: cfg}
+}
+
+func (c *writableTemplateCatalog) List(ctx context.Context) ([]CatalogTemplate, error) {
+	merged, err := c.base.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]CatalogTemplate, len(merged))
+	for _, tmpl := range merged {
+		byID[strings.ToLower(tmpl.TemplateID)] = tmpl
+	}
+	user, err := c.store.ListCatalogTemplates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, rec := range user {
+		tmpl := catalogTemplateFromRecord(rec)
+		byID[strings.ToLower(tmpl.TemplateID)] = tmpl
+	}
+	out := make([]CatalogTemplate, 0, len(byID))
+	for _, tmpl := range byID {
+		out = append(out, tmpl)
+	}
+	return out, nil
+}
+
+func (c *writableTemplateCatalog) Get(ctx context.Context, templateID string) (CatalogTemplate, error) {
+	if tmpl, err := c.getUser(ctx, templateID); err == nil {
+		return tmpl, nil
+	} else if !errors.Is(err, store.ErrCatalogTemplateNotFound) {
+		return CatalogTemplate{}, err
+	}
+	return c.base.Get(ctx, templateID)
+}
+
+func (c *writableTemplateCatalog) ResolveAlias(ctx context.Context, alias string) (CatalogTemplate, error) {
+	key := strings.ToLower(strings.TrimSpace(alias))
+	user, err := c.store.ListCatalogTemplates(ctx)
+	if err != nil {
+		return CatalogTemplate{}, err
+	}
+	for _, rec := range user {
+		tmpl := catalogTemplateFromRecord(rec)
+		if strings.EqualFold(tmpl.TemplateID, key) {
+			return tmpl, nil
+		}
+		for _, item := range tmpl.Aliases {
+			if strings.EqualFold(item, key) {
+				return tmpl, nil
+			}
+		}
+		for _, item := range tmpl.Names {
+			if strings.EqualFold(item, key) {
+				return tmpl, nil
+			}
+		}
+	}
+	return c.base.ResolveAlias(ctx, alias)
+}
+
+func (c *writableTemplateCatalog) Create(ctx context.Context, input CreateTemplateInput) (CatalogTemplate, error) {
+	templateID := strings.TrimSpace(input.TemplateID)
+	if templateID == "" {
+		return CatalogTemplate{}, store.ErrCatalogTemplateIDEmpty
+	}
+	if strings.TrimSpace(input.Dockerfile) == "" {
+		return CatalogTemplate{}, store.ErrCatalogTemplateDockerfile
+	}
+	if _, err := c.Get(ctx, templateID); err == nil {
+		return CatalogTemplate{}, store.ErrCatalogTemplateExists
+	} else if !errors.Is(err, ErrTemplateNotFound) && !errors.Is(err, store.ErrCatalogTemplateNotFound) {
+		return CatalogTemplate{}, err
+	}
+
+	cpuCount := input.CPUCount
+	if cpuCount == 0 {
+		cpuCount = defaultCPUCount
+	}
+	memoryMB := input.MemoryMB
+	if memoryMB == 0 {
+		memoryMB = defaultMemoryMB
+	}
+	if cpuCount < 1 {
+		return CatalogTemplate{}, fmt.Errorf("cpuCount must be at least 1")
+	}
+	if memoryMB < 128 {
+		return CatalogTemplate{}, fmt.Errorf("memoryMB must be at least 128")
+	}
+
+	alias := strings.TrimSpace(input.Alias)
+	if alias == "" {
+		alias = templateID
+	}
+	now := time.Now().UTC()
+	ns := c.cfg.TemplateNamespace
+	rec := store.CatalogTemplateRecord{
+		TemplateID:  templateID,
+		Namespace:   ns,
+		Name:        c.cfg.TemplateName,
+		Aliases:     []string{alias},
+		Names:       []string{alias},
+		CPUCount:    cpuCount,
+		MemoryMB:    memoryMB,
+		DiskSizeMB:  defaultDiskSizeMB,
+		EnvdVersion: c.cfg.EnvdVersion,
+		BuildID:     stableTemplateBuildID(ns, templateID),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		Public:      true,
+		Dockerfile:  input.Dockerfile,
+		StartCmd:    input.StartCmd,
+		ReadyCmd:    input.ReadyCmd,
+	}
+	if err := c.store.PutCatalogTemplate(ctx, rec); err != nil {
+		return CatalogTemplate{}, err
+	}
+	return catalogTemplateFromRecord(rec), nil
+}
+
+func (c *writableTemplateCatalog) Update(ctx context.Context, templateID string, public *bool) (CatalogTemplate, error) {
+	if public == nil {
+		return c.Get(ctx, templateID)
+	}
+	rec, err := c.store.GetCatalogTemplate(ctx, templateID)
+	if errors.Is(err, store.ErrCatalogTemplateNotFound) {
+		base, getErr := c.base.Get(ctx, templateID)
+		if getErr != nil {
+			return CatalogTemplate{}, ErrTemplateNotFound
+		}
+		now := time.Now().UTC()
+		rec = catalogTemplateToRecord(base)
+		rec.Dockerfile = "FROM scratch"
+		rec.UpdatedAt = now
+		if err := c.store.PutCatalogTemplate(ctx, rec); err != nil {
+			return CatalogTemplate{}, err
+		}
+	} else if err != nil {
+		return CatalogTemplate{}, err
+	}
+	rec.Public = *public
+	rec.UpdatedAt = time.Now().UTC()
+	if err := c.store.UpdateCatalogTemplate(ctx, rec); err != nil {
+		return CatalogTemplate{}, err
+	}
+	return catalogTemplateFromRecord(rec), nil
+}
+
+func (c *writableTemplateCatalog) getUser(ctx context.Context, templateID string) (CatalogTemplate, error) {
+	rec, err := c.store.GetCatalogTemplate(ctx, templateID)
+	if err != nil {
+		return CatalogTemplate{}, err
+	}
+	return catalogTemplateFromRecord(rec), nil
+}
+
+func catalogTemplateFromRecord(rec store.CatalogTemplateRecord) CatalogTemplate {
+	return CatalogTemplate{
+		TemplateID:  rec.TemplateID,
+		Namespace:   rec.Namespace,
+		Name:        rec.Name,
+		Aliases:     append([]string(nil), rec.Aliases...),
+		Names:       append([]string(nil), rec.Names...),
+		CPUCount:    rec.CPUCount,
+		MemoryMB:    rec.MemoryMB,
+		DiskSizeMB:  rec.DiskSizeMB,
+		EnvdVersion: rec.EnvdVersion,
+		BuildID:     rec.BuildID,
+		CreatedAt:   rec.CreatedAt,
+		UpdatedAt:   rec.UpdatedAt,
+		Public:      rec.Public,
+	}
+}
+
+func catalogTemplateToRecord(tmpl CatalogTemplate) store.CatalogTemplateRecord {
+	return store.CatalogTemplateRecord{
+		TemplateID:  tmpl.TemplateID,
+		Namespace:   tmpl.Namespace,
+		Name:        tmpl.Name,
+		Aliases:     append([]string(nil), tmpl.Aliases...),
+		Names:       append([]string(nil), tmpl.Names...),
+		CPUCount:    tmpl.CPUCount,
+		MemoryMB:    tmpl.MemoryMB,
+		DiskSizeMB:  tmpl.DiskSizeMB,
+		EnvdVersion: tmpl.EnvdVersion,
+		BuildID:     tmpl.BuildID,
+		CreatedAt:   tmpl.CreatedAt,
+		UpdatedAt:   tmpl.UpdatedAt,
+		Public:      tmpl.Public,
+	}
 }
 
 type k8sTemplateCatalog struct {
@@ -187,6 +415,14 @@ func (c *k8sTemplateCatalog) ResolveAlias(ctx context.Context, alias string) (Ca
 		}
 	}
 	return CatalogTemplate{}, ErrTemplateNotFound
+}
+
+func (c *k8sTemplateCatalog) Create(context.Context, CreateTemplateInput) (CatalogTemplate, error) {
+	return CatalogTemplate{}, errTemplateCatalogReadOnly
+}
+
+func (c *k8sTemplateCatalog) Update(context.Context, string, *bool) (CatalogTemplate, error) {
+	return CatalogTemplate{}, errTemplateCatalogReadOnly
 }
 
 func catalogTemplateFromConfig(cfg config.Platform, name string, createdAt time.Time) CatalogTemplate {
