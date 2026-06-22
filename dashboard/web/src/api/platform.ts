@@ -2,18 +2,21 @@ import {
   type HealthResponse,
   PlatformAPIError,
   type ConnectSandboxResponse,
+  type CreateSandboxRequest,
+  type CreateSandboxResponse,
   type Sandbox,
   type SandboxDetail,
   type SandboxLogEntry,
   type SandboxLogsV2Response,
   type SandboxMetric,
+  type SandboxNetworkUpdate,
   type SandboxesMetricsResponse,
+  type Snapshot,
   type Template,
   type TemplateDetail,
   type TemplateTag,
   type Volume,
   type VolumeDetail,
-  type Snapshot,
 } from "./types";
 
 const API_PREFIX = "/api/platform";
@@ -32,7 +35,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new PlatformAPIError(message, res.status);
   }
-  return res.json() as Promise<T>;
+  if (res.status === 204 || res.headers.get("content-length") === "0") {
+    return undefined as T;
+  }
+  const text = await res.text();
+  if (!text) {
+    return undefined as T;
+  }
+  return JSON.parse(text) as T;
+}
+
+function jsonBody(body: unknown): RequestInit {
+  return {
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  };
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
@@ -41,6 +58,80 @@ export async function fetchHealth(): Promise<HealthResponse> {
 
 export async function fetchSandboxes(): Promise<Sandbox[]> {
   return request<Sandbox[]>("/sandboxes");
+}
+
+export async function createSandbox(
+  body: CreateSandboxRequest,
+): Promise<CreateSandboxResponse> {
+  return request<CreateSandboxResponse>("/sandboxes", {
+    method: "POST",
+    ...jsonBody(body),
+  });
+}
+
+export async function killSandbox(sandboxID: string): Promise<void> {
+  await request<void>(`/sandboxes/${encodeURIComponent(sandboxID)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function pauseSandbox(sandboxID: string): Promise<void> {
+  await request<void>(`/sandboxes/${encodeURIComponent(sandboxID)}/pause`, {
+    method: "POST",
+  });
+}
+
+export async function resumeSandbox(
+  sandboxID: string,
+  body: { timeout?: number } = {},
+): Promise<void> {
+  await request<void>(`/sandboxes/${encodeURIComponent(sandboxID)}/resume`, {
+    method: "POST",
+    ...jsonBody(body),
+  });
+}
+
+export async function refreshSandboxTTL(
+  sandboxID: string,
+  duration?: number,
+): Promise<void> {
+  await request<void>(`/sandboxes/${encodeURIComponent(sandboxID)}/refreshes`, {
+    method: "POST",
+    ...jsonBody(duration !== undefined ? { duration } : {}),
+  });
+}
+
+export async function setSandboxTimeout(
+  sandboxID: string,
+  timeout: number,
+): Promise<void> {
+  await request<void>(`/sandboxes/${encodeURIComponent(sandboxID)}/timeout`, {
+    method: "POST",
+    ...jsonBody({ timeout }),
+  });
+}
+
+export async function createSandboxSnapshot(
+  sandboxID: string,
+  name?: string,
+): Promise<Snapshot> {
+  return request<Snapshot>(
+    `/sandboxes/${encodeURIComponent(sandboxID)}/snapshots`,
+    {
+      method: "POST",
+      ...jsonBody(name ? { name } : {}),
+    },
+  );
+}
+
+export async function updateSandboxNetwork(
+  sandboxID: string,
+  body: SandboxNetworkUpdate,
+): Promise<void> {
+  await request<void>(`/sandboxes/${encodeURIComponent(sandboxID)}/network`, {
+    method: "PUT",
+    ...jsonBody(body),
+  });
 }
 
 export async function fetchSandbox(sandboxID: string): Promise<SandboxDetail> {

@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components";
+import { ToastProvider } from "./components/Toast/ToastProvider";
 import { useConnectionStatus } from "./hooks/useConnectionStatus";
 import { Monitoring } from "./pages/Monitoring";
 import { Overview } from "./pages/Overview";
@@ -24,8 +25,9 @@ export default function App() {
   const connectionStatus = useConnectionStatus();
 
   return (
-    <AppShell connectionStatus={connectionStatus}>
-      <Routes>
+    <ToastProvider>
+      <AppShell connectionStatus={connectionStatus}>
+        <Routes>
         <Route path="/" element={<Overview />} />
         <Route path="/sandboxes" element={<Sandboxes />} />
         <Route path="/sandboxes/:id" element={<SandboxDetail />}>
@@ -48,7 +50,8 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/theme-preview" element={<ThemePreview />} />
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </AppShell>
+        </Routes>
+      </AppShell>
+    </ToastProvider>
   );
 }

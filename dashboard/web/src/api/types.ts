@@ -128,6 +128,30 @@ export type ConnectSandboxResponse = {
   domain: string;
 };
 
+export type CreateSandboxRequest = {
+  templateID: string;
+  timeout?: number;
+  volumeMounts?: SandboxVolumeMount[];
+};
+
+export type CreateSandboxResponse = {
+  clientID: string;
+  envdVersion: string;
+  sandboxID: string;
+  templateID: string;
+  domain: string;
+};
+
+export type SandboxNetworkUpdate = {
+  allowOut?: string[];
+  denyOut?: string[];
+  allow_internet_access?: boolean;
+};
+
+export type CreateSnapshotRequest = {
+  name?: string;
+};
+
 export type Volume = {
   volumeID: string;
   name: string;

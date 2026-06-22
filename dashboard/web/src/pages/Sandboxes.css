@@ -172,6 +172,10 @@
   border-color: var(--bronze-deep);
 }
 
+.btn--primary:hover {
+  background: var(--bronze-deep);
+}
+
 .btn--ghost {
   background: var(--marble-base);
   color: var(--stone-ink);

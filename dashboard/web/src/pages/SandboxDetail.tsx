@@ -11,6 +11,7 @@ import type { SandboxDetail } from "../api/types";
 import { StatusBadge } from "../components";
 import { sandboxStatusVariant } from "../utils/sandbox";
 import { SandboxDetailContext } from "./sandboxDetailContext";
+import { SandboxDetailActions } from "./SandboxDetailActions";
 import "./SandboxDetail.css";
 
 type DetailState =
@@ -104,20 +105,7 @@ export function SandboxDetail() {
             <span className="sandbox-detail-muted">{sandbox.templateID}</span>
           </div>
         </div>
-        <div className="sandbox-detail-actions">
-          <button type="button" className="btn btn--ghost" disabled title="Coming in WP11">
-            Kill
-          </button>
-          <button type="button" className="btn btn--ghost" disabled title="Coming in WP11">
-            Pause
-          </button>
-          <button type="button" className="btn btn--ghost" disabled title="Coming in WP11">
-            Resume
-          </button>
-          <button type="button" className="btn btn--ghost" disabled title="Coming in WP11">
-            Extend timeout
-          </button>
-        </div>
+        <SandboxDetailActions sandbox={sandbox} reload={reload} />
       </header>
 
       <nav className="sandbox-detail-tabs" aria-label="Sandbox sections">

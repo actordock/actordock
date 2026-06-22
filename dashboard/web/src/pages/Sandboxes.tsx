@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { fetchSandboxesMetrics, fetchSandboxes } from "../api/platform";
 import type { SandboxRow } from "../api/types";
+import { CreateSandboxModal } from "../components/CreateSandboxModal/CreateSandboxModal";
 import { DataTable, PageHeader, StatusBadge, type DataTableColumn } from "../components";
 import { useRefreshIntervalMs } from "../hooks/useRefreshInterval";
 import { formatDateTime, sandboxStatusVariant } from "../utils/sandbox";
@@ -39,6 +40,7 @@ export function Sandboxes() {
   const [sortKey, setSortKey] = useState<SortKey>("startedAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,13 +161,22 @@ export function Sandboxes() {
         title="Sandboxes"
         subtitle="All sandboxes with live CPU and memory snapshots."
         actions={
-          <button
-            type="button"
-            className="btn btn--ghost"
-            onClick={() => setReloadToken((token) => token + 1)}
-          >
-            Refresh
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn btn--primary"
+              onClick={() => setCreateOpen(true)}
+            >
+              Create sandbox
+            </button>
+            <button
+              type="button"
+              className="btn btn--ghost"
+              onClick={() => setReloadToken((token) => token + 1)}
+            >
+              Refresh
+            </button>
+          </>
         }
       />
 
@@ -263,7 +274,10 @@ export function Sandboxes() {
       {loadState.kind === "loading" ? (
         <p className="sandboxes-loading">Loading sandboxes…</p>
       ) : visibleRows.length === 0 ? (
-        <EmptyState hasSandboxes={allRows.length > 0} />
+        <EmptyState
+          hasSandboxes={allRows.length > 0}
+          onCreate={() => setCreateOpen(true)}
+        />
       ) : (
         <DataTable
           columns={columns}
@@ -272,11 +286,26 @@ export function Sandboxes() {
           onRowClick={(row) => navigate(`/sandboxes/${row.sandboxID}`)}
         />
       )}
+
+      <CreateSandboxModal
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onCreated={(sandboxID) => {
+          setReloadToken((token) => token + 1);
+          navigate(`/sandboxes/${sandboxID}`);
+        }}
+      />
     </>
   );
 }
 
-function EmptyState({ hasSandboxes }: { hasSandboxes: boolean }) {
+function EmptyState({
+  hasSandboxes,
+  onCreate,
+}: {
+  hasSandboxes: boolean;
+  onCreate: () => void;
+}) {
   return (
     <div className="sandboxes-empty">
       <svg
@@ -295,7 +324,7 @@ function EmptyState({ hasSandboxes }: { hasSandboxes: boolean }) {
           ? "Try clearing filters or search terms."
           : "Create a sandbox to start running workloads in the cluster."}
       </p>
-      <button type="button" className="btn btn--primary" disabled title="Coming in WP11">
+      <button type="button" className="btn btn--primary" onClick={onCreate}>
         Create sandbox
       </button>
     </div>
