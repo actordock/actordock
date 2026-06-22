@@ -41,6 +41,16 @@ jobs:
       - name: Test
         run: make test
 
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/web/package-lock.json
+
+      - name: Verify dashboard
+        run: make verify-dashboard
+
       - name: Build binaries
         run: make build
 

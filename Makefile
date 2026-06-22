@@ -25,7 +25,10 @@ LDFLAGS := -X=$(VERSION_PKG).Version=$(VERSION)
 
 BINARIES := platform router envd scheduler
 
-.PHONY: all build build-images test fmt verify-fmt vet
+DASHBOARD_WEB := dashboard/web
+DASHBOARD_BIN := $(BINDIR)/dashboard
+
+.PHONY: all build build-images build-dashboard build-dashboard-image test fmt verify-fmt vet verify-dashboard
 
 all: build
 
@@ -42,6 +45,21 @@ build-images:
 		./cmd/router \
 		./cmd/envd \
 		./cmd/scheduler
+
+build-dashboard: $(DASHBOARD_BIN)
+
+$(DASHBOARD_BIN):
+	@mkdir -p $(BINDIR)
+	cd $(DASHBOARD_WEB) && npm ci && npm run build
+	$(GO) build -ldflags "$(LDFLAGS)" -o $@ ./dashboard/cmd/dashboard
+
+build-dashboard-image:
+	GOFLAGS='"-ldflags=$(LDFLAGS)"' \
+	$(KO) build ./dashboard/cmd/dashboard
+
+verify-dashboard:
+	$(GO) test ./dashboard/...
+	cd $(DASHBOARD_WEB) && npm ci && npm run lint && npm run build
 
 test:
 	$(GO) test ./...

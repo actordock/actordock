@@ -43,6 +43,13 @@ Run the E2E demo (port-forward + E2B Python SDK):
 
 Covers commands, visibility, timeout metadata, scheduler auto-cleanup, idle suspend (pause lifecycle + router auto-resume), observability routes (metrics, logs, refreshes), and sandbox extras (connect PTY, network policy, snapshots).
 
+Optional dashboard smoke (skip if dashboard is not deployed):
+
+```bash
+kubectl --context kind-actordock port-forward -n actordock svc/dashboard 3000:3000 &
+cd e2e && .venv/bin/pytest tests/test_dashboard.py -v
+```
+
 ### Timeout
 
 Sandboxes accept an optional lifetime in seconds (E2B `timeout`, default 300). The **scheduler** kills expired sandboxes when `on_timeout=kill` (default).
@@ -209,6 +216,31 @@ sbx = Sandbox.create(template="base", volume_mounts={"/mnt/data": vol})
 sbx.kill()
 vol.delete()
 ```
+
+## Dashboard (optional, v0.0.11)
+
+The ops dashboard is **not** installed by `./hack/install-local.sh`. Opt in after the core stack is running:
+
+```bash
+kubectl apply -f manifests/dashboard/secret.example.yaml
+
+kubectl kustomize manifests/dashboard --load-restrictor LoadRestrictionsNone \
+  | ko resolve -f - \
+  | kubectl --context kind-actordock apply -f -
+
+kubectl --context kind-actordock port-forward -n actordock svc/dashboard 3000:3000
+open http://localhost:3000
+```
+
+Local dev without deploying the dashboard image:
+
+```bash
+# port-forward platform (:8080) and router (:8081), then:
+cd dashboard/web && npm ci && npm run dev
+# → http://localhost:5173
+```
+
+See [dashboard/README.md](../../dashboard/README.md) for build targets (`make verify-dashboard`) and configuration.
 
 ## Troubleshooting
 
