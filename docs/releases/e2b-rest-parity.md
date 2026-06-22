@@ -38,7 +38,7 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | # | Method | Path | Status |
 |---|--------|------|--------|
 | 1 | GET | `/health` | done (v0.0.1) |
-| 2 | GET | `/teams` | v0.1.0 |
+| 2 | GET | `/teams` | defer |
 | 3 | GET | `/teams/{teamID}/metrics` | defer |
 | 4 | GET | `/teams/{teamID}/metrics/max` | defer |
 | 5 | GET | `/sandboxes` | partial → done v0.1.0 |
@@ -192,7 +192,7 @@ Each release closes **new operations with full fields** and any **backfill** row
 | [v0.0.9](v0.0.9.md) | +4 | `volumeMounts` on create/list | 39% | ~52% |
 | [v0.0.10](v0.0.10.md) | +5 | `alias`, template GET schemas | 48% | ~56% |
 | [v0.0.11](v0.0.11.md) | — (optional UI, not E2B REST) | — | 48% | ~56% |
-| [v0.1.0](v0.1.0.md) | +7 | sandbox create/get/list **done**; auth schemas | **61%** | **≥60%** |
+| [v0.1.0](v0.1.0.md) | +6 | sandbox create/get/list **done**; api-keys + access-tokens | **59%** | **≥60%** |
 
 ## Release gate (every v0.0.x PR)
 
@@ -203,6 +203,6 @@ Each release closes **new operations with full fields** and any **backfill** row
 
 ## Out of scope for v0.1.0
 
-Template **build** pipeline, admin API, nodes, team metrics — **entire operations deferred** (not partial routes).
+Template **build** pipeline, admin API, nodes, `GET /teams`, team metrics — **entire operations deferred** (not partial routes).
 
-Post-v0.1.0: remaining 22 operations, each shipped with full fields per the same rule.
+Post-v0.1.0: remaining 23 operations, each shipped with full fields per the same rule.
