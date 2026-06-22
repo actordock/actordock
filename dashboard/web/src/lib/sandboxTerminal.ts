@@ -1,7 +1,11 @@
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { Process, Signal } from "../envd/process/process_pb";
+import { decodePtyOutput } from "./ptyOutput";
 import { SANDBOX_ID_HEADER } from "./routerUrl";
+
+export const DEFAULT_TERMINAL_COLS = 80;
+export const DEFAULT_TERMINAL_ROWS = 24;
 
 export type TerminalSession = {
   pid: number;
@@ -19,11 +23,25 @@ type StartTerminalOpts = {
   onExit?: (message?: string) => void;
 };
 
+export function normalizeTerminalSize(cols: number, rows: number) {
+  return {
+    cols: cols > 0 ? cols : DEFAULT_TERMINAL_COLS,
+    rows: rows > 0 ? rows : DEFAULT_TERMINAL_ROWS,
+  };
+}
+
 export async function startSandboxTerminal(
   opts: StartTerminalOpts,
 ): Promise<TerminalSession> {
+  const size = normalizeTerminalSize(opts.cols, opts.rows);
   const transport = createConnectTransport({
     baseUrl: opts.routerBaseUrl,
+    useBinaryFormat: false,
+    fetch: (url, init) =>
+      fetch(url, {
+        ...init,
+        redirect: "follow",
+      }),
     interceptors: [
       (next) => async (req) => {
         req.header.set(SANDBOX_ID_HEADER, opts.sandboxID);
@@ -46,10 +64,7 @@ export async function startSandboxTerminal(
         },
       },
       pty: {
-        size: {
-          cols: opts.cols,
-          rows: opts.rows,
-        },
+        size,
       },
     },
     { signal: abort.signal },
@@ -68,6 +83,12 @@ export async function startSandboxTerminal(
     },
     onError: (err) => {
       streamError = err;
+      if (
+        err instanceof ConnectError &&
+        err.code === Code.Canceled
+      ) {
+        return;
+      }
       opts.onExit?.(formatTerminalError(err));
     },
   });
@@ -104,14 +125,21 @@ export async function startSandboxTerminal(
       });
     },
     resize: async (cols: number, rows: number) => {
-      await client.update({
-        process: {
-          selector: { case: "pid", value: pid },
-        },
-        pty: {
-          size: { cols, rows },
-        },
-      });
+      const next = normalizeTerminalSize(cols, rows);
+      try {
+        await client.update({
+          process: {
+            selector: { case: "pid", value: pid },
+          },
+          pty: {
+            size: next,
+          },
+        });
+      } catch (err) {
+        if (!isUnimplementedError(err)) {
+          throw err;
+        }
+      }
     },
     dispose: async () => {
       abort.abort();
@@ -157,7 +185,7 @@ async function consumeTerminalStream(
           output?: { case?: string; value?: Uint8Array };
         };
         if (data.output?.case === "pty" && data.output.value) {
-          handlers.onData(data.output.value);
+          handlers.onData(decodePtyOutput(data.output.value));
         }
         continue;
       }
@@ -177,10 +205,17 @@ async function consumeTerminalStream(
   }
 }
 
+function isUnimplementedError(err: unknown): boolean {
+  return err instanceof ConnectError && err.code === Code.Unimplemented;
+}
+
 function formatTerminalError(err: unknown): string {
   if (err instanceof ConnectError) {
+    if (err.code === Code.Canceled) {
+      return "Terminal connection canceled";
+    }
     if (err.code === Code.Unavailable || err.code === Code.NotFound) {
-      return "Sandbox is not reachable. Ensure router port-forward is running.";
+      return "Sandbox is not reachable. Ensure router port-forward is running on :8081.";
     }
     return err.message;
   }

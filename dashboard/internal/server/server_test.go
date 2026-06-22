@@ -142,6 +142,38 @@ func TestSPAServesIndex(t *testing.T) {
 	}
 }
 
+func TestRouterProxyForwardsPath(t *testing.T) {
+	t.Parallel()
+
+	var gotPath string
+	router := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(router.Close)
+
+	srv := testServer(t, Config{
+		RouterURL:   router.URL,
+		ProxyRouter: true,
+	})
+	handler, err := srv.Handler()
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/router/process.Process/Start", nil)
+	req.Header.Set("E2b-Sandbox-Id", "sb-1")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if gotPath != "/process.Process/Start" {
+		t.Fatalf("proxied path = %q, want /process.Process/Start", gotPath)
+	}
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

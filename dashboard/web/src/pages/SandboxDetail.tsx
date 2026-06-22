@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -30,6 +31,7 @@ export function SandboxDetail() {
   const { id = "" } = useParams();
   const [state, setState] = useState<DetailState>({ kind: "loading" });
   const [reloadToken, setReloadToken] = useState(0);
+  const hasLoadedRef = useRef(false);
 
   const reload = useCallback(() => {
     setReloadToken((token) => token + 1);
@@ -39,10 +41,13 @@ export function SandboxDetail() {
     let cancelled = false;
 
     async function load() {
-      setState({ kind: "loading" });
+      if (!hasLoadedRef.current) {
+        setState({ kind: "loading" });
+      }
       try {
         const sandbox = await fetchSandbox(id);
         if (!cancelled) {
+          hasLoadedRef.current = true;
           setState({ kind: "ready", sandbox });
         }
       } catch (err) {
@@ -61,6 +66,10 @@ export function SandboxDetail() {
       cancelled = true;
     };
   }, [id, reloadToken]);
+
+  useEffect(() => {
+    hasLoadedRef.current = false;
+  }, [id]);
 
   const contextValue = useMemo(
     () => ({

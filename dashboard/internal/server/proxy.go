@@ -21,9 +21,11 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 )
 
 const platformAPIPrefix = "/api/platform"
+const routerAPIPrefix = "/api/router"
 
 func newPlatformProxy(cfg Config, logger *slog.Logger) (http.Handler, error) {
 	target, err := url.Parse(cfg.PlatformURL)
@@ -50,6 +52,36 @@ func newPlatformProxy(cfg Config, logger *slog.Logger) (http.Handler, error) {
 		}
 
 		suffix := strings.TrimPrefix(r.URL.Path, platformAPIPrefix)
+		if suffix == "" {
+			suffix = "/"
+		}
+		out := r.Clone(r.Context())
+		out.URL.Path = suffix
+		out.URL.RawPath = ""
+		proxy.ServeHTTP(w, out)
+	}), nil
+}
+
+func newRouterProxy(cfg Config, logger *slog.Logger) (http.Handler, error) {
+	target, err := url.Parse(cfg.RouterURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse router URL: %w", err)
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.FlushInterval = 100 * time.Millisecond
+	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		logger.Error("router proxy error", "err", err, "path", r.URL.Path)
+		http.Error(w, "router unreachable", http.StatusBadGateway)
+	}
+	origDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		origDirector(req)
+		req.Host = target.Host
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		suffix := strings.TrimPrefix(r.URL.Path, routerAPIPrefix)
 		if suffix == "" {
 			suffix = "/"
 		}

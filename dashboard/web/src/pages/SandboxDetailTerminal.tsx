@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Terminal } from "xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { connectSandbox } from "../api/platform";
 import { startSandboxTerminal } from "../lib/sandboxTerminal";
+import { writePtyToTerminal } from "../lib/ptyOutput";
 import {
   buildSandboxConnectUrl,
   getRouterBaseUrl,
@@ -20,53 +21,90 @@ type TerminalState =
 
 const CONNECT_TIMEOUT_SEC = 600;
 
+type Runtime = {
+  terminal: Terminal;
+  fitAddon: FitAddon;
+  resizeObserver: ResizeObserver;
+  dispose: () => Promise<void>;
+};
+
 export function SandboxDetailTerminal() {
   const { sandbox, reload } = useSandboxDetail();
   const containerRef = useRef<HTMLDivElement>(null);
-  const terminalRef = useRef<Terminal | null>(null);
-  const sessionRef = useRef<Awaited<ReturnType<typeof startSandboxTerminal>> | null>(
-    null,
-  );
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const runtimeRef = useRef<Runtime | null>(null);
+  const connectGenRef = useRef(0);
   const [state, setState] = useState<TerminalState>({ kind: "idle" });
   const [copied, setCopied] = useState(false);
+  const [connectAttempt, setConnectAttempt] = useState(0);
 
+  const sandboxID = sandbox?.sandboxID ?? "";
   const canConnect =
     sandbox?.state === "running" || sandbox?.state === "paused";
 
   const connectUrl = sandbox
-    ? buildSandboxConnectUrl(sandbox.sandboxID, sandbox.domain ?? "localhost")
+    ? buildSandboxConnectUrl(sandboxID, sandbox.domain ?? "localhost")
     : "";
 
+  const startConnection = useCallback(() => {
+    setConnectAttempt((attempt) => attempt + 1);
+  }, []);
+
+  const teardownRuntime = useCallback(async () => {
+    const runtime = runtimeRef.current;
+    runtimeRef.current = null;
+    if (!runtime) {
+      return;
+    }
+    runtime.resizeObserver.disconnect();
+    await runtime.dispose();
+    runtime.terminal.dispose();
+  }, []);
+
   useEffect(() => {
-    if (!sandbox || !canConnect) {
+    if (!sandboxID || !canConnect || connectAttempt === 0) {
       return;
     }
 
-    const sandboxID = sandbox.sandboxID;
-    let disposed = false;
+    const container = containerRef.current;
+    if (!container) {
+      return;
+    }
 
-    async function openTerminal() {
+    const containerEl = container;
+
+    const gen = ++connectGenRef.current;
+    let inputDisposable: { dispose: () => void } | null = null;
+
+    async function connect() {
       setState({ kind: "connecting" });
+      await teardownRuntime();
+
+      if (gen !== connectGenRef.current) {
+        return;
+      }
+
+      const terminal = new Terminal({
+        cursorBlink: true,
+        fontFamily: "JetBrains Mono, ui-monospace, monospace",
+        fontSize: 13,
+        theme: {
+          background: "#f0ebe3",
+          foreground: "#2c2a26",
+          cursor: "#8a6f4a",
+        },
+      });
+      const fitAddon = new FitAddon();
+      terminal.loadAddon(fitAddon);
+      terminal.open(containerEl);
+      fitAddon.fit();
+
       try {
         await connectSandbox(sandboxID, CONNECT_TIMEOUT_SEC);
-        if (disposed || !containerRef.current) {
+        if (gen !== connectGenRef.current) {
+          terminal.dispose();
           return;
         }
 
-        const terminal = new Terminal({
-          cursorBlink: true,
-          fontFamily: "JetBrains Mono, ui-monospace, monospace",
-          fontSize: 13,
-          theme: {
-            background: "#f0ebe3",
-            foreground: "#2c2a26",
-            cursor: "#8a6f4a",
-          },
-        });
-        const fitAddon = new FitAddon();
-        terminal.loadAddon(fitAddon);
-        terminal.open(containerRef.current);
         fitAddon.fit();
 
         const session = await startSandboxTerminal({
@@ -75,28 +113,28 @@ export function SandboxDetailTerminal() {
           cols: terminal.cols,
           rows: terminal.rows,
           onData: (data) => {
-            terminal.write(data);
+            if (gen === connectGenRef.current) {
+              writePtyToTerminal((chunk) => terminal.write(chunk), data);
+            }
           },
           onExit: (message) => {
-            if (!disposed) {
-              setState({
-                kind: "exited",
-                message: message ?? "Terminal session ended",
-              });
+            if (gen !== connectGenRef.current) {
+              return;
             }
+            setState({
+              kind: "exited",
+              message: message ?? "Terminal session ended",
+            });
           },
         });
 
-        if (disposed) {
+        if (gen !== connectGenRef.current) {
           await session.dispose();
           terminal.dispose();
           return;
         }
 
-        terminalRef.current = terminal;
-        sessionRef.current = session;
-
-        terminal.onData((data) => {
+        inputDisposable = terminal.onData((data) => {
           void session.write(data);
         });
 
@@ -104,34 +142,57 @@ export function SandboxDetailTerminal() {
           fitAddon.fit();
           void session.resize(terminal.cols, terminal.rows);
         });
-        resizeObserver.observe(containerRef.current);
-        resizeObserverRef.current = resizeObserver;
+        resizeObserver.observe(containerEl);
 
-        terminal.writeln("Connected to sandbox shell.");
+        runtimeRef.current = {
+          terminal,
+          fitAddon,
+          resizeObserver,
+          dispose: () => session.dispose(),
+        };
+
+        fitAddon.fit();
+        await session.resize(terminal.cols, terminal.rows);
+        terminal.focus();
         setState({ kind: "connected" });
       } catch (err) {
-        if (!disposed) {
-          setState({
-            kind: "error",
-            message:
-              err instanceof Error ? err.message : "Failed to open terminal",
-          });
+        terminal.dispose();
+        if (gen !== connectGenRef.current) {
+          return;
         }
+        setState({
+          kind: "error",
+          message:
+            err instanceof Error ? err.message : "Failed to open terminal",
+        });
       }
     }
 
-    void openTerminal();
+    void connect();
 
     return () => {
-      disposed = true;
-      resizeObserverRef.current?.disconnect();
-      resizeObserverRef.current = null;
-      void sessionRef.current?.dispose();
-      sessionRef.current = null;
-      terminalRef.current?.dispose();
-      terminalRef.current = null;
+      connectGenRef.current += 1;
+      inputDisposable?.dispose();
+      void teardownRuntime();
     };
-  }, [sandbox, canConnect]);
+  }, [sandboxID, canConnect, connectAttempt, teardownRuntime]);
+
+  useEffect(() => {
+    if (!sandboxID || !canConnect) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setConnectAttempt((attempt) => (attempt === 0 ? 1 : attempt));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [sandboxID, canConnect]);
+
+  useEffect(() => {
+    return () => {
+      connectGenRef.current += 1;
+      void teardownRuntime();
+    };
+  }, [teardownRuntime]);
 
   if (!sandbox) {
     return null;
@@ -151,6 +212,9 @@ export function SandboxDetailTerminal() {
   return (
     <div className="sandbox-terminal-panel">
       <div className="sandbox-terminal-toolbar">
+        <span className="sandbox-terminal-status" data-state={state.kind}>
+          {terminalStatusLabel(state)}
+        </span>
         <span className="sandbox-terminal-muted">
           Router: {getRouterBaseUrl()}
         </span>
@@ -161,18 +225,17 @@ export function SandboxDetailTerminal() {
         >
           Refresh sandbox
         </button>
+        <button type="button" className="btn btn--ghost" onClick={startConnection}>
+          {state.kind === "connected" ? "Reconnect" : "Connect"}
+        </button>
         <CopyConnectButton connectUrl={connectUrl} copied={copied} onCopy={setCopied} />
       </div>
-
-      {state.kind === "connecting" ? (
-        <p className="sandbox-terminal-muted">Connecting terminal…</p>
-      ) : null}
 
       {state.kind === "error" ? (
         <div className="sandbox-terminal-error" role="alert">
           {state.message}
           <p className="sandbox-terminal-muted">
-            Fallback: use the connect URL with router port-forward on :8081.
+            Ensure platform (:8080) and router (:8081) port-forwards are running.
           </p>
         </div>
       ) : null}
@@ -181,12 +244,26 @@ export function SandboxDetailTerminal() {
         <p className="sandbox-terminal-muted">{state.message}</p>
       ) : null}
 
-      <div
-        ref={containerRef}
-        className={`sandbox-terminal-surface${state.kind === "connected" ? "" : " sandbox-terminal-surface--hidden"}`}
-      />
+      <div ref={containerRef} className="sandbox-terminal-surface" />
     </div>
   );
+}
+
+function terminalStatusLabel(state: TerminalState): string {
+  switch (state.kind) {
+    case "idle":
+      return "Idle";
+    case "connecting":
+      return "Connecting…";
+    case "connected":
+      return "Connected";
+    case "exited":
+      return "Session ended";
+    case "error":
+      return "Error";
+    default:
+      return "";
+  }
 }
 
 function CopyConnectButton({

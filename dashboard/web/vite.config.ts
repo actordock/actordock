@@ -23,6 +23,11 @@ export default defineConfig({
         target: process.env.VITE_ROUTER_URL ?? "http://localhost:8081",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/router/, ""),
+        configure: (proxy) => {
+          proxy.on("proxyRes", (proxyRes) => {
+            proxyRes.headers["x-accel-buffering"] = "no";
+          });
+        },
       },
     },
   },

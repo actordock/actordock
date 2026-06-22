@@ -59,6 +59,14 @@ func (s *Server) Handler() (http.Handler, error) {
 		mux.Handle("/api/platform/", proxy)
 	}
 
+	if s.cfg.ProxyRouter {
+		routerProxy, err := newRouterProxy(s.cfg, s.logger)
+		if err != nil {
+			return nil, err
+		}
+		mux.Handle("/api/router/", routerProxy)
+	}
+
 	mux.Handle("/", spaHandler(s.static))
 	return mux, nil
 }

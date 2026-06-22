@@ -24,8 +24,10 @@ import (
 type Config struct {
 	ListenAddr    string
 	PlatformURL   string
+	RouterURL     string
 	APIKey        string
 	ProxyPlatform bool
+	ProxyRouter   bool
 	LogLevel      string
 }
 
@@ -34,12 +36,18 @@ func ConfigFromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("ACTORDOCK_DASHBOARD_PROXY_PLATFORM: %w", err)
 	}
+	proxyRouter, err := envBoolOrDefault("ACTORDOCK_DASHBOARD_PROXY_ROUTER", true)
+	if err != nil {
+		return Config{}, fmt.Errorf("ACTORDOCK_DASHBOARD_PROXY_ROUTER: %w", err)
+	}
 
 	cfg := Config{
 		ListenAddr:    envOrDefault("ACTORDOCK_DASHBOARD_ADDR", ":3000"),
 		PlatformURL:   envOrDefault("ACTORDOCK_PLATFORM_URL", "http://platform:8080"),
+		RouterURL:     envOrDefault("ACTORDOCK_ROUTER_URL", "http://localhost:8081"),
 		APIKey:        envOrDefault("ACTORDOCK_API_KEY", "dev"),
 		ProxyPlatform: proxyPlatform,
+		ProxyRouter:   proxyRouter,
 		LogLevel:      envOrDefault("ACTORDOCK_DASHBOARD_LOG_LEVEL", envOrDefault("ACTORDOCK_LOG_LEVEL", "info")),
 	}
 	if cfg.ListenAddr == "" {
@@ -47,6 +55,9 @@ func ConfigFromEnv() (Config, error) {
 	}
 	if _, err := url.Parse(cfg.PlatformURL); err != nil {
 		return Config{}, fmt.Errorf("ACTORDOCK_PLATFORM_URL: %w", err)
+	}
+	if _, err := url.Parse(cfg.RouterURL); err != nil {
+		return Config{}, fmt.Errorf("ACTORDOCK_ROUTER_URL: %w", err)
 	}
 	return cfg, nil
 }
