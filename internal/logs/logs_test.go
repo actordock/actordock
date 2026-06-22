@@ -108,6 +108,35 @@ func TestBufferAppendOutput(t *testing.T) {
 	}
 }
 
+func TestBufferAppendPTYOutputChunks(t *testing.T) {
+	t.Parallel()
+
+	buf := NewBuffer(100, 1<<20)
+	buf.AppendOutput("pty", []byte("ec"))
+	buf.AppendOutput("pty", []byte("ho hi\n"))
+	entries := buf.Query(Query{})
+	if len(entries) != 1 {
+		t.Fatalf("len = %d, want 1", len(entries))
+	}
+	if entries[0].Message != "echo hi" {
+		t.Fatalf("message = %q, want echo hi", entries[0].Message)
+	}
+	if entries[0].Fields["stream"] != "pty" {
+		t.Fatalf("fields = %+v", entries[0].Fields)
+	}
+}
+
+func TestBufferAppendPTYOutputSanitizesANSI(t *testing.T) {
+	t.Parallel()
+
+	buf := NewBuffer(100, 1<<20)
+	buf.AppendOutput("pty", []byte("\x1b[31mhi\x1b[0m\n"))
+	entries := buf.Query(Query{})
+	if len(entries) != 1 || entries[0].Message != "hi" {
+		t.Fatalf("entries = %+v", entries)
+	}
+}
+
 func TestBufferEvictsOldest(t *testing.T) {
 	t.Parallel()
 

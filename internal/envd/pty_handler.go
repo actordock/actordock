@@ -102,15 +102,17 @@ func newPTYHandler(ctx context.Context, req *processv1.StartRequest, logBuf *log
 		readBuf := make([]byte, ptyReadChunkSize)
 		for {
 			n, readErr := tty.Read(readBuf)
-			if n > 0 && outMultiplex.HasSubscribers() {
+			if n > 0 {
 				data := slices.Clone(readBuf[:n])
 				if h.logs != nil {
 					h.logs.AppendOutput("pty", data)
 				}
-				outMultiplex.Source <- processv1.ProcessEvent_Data{
-					Data: &processv1.ProcessEvent_DataEvent{
-						Output: &processv1.ProcessEvent_DataEvent_Pty{Pty: data},
-					},
+				if outMultiplex.HasSubscribers() {
+					outMultiplex.Source <- processv1.ProcessEvent_Data{
+						Data: &processv1.ProcessEvent_DataEvent{
+							Output: &processv1.ProcessEvent_DataEvent_Pty{Pty: data},
+						},
+					}
 				}
 			}
 			if errors.Is(readErr, io.EOF) || errors.Is(readErr, syscall.EIO) {

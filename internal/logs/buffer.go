@@ -16,6 +16,7 @@ package logs
 
 import (
 	"bytes"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -38,12 +39,13 @@ type storedEntry struct {
 
 // Buffer is a fixed-capacity in-memory ring buffer. When full, oldest entries are dropped.
 type Buffer struct {
-	mu       sync.RWMutex
-	maxLines int
-	maxBytes int
-	entries  []storedEntry
-	total    int
-	nextSeq  uint64
+	mu         sync.RWMutex
+	maxLines   int
+	maxBytes   int
+	entries    []storedEntry
+	total      int
+	nextSeq    uint64
+	ptyPartial []byte
 }
 
 func NewBuffer(maxLines, maxBytes int) *Buffer {
@@ -62,7 +64,10 @@ func (b *Buffer) Append(level, message string, fields map[string]string) {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.appendLocked(level, message, fields)
+}
 
+func (b *Buffer) appendLocked(level, message string, fields map[string]string) {
 	fieldsCopy := cloneFields(fields)
 	e := storedEntry{
 		seq:       b.nextSeq,
@@ -80,6 +85,11 @@ func (b *Buffer) Append(level, message string, fields map[string]string) {
 
 // AppendOutput splits process stdout/stderr into lines and appends them.
 func (b *Buffer) AppendOutput(stream string, data []byte) {
+	if stream == "pty" {
+		b.appendPTYOutput(data)
+		return
+	}
+
 	level := "info"
 	if stream == "stderr" {
 		level = "error"
@@ -91,6 +101,53 @@ func (b *Buffer) AppendOutput(stream string, data []byte) {
 		}
 		b.Append(level, string(line), fields)
 	}
+}
+
+func (b *Buffer) appendPTYOutput(data []byte) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	data = sanitizePTYOutput(append(b.ptyPartial, data...))
+	b.ptyPartial = nil
+	if len(data) == 0 {
+		return
+	}
+
+	lines := bytes.Split(data, []byte("\n"))
+	if !bytes.HasSuffix(data, []byte("\n")) {
+		b.ptyPartial = append([]byte(nil), lines[len(lines)-1]...)
+		lines = lines[:len(lines)-1]
+	}
+
+	fields := map[string]string{"stream": "pty"}
+	for _, line := range lines {
+		if len(line) == 0 {
+			continue
+		}
+		b.appendLocked("info", string(line), fields)
+	}
+}
+
+var (
+	ansiCSI = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+	ansiOSC = regexp.MustCompile(`\x1b\][^\x07]*(\x07|\x1b\\)`)
+)
+
+func sanitizePTYOutput(in []byte) []byte {
+	if len(in) == 0 {
+		return in
+	}
+	out := ansiOSC.ReplaceAllLiteral(in, nil)
+	out = ansiCSI.ReplaceAllLiteral(out, nil)
+
+	// Drop most control chars (incl. \r used for line reflow); keep \n and \t.
+	dst := out[:0]
+	for _, b := range out {
+		if b == '\n' || b == '\t' || b >= 0x20 {
+			dst = append(dst, b)
+		}
+	}
+	return dst
 }
 
 func (b *Buffer) Query(q Query) []Entry {

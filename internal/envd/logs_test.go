@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -122,7 +123,7 @@ func TestGetLogsLevelFilter(t *testing.T) {
 	}
 }
 
-func TestGetLogsAfterPTYOutput(t *testing.T) {
+func TestGetLogsAfterPTYOutputSanitized(t *testing.T) {
 	t.Parallel()
 
 	mux := http.NewServeMux()
@@ -169,7 +170,7 @@ func TestGetLogsAfterPTYOutput(t *testing.T) {
 			Selector: &processv1.ProcessSelector_Pid{Pid: pid},
 		},
 		Input: &processv1.ProcessInput{
-			Input: &processv1.ProcessInput_Pty{Pty: []byte("echo hi\nexit\n")},
+			Input: &processv1.ProcessInput_Pty{Pty: []byte("printf '\\033[31mhi\\033[0m\\n'\nexit\n")},
 		},
 	}))
 	if err != nil {
@@ -208,5 +209,8 @@ func TestGetLogsAfterPTYOutput(t *testing.T) {
 	}
 	if resp.Logs[0].Fields["stream"] != "pty" {
 		t.Fatalf("stream = %q, want pty", resp.Logs[0].Fields["stream"])
+	}
+	if strings.Contains(resp.Logs[0].Message, "\x1b") {
+		t.Fatalf("message contains ansi escapes: %q", resp.Logs[0].Message)
 	}
 }
