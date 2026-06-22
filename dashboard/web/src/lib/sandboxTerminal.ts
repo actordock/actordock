@@ -1,0 +1,195 @@
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
+import { createConnectTransport } from "@connectrpc/connect-web";
+import { Process, Signal } from "../envd/process/process_pb";
+import { SANDBOX_ID_HEADER } from "./routerUrl";
+
+export type TerminalSession = {
+  pid: number;
+  write: (data: string) => Promise<void>;
+  resize: (cols: number, rows: number) => Promise<void>;
+  dispose: () => Promise<void>;
+};
+
+type StartTerminalOpts = {
+  routerBaseUrl: string;
+  sandboxID: string;
+  cols: number;
+  rows: number;
+  onData: (data: Uint8Array) => void;
+  onExit?: (message?: string) => void;
+};
+
+export async function startSandboxTerminal(
+  opts: StartTerminalOpts,
+): Promise<TerminalSession> {
+  const transport = createConnectTransport({
+    baseUrl: opts.routerBaseUrl,
+    interceptors: [
+      (next) => async (req) => {
+        req.header.set(SANDBOX_ID_HEADER, opts.sandboxID);
+        return next(req);
+      },
+    ],
+  });
+  const client = createClient(Process, transport);
+  const abort = new AbortController();
+
+  const events = client.start(
+    {
+      process: {
+        cmd: "/bin/sh",
+        args: ["-i"],
+        envs: {
+          TERM: "xterm-256color",
+          LANG: "C.UTF-8",
+          LC_ALL: "C.UTF-8",
+        },
+      },
+      pty: {
+        size: {
+          cols: opts.cols,
+          rows: opts.rows,
+        },
+      },
+    },
+    { signal: abort.signal },
+  );
+
+  let pid = 0;
+  let streamError: Error | undefined;
+
+  const streamDone = consumeTerminalStream(events, {
+    onStart: (nextPid) => {
+      pid = nextPid;
+    },
+    onData: opts.onData,
+    onExit: (message) => {
+      opts.onExit?.(message);
+    },
+    onError: (err) => {
+      streamError = err;
+      opts.onExit?.(formatTerminalError(err));
+    },
+  });
+
+  const deadline = Date.now() + 15_000;
+  while (pid === 0 && !streamError && Date.now() < deadline) {
+    await sleep(50);
+  }
+
+  if (streamError) {
+    abort.abort();
+    await streamDone.catch(() => undefined);
+    throw streamError;
+  }
+  if (pid === 0) {
+    abort.abort();
+    await streamDone.catch(() => undefined);
+    throw new Error("Timed out waiting for terminal start event");
+  }
+
+  return {
+    pid,
+    write: async (data: string) => {
+      await client.sendInput({
+        process: {
+          selector: { case: "pid", value: pid },
+        },
+        input: {
+          input: {
+            case: "pty",
+            value: new TextEncoder().encode(data),
+          },
+        },
+      });
+    },
+    resize: async (cols: number, rows: number) => {
+      await client.update({
+        process: {
+          selector: { case: "pid", value: pid },
+        },
+        pty: {
+          size: { cols, rows },
+        },
+      });
+    },
+    dispose: async () => {
+      abort.abort();
+      try {
+        await client.sendSignal({
+          process: {
+            selector: { case: "pid", value: pid },
+          },
+          signal: Signal.SIGKILL,
+        });
+      } catch {
+        // process may already be gone
+      }
+      await streamDone.catch(() => undefined);
+    },
+  };
+}
+
+async function consumeTerminalStream(
+  events: AsyncIterable<{ event?: { event?: { case?: string; value?: unknown } } }>,
+  handlers: {
+    onStart: (pid: number) => void;
+    onData: (data: Uint8Array) => void;
+    onExit: (message?: string) => void;
+    onError: (err: Error) => void;
+  },
+) {
+  try {
+    for await (const message of events) {
+      const event = message.event?.event;
+      if (!event) {
+        continue;
+      }
+      if (event.case === "start") {
+        const start = event.value as { pid?: number };
+        if (start.pid) {
+          handlers.onStart(start.pid);
+        }
+        continue;
+      }
+      if (event.case === "data") {
+        const data = event.value as {
+          output?: { case?: string; value?: Uint8Array };
+        };
+        if (data.output?.case === "pty" && data.output.value) {
+          handlers.onData(data.output.value);
+        }
+        continue;
+      }
+      if (event.case === "end") {
+        const end = event.value as { exitCode?: number; error?: string };
+        handlers.onExit(
+          end.error ||
+            (end.exitCode !== undefined ? `Process exited (${end.exitCode})` : undefined),
+        );
+        break;
+      }
+    }
+  } catch (err) {
+    handlers.onError(
+      err instanceof Error ? err : new Error("Terminal stream failed"),
+    );
+  }
+}
+
+function formatTerminalError(err: unknown): string {
+  if (err instanceof ConnectError) {
+    if (err.code === Code.Unavailable || err.code === Code.NotFound) {
+      return "Sandbox is not reachable. Ensure router port-forward is running.";
+    }
+    return err.message;
+  }
+  if (err instanceof Error) {
+    return err.message;
+  }
+  return "Terminal connection failed";
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}

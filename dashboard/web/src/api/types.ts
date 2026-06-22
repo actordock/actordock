@@ -119,6 +119,14 @@ export type TemplateTag = {
   createdAt: string;
 };
 
+export type ConnectSandboxResponse = {
+  clientID: string;
+  envdVersion: string;
+  sandboxID: string;
+  templateID: string;
+  domain: string;
+};
+
 export type Volume = {
   volumeID: string;
   name: string;

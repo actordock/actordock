@@ -22,6 +22,7 @@ const tabs = [
   { label: "Overview", path: "" },
   { label: "Metrics", path: "metrics" },
   { label: "Logs", path: "logs" },
+  { label: "Terminal", path: "terminal" },
 ];
 
 export function SandboxDetail() {

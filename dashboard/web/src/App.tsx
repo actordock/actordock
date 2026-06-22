@@ -7,6 +7,7 @@ import { SandboxDetail } from "./pages/SandboxDetail";
 import { SandboxDetailLogs } from "./pages/SandboxDetailLogs";
 import { SandboxDetailMetrics } from "./pages/SandboxDetailMetrics";
 import { SandboxDetailOverview } from "./pages/SandboxDetailOverview";
+import { SandboxDetailTerminal } from "./pages/SandboxDetailTerminal";
 import { Sandboxes } from "./pages/Sandboxes";
 import { Settings } from "./pages/Settings";
 import { TemplateDetail } from "./pages/TemplateDetail";
@@ -28,6 +29,7 @@ export default function App() {
           <Route index element={<SandboxDetailOverview />} />
           <Route path="metrics" element={<SandboxDetailMetrics />} />
           <Route path="logs" element={<SandboxDetailLogs />} />
+          <Route path="terminal" element={<SandboxDetailTerminal />} />
         </Route>
         <Route path="/templates" element={<Templates />} />
         <Route path="/templates/:id" element={<TemplateDetail />}>

@@ -325,6 +325,27 @@
   color: var(--bronze-deep);
 }
 
+.sandbox-terminal-panel .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: var(--marble-base);
+  color: var(--stone-ink);
+  border-color: var(--marble-shadow);
+}
+
+.sandbox-terminal-panel .btn:hover {
+  border-color: var(--bronze-accent);
+  color: var(--bronze-deep);
+}
+
 @media (max-width: 800px) {
   .sandbox-detail-grid {
     grid-template-columns: 1fr;

@@ -19,6 +19,11 @@ export default defineConfig({
           });
         },
       },
+      "/api/router": {
+        target: process.env.VITE_ROUTER_URL ?? "http://localhost:8081",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/router/, ""),
+      },
     },
   },
 });

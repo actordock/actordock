@@ -1,0 +1,46 @@
+.sandbox-terminal-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.sandbox-terminal-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.sandbox-terminal-muted {
+  margin: 0;
+  color: var(--stone-muted);
+  font-size: 13px;
+}
+
+.sandbox-terminal-error {
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  color: var(--terracotta-danger);
+  background: var(--terracotta-danger-bg);
+  border: 1px solid rgba(166, 93, 78, 0.3);
+}
+
+.sandbox-terminal-surface {
+  min-height: 360px;
+  border: 1px solid var(--marble-shadow);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--marble-inset);
+  padding: 8px;
+}
+
+.sandbox-terminal-surface--hidden {
+  display: none;
+}
+
+.sandbox-terminal-surface .xterm {
+  height: 100%;
+}
+
+.sandbox-terminal-surface .xterm-viewport {
+  border-radius: var(--radius-sm);
+}

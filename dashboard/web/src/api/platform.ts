@@ -1,6 +1,7 @@
 import {
   type HealthResponse,
   PlatformAPIError,
+  type ConnectSandboxResponse,
   type Sandbox,
   type SandboxDetail,
   type SandboxLogEntry,
@@ -122,6 +123,20 @@ export async function fetchTemplateTags(
 ): Promise<TemplateTag[]> {
   return request<TemplateTag[]>(
     `/templates/${encodeURIComponent(templateID)}/tags`,
+  );
+}
+
+export async function connectSandbox(
+  sandboxID: string,
+  timeout = 600,
+): Promise<ConnectSandboxResponse> {
+  return request<ConnectSandboxResponse>(
+    `/sandboxes/${encodeURIComponent(sandboxID)}/connect`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ timeout }),
+    },
   );
 }
 
