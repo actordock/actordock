@@ -18,7 +18,13 @@ set -o errexit -o nounset -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="$(go env GOPATH)/bin:${PATH}"
 
+PROTO_ROOT="${ROOT}"
+PROTOBUF_TYPES="$(go list -f '{{.Dir}}' -m google.golang.org/protobuf)/types"
+
 protoc \
+  -I "${PROTO_ROOT}" \
+  -I "${PROTOBUF_TYPES}" \
   --go_out=. --go_opt=module=github.com/actordock/actordock \
   --connect-go_out=. --connect-go_opt=module=github.com/actordock/actordock \
-  proto/envd/process/process.proto
+  proto/envd/process/process.proto \
+  proto/envd/filesystem/filesystem.proto

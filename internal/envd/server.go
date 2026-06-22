@@ -27,6 +27,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/actordock/actordock/internal/logs"
+	"github.com/actordock/actordock/pkg/envd/filesystem/filesystemv1connect"
 	"github.com/actordock/actordock/pkg/envd/process/processv1connect"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -59,11 +60,19 @@ func Run(ctx context.Context, opts Options) error {
 	mux.HandleFunc("GET /metrics", NewMetricsHandler(metricsCollector))
 	mux.HandleFunc("GET /metrics/history", NewMetricsHistoryHandler(metricsCollector))
 
+	registerFilesHandlers(mux)
+
 	processPath, processHandler := processv1connect.NewProcessHandler(
 		&processService{logger: opts.Logger, logs: logBuf},
 		connect.WithCompressMinBytes(1024),
 	)
 	mux.Handle(processPath, processHandler)
+
+	filesystemPath, filesystemHandler := filesystemv1connect.NewFilesystemHandler(
+		filesystemService{},
+		connect.WithCompressMinBytes(1024),
+	)
+	mux.Handle(filesystemPath, filesystemHandler)
 
 	srv := &http.Server{
 		Addr:              opts.Addr,
