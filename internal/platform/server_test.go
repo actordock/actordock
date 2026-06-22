@@ -129,6 +129,9 @@ type fakeStore struct {
 	volumes          map[string]store.Volume
 	volNames         map[string]string
 	catalogTemplates map[string]store.CatalogTemplateRecord
+	teamAPIKeys      map[string]store.TeamAPIKeyRecord
+	apiKeyHashes     map[string]string
+	userAccessTokens map[string]store.UserAccessTokenRecord
 	putErr           error
 	delErr           error
 }
@@ -140,6 +143,9 @@ func newFakeStore() *fakeStore {
 		volumes:          make(map[string]store.Volume),
 		volNames:         make(map[string]string),
 		catalogTemplates: make(map[string]store.CatalogTemplateRecord),
+		teamAPIKeys:      make(map[string]store.TeamAPIKeyRecord),
+		apiKeyHashes:     make(map[string]string),
+		userAccessTokens: make(map[string]store.UserAccessTokenRecord),
 		putErr:           nil,
 		delErr:           nil,
 	}
@@ -270,6 +276,41 @@ func (f *fakeStore) UpdateCatalogTemplate(_ context.Context, rec store.CatalogTe
 		return store.ErrCatalogTemplateNotFound
 	}
 	f.catalogTemplates[rec.TemplateID] = rec
+	return nil
+}
+
+func (f *fakeStore) PutTeamAPIKey(_ context.Context, rec store.TeamAPIKeyRecord) error {
+	if _, ok := f.apiKeyHashes[rec.KeyHash]; ok {
+		return fmt.Errorf("duplicate api key hash")
+	}
+	f.teamAPIKeys[rec.ID] = rec
+	f.apiKeyHashes[rec.KeyHash] = rec.ID
+	return nil
+}
+
+func (f *fakeStore) ListTeamAPIKeys(_ context.Context) ([]store.TeamAPIKeyRecord, error) {
+	out := make([]store.TeamAPIKeyRecord, 0, len(f.teamAPIKeys))
+	for _, rec := range f.teamAPIKeys {
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) ValidateTeamAPIKey(_ context.Context, raw string) (bool, error) {
+	_, ok := f.apiKeyHashes[store.HashAPIKey(raw)]
+	return ok, nil
+}
+
+func (f *fakeStore) PutUserAccessToken(_ context.Context, rec store.UserAccessTokenRecord) error {
+	f.userAccessTokens[rec.ID] = rec
+	return nil
+}
+
+func (f *fakeStore) DeleteUserAccessToken(_ context.Context, id string) error {
+	if _, ok := f.userAccessTokens[id]; !ok {
+		return store.ErrUserAccessTokenNotFound
+	}
+	delete(f.userAccessTokens, id)
 	return nil
 }
 

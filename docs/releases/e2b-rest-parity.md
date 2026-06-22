@@ -83,10 +83,10 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 44 | POST | `/admin/teams/{teamID}/builds/cancel` | defer |
 | 45 | POST | `/admin/teams/{teamID}/api-keys` | defer |
 | 46 | DELETE | `/admin/teams/{teamID}/api-keys/{apiKeyID}` | defer |
-| 47 | POST | `/access-tokens` | v0.1.0 |
-| 48 | DELETE | `/access-tokens/{accessTokenID}` | v0.1.0 |
-| 49 | GET | `/api-keys` | v0.1.0 |
-| 50 | POST | `/api-keys` | v0.1.0 |
+| 47 | POST | `/access-tokens` | done (v0.1.0) |
+| 48 | DELETE | `/access-tokens/{accessTokenID}` | done (v0.1.0) |
+| 49 | GET | `/api-keys` | done (v0.1.0) |
+| 50 | POST | `/api-keys` | done (v0.1.0) |
 | 51 | PATCH | `/api-keys/{apiKeyID}` | defer |
 | 52 | DELETE | `/api-keys/{apiKeyID}` | defer |
 | 53 | GET | `/volumes` | done (v0.0.9) |

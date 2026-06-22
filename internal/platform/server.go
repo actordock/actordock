@@ -76,11 +76,24 @@ type catalogTemplateStore interface {
 	UpdateCatalogTemplate(ctx context.Context, rec store.CatalogTemplateRecord) error
 }
 
+type teamAPIKeyStore interface {
+	PutTeamAPIKey(ctx context.Context, rec store.TeamAPIKeyRecord) error
+	ListTeamAPIKeys(ctx context.Context) ([]store.TeamAPIKeyRecord, error)
+	ValidateTeamAPIKey(ctx context.Context, raw string) (bool, error)
+}
+
+type userAccessTokenStore interface {
+	PutUserAccessToken(ctx context.Context, rec store.UserAccessTokenRecord) error
+	DeleteUserAccessToken(ctx context.Context, id string) error
+}
+
 type platformStore interface {
 	sandboxStore
 	snapshotStore
 	volumeStore
 	catalogTemplateStore
+	teamAPIKeyStore
+	userAccessTokenStore
 }
 
 type Server struct {
@@ -143,6 +156,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /templates", s.requireAPIKey(http.HandlerFunc(s.handleCreateTemplate)))
 	mux.Handle("PATCH /templates/{id}", s.requireAPIKey(http.HandlerFunc(s.handlePatchTemplate)))
 	mux.Handle("GET /templates/{path...}", s.requireAPIKey(http.HandlerFunc(s.handleTemplatePath)))
+	mux.Handle("GET /api-keys", s.requireAPIKey(http.HandlerFunc(s.handleListAPIKeys)))
+	mux.Handle("POST /api-keys", s.requireAPIKey(http.HandlerFunc(s.handleCreateAPIKey)))
+	mux.Handle("POST /access-tokens", s.requireAPIKey(http.HandlerFunc(s.handleCreateAccessToken)))
+	mux.Handle("DELETE /access-tokens/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteAccessToken)))
 	mux.Handle("DELETE /sandboxes/{id}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteSandbox)))
 	return mux
 }
@@ -897,7 +914,14 @@ func (s *Server) syncSandboxRecord(ctx context.Context, sb store.Sandbox) (sandb
 
 func (s *Server) requireAPIKey(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-API-KEY") != s.cfg.APIKey {
+		provided := r.Header.Get("X-API-KEY")
+		ok, err := s.validateAPIKey(r.Context(), provided)
+		if err != nil {
+			s.logger.Error("validate api key", "err", err)
+			writeAPIError(w, http.StatusInternalServerError, "failed to authenticate request")
+			return
+		}
+		if !ok {
 			writeAPIError(w, http.StatusUnauthorized, "invalid API key")
 			return
 		}
