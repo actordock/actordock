@@ -17,10 +17,10 @@ Count Platform REST only. envd RPC (commands, filesystem) is separate but requir
 
 ## Metrics
 
-| Metric | v0.0.10 (now) | v0.1.0 target |
-|--------|---------------|---------------|
-| Operations | 27 / 56 (**48%**) | **≥34 / 56 (61%)** |
-| Fields (full-field ops only) | ~123 / ~220 (**~56%**) | **≥132 / ~220 (60%)** |
+| Metric | v0.0.10 | v0.1.0 (now) |
+|--------|---------|---------------|
+| Operations | 27 / 56 (**48%**) | **33 / 56 (59%)** |
+| Fields (full-field ops only) | ~123 / ~220 (**~56%**) | **≥132 / ~220 (≥60%)** |
 
 Field % = sum of fields in **fully implemented** operations ÷ total fields across all 56 operations.
 
@@ -41,13 +41,13 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 2 | GET | `/teams` | defer |
 | 3 | GET | `/teams/{teamID}/metrics` | defer |
 | 4 | GET | `/teams/{teamID}/metrics/max` | defer |
-| 5 | GET | `/sandboxes` | partial → done v0.1.0 |
-| 6 | POST | `/sandboxes` | partial → done v0.1.0 |
-| 7 | GET | `/v2/sandboxes` | partial → done v0.1.0 |
+| 5 | GET | `/sandboxes` | done (v0.1.0) |
+| 6 | POST | `/sandboxes` | done (v0.1.0) |
+| 7 | GET | `/v2/sandboxes` | done (v0.1.0) |
 | 8 | GET | `/sandboxes/metrics` | done (v0.0.6) |
 | 9 | GET | `/sandboxes/{sandboxID}/logs` | done (v0.0.6) |
 | 10 | GET | `/v2/sandboxes/{sandboxID}/logs` | done (v0.0.6) |
-| 11 | GET | `/sandboxes/{sandboxID}` | partial → done v0.1.0 |
+| 11 | GET | `/sandboxes/{sandboxID}` | done (v0.1.0) |
 | 12 | DELETE | `/sandboxes/{sandboxID}` | done (v0.0.1) |
 | 13 | GET | `/sandboxes/{sandboxID}/metrics` | done (v0.0.6) |
 | 14 | POST | `/sandboxes/{sandboxID}/pause` | done (v0.0.5) |
@@ -96,14 +96,14 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 
 ## Field backfill — already shipped routes
 
-These routes were **`partial`** until v0.1.0 completed schema field wiring:
+These routes were **`partial`** until v0.1.0; all are **`done`** now.
 
 ### `POST /sandboxes` (`NewSandbox` → `Sandbox`)
 
 | Field | Status | Complete in |
 |-------|--------|-------------|
 | `templateID`, `timeout` | done | v0.0.3 |
-| `secure` | partial (reject) | v0.1.0 (full secure path) |
+| `secure` | done | v0.1.0 |
 | `autoPause`, `autoResume`, `lifecycle` | done | v0.0.5 |
 | `network`, `allow_internet_access` | done (persist; runtime deferred) | v0.1.0 |
 | `metadata`, `envVars` | done (persist; envVars runtime deferred) | v0.1.0 |

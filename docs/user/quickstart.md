@@ -1,4 +1,4 @@
-# Quickstart (v0.0.10)
+# Quickstart (v0.1.0)
 
 Run the E2B SDK against a local Actordock cluster on Kind.
 
@@ -42,7 +42,55 @@ Run the E2E demo (port-forward + E2B Python SDK):
 ./hack/verify-local.sh
 ```
 
-Covers commands, visibility, timeout metadata, scheduler auto-cleanup, idle suspend (pause lifecycle + router auto-resume), observability routes (metrics, logs, refreshes), sandbox extras (connect PTY, network policy, snapshots), and dashboard smoke (`tests/test_dashboard.py`).
+Covers commands, filesystem, secure sandbox, sandbox field parity, auth routes, template write APIs, visibility, timeout metadata, scheduler auto-cleanup, idle suspend (pause lifecycle + router auto-resume), observability routes (metrics, logs, refreshes), sandbox extras (connect PTY, network policy, snapshots), and dashboard smoke.
+
+### Filesystem (read / write / list)
+
+```python
+from e2b import Sandbox
+
+sbx = Sandbox.create(template="base", secure=False, timeout=120)
+try:
+    sbx.files.write("/tmp/x", "data")
+    assert sbx.files.read("/tmp/x") == "data"
+    names = {e.name for e in sbx.files.list("/tmp", depth=1)}
+    assert "x" in names
+    assert sbx.commands.run("cat /tmp/x").stdout.strip() == "data"
+finally:
+    sbx.kill()
+```
+
+### Secure sandbox
+
+`secure=True` issues per-sandbox `envdAccessToken` tokens; envd validates `X-Access-Token` (no `ACTORDOCK_ENVD_INSECURE` bypass required for this path):
+
+```python
+from e2b import Sandbox
+
+sbx = Sandbox.create(template="base", secure=True, timeout=120)
+try:
+    sbx.files.write("/tmp/secret.txt", "token-bound")
+    assert sbx.files.read("/tmp/secret.txt") == "token-bound"
+    assert sbx.commands.run("echo ok").stdout.strip() == "ok"
+finally:
+    sbx.kill()
+```
+
+Local Kind dev still sets `E2B_VALIDATE_API_KEY=false` in `hack/.env.local` for Platform API key checks only; secure envd auth is independent.
+
+### Helm (non-Kind pilot)
+
+For GKE/EKS/k3s with an existing `ate-system` namespace:
+
+```bash
+helm install actordock ./charts/actordock-stack -n actordock --create-namespace \
+  --set secrets.apiKey='YOUR_KEY' \
+  --set images.platform.tag='0.1.0'
+```
+
+See [charts/actordock-stack/README.md](../../charts/actordock-stack/README.md) for prerequisites, image tags, and Substrate pin.
+
+Kind development continues to use `./hack/install-local.sh` above.
 
 Port-forward dashboard UI:
 
@@ -257,3 +305,5 @@ See [dashboard/README.md](../../dashboard/README.md) for build targets (`make ve
 - [Architecture](../architecture.md)
 - [Roadmap](../roadmap.md)
 - [v0.0.10 release notes](../releases/v0.0.10.md)
+- [v0.1.0 release notes](../releases/v0.1.0.md)
+- [Helm chart](../../charts/actordock-stack/README.md)

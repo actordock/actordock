@@ -12,30 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""E2E auth routes smoke (v0.1.0 WP4)."""
+"""E2E auth routes (v0.1.0 WP4 + WP7)."""
 
 from __future__ import annotations
 
-import os
-
 import httpx
 
+from support.api import api_headers, api_url
 
-def _api_url() -> str:
-    return os.environ["E2B_API_URL"].rstrip("/")
-
-
-def _api_headers() -> dict[str, str]:
-    return {
-        "X-API-KEY": os.environ["E2B_API_KEY"],
-        "Content-Type": "application/json",
-    }
+API_KEY_FIELDS = frozenset(
+    {"id", "name", "mask", "createdAt", "createdBy", "lastUsed"}
+)
+CREATED_API_KEY_FIELDS = API_KEY_FIELDS | {"key"}
+MASK_FIELDS = frozenset(
+    {"prefix", "valueLength", "maskedValuePrefix", "maskedValueSuffix"}
+)
+CREATED_ACCESS_TOKEN_FIELDS = frozenset(
+    {"id", "name", "token", "mask", "createdAt"}
+)
 
 
 def test_list_api_keys_includes_default() -> None:
     resp = httpx.get(
-        f"{_api_url()}/api-keys",
-        headers=_api_headers(),
+        f"{api_url()}/api-keys",
+        headers=api_headers(),
         timeout=30.0,
     )
     resp.raise_for_status()
@@ -43,7 +43,68 @@ def test_list_api_keys_includes_default() -> None:
     assert isinstance(keys, list)
     assert len(keys) >= 1
     first = keys[0]
+    assert API_KEY_FIELDS <= set(first)
     assert first["name"] == "default"
-    assert first["id"]
-    assert first["mask"]["valueLength"] >= 1
-    assert first["createdAt"]
+    assert MASK_FIELDS <= set(first["mask"])
+
+
+def test_create_api_key_full_schema_and_auth() -> None:
+    create = httpx.post(
+        f"{api_url()}/api-keys",
+        headers=api_headers(),
+        json={"name": "e2e-bot"},
+        timeout=30.0,
+    )
+    assert create.status_code == 201, create.text
+    body = create.json()
+    assert CREATED_API_KEY_FIELDS <= set(body)
+    assert MASK_FIELDS <= set(body["mask"])
+    assert body["key"].startswith("adk_")
+    assert body["mask"]["valueLength"] == len(body["key"])
+
+    list_resp = httpx.get(
+        f"{api_url()}/api-keys",
+        headers=api_headers(api_key=body["key"]),
+        timeout=30.0,
+    )
+    assert list_resp.status_code == 200, list_resp.text
+    names = {item["name"] for item in list_resp.json()}
+    assert "e2e-bot" in names
+    assert "default" in names
+
+
+def test_create_and_delete_access_token() -> None:
+    create = httpx.post(
+        f"{api_url()}/access-tokens",
+        headers=api_headers(),
+        json={"name": "e2e-dashboard"},
+        timeout=30.0,
+    )
+    assert create.status_code == 201, create.text
+    body = create.json()
+    assert CREATED_ACCESS_TOKEN_FIELDS <= set(body)
+    assert body["token"].startswith("adt_")
+    assert MASK_FIELDS <= set(body["mask"])
+
+    delete = httpx.delete(
+        f"{api_url()}/access-tokens/{body['id']}",
+        headers=api_headers(),
+        timeout=30.0,
+    )
+    assert delete.status_code == 204, delete.text
+
+    again = httpx.delete(
+        f"{api_url()}/access-tokens/{body['id']}",
+        headers=api_headers(),
+        timeout=30.0,
+    )
+    assert again.status_code == 404, again.text
+
+
+def test_create_api_key_requires_auth() -> None:
+    resp = httpx.post(
+        f"{api_url()}/api-keys",
+        json={"name": "no-auth"},
+        timeout=30.0,
+    )
+    assert resp.status_code == 401, resp.text

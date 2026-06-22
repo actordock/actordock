@@ -16,7 +16,7 @@ E2B-compatible self-hosted agent sandboxes on Kubernetes.
 
 **Full-field rule:** an operation counts as done only when **all** request/response schema fields for that route are implemented — no partial endpoints. Existing v0.0.1–v0.0.4 routes are marked `partial` until backfill completes (mostly v0.0.5–v0.1.0).
 
-Current (v0.0.10): **27 ops (48%)**, **~56% fields** (template read APIs shipped).
+Current (v0.1.0): **33 ops (59%)**, **≥60% fields** (filesystem, secure envd, Helm, sandbox field backfill).
 
 ## Progression (pre-0.1.0)
 
@@ -54,9 +54,9 @@ Each release adds one capability layer. You should be able to demo the **Target*
 | [v0.0.9](releases/v0.0.9.md) | released | Volumes |
 | [v0.0.10](releases/v0.0.10.md) | released | Templates (read) |
 | [v0.0.11](releases/v0.0.11.md) | released | Ops dashboard |
-| [v0.1.0](releases/v0.1.0.md) | planned | Pilot + 60% REST |
+| [v0.1.0](releases/v0.1.0.md) | released | Pilot + 60% REST |
 
-**Current focus:** [v0.1.0](releases/v0.1.0.md)
+**Current focus:** Post-v0.1.0 backlog (template builds, runtime volume mounts, remaining REST ops)
 
 ## Backlog
 
