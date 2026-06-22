@@ -16,6 +16,7 @@ package router
 
 import (
 	"context"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -40,6 +41,9 @@ import (
 )
 
 const sandboxIDHeader = "E2b-Sandbox-Id"
+const envdAccessTokenHeader = "X-Access-Token"
+
+var errEnvdUnauthorized = errors.New("unauthorized")
 
 type sandboxBackendResolver interface {
 	ResumeSandboxBackend(ctx context.Context, actorID string, envdPort int) (backend string, waitEnvd bool, err error)
@@ -134,6 +138,20 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := s.checkEnvdAccess(r, sandboxID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeAPIError(w, http.StatusNotFound, "sandbox not found")
+			return
+		}
+		if errors.Is(err, errEnvdUnauthorized) {
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		s.logger.Error("check envd access", "sandbox_id", sandboxID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to reach sandbox")
+		return
+	}
+
 	// Proxies all envd traffic including Connect RPC (e.g. /process.Process/Connect).
 	backend, waitEnvd, err := s.actors.ResumeSandboxBackend(r.Context(), sandboxID, s.cfg.EnvdPort)
 	if err != nil {
@@ -168,6 +186,24 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		writeAPIError(w, http.StatusBadGateway, "failed to reach sandbox")
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+func (s *Server) checkEnvdAccess(r *http.Request, sandboxID string) error {
+	if s.policies == nil {
+		return nil
+	}
+	sb, err := s.policies.Get(r.Context(), sandboxID)
+	if err != nil {
+		return err
+	}
+	if !sb.Secure || sb.EnvdAccessToken == "" {
+		return nil
+	}
+	provided := r.Header.Get(envdAccessTokenHeader)
+	if subtle.ConstantTimeCompare([]byte(provided), []byte(sb.EnvdAccessToken)) != 1 {
+		return errEnvdUnauthorized
+	}
+	return nil
 }
 
 func parseSandboxID(r *http.Request, domain string, envdPort int) (string, error) {

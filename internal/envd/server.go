@@ -47,12 +47,11 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	mux := http.NewServeMux()
+	guard := &accessGuard{}
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("POST /init", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	})
+	mux.HandleFunc("POST /init", guard.handleInit)
 
 	logBuf := logs.NewBuffer(logs.DefaultMaxLines, logs.DefaultMaxBytes)
 	metricsCollector := NewCollector(NewProcCgroupReader())
@@ -76,7 +75,7 @@ func Run(ctx context.Context, opts Options) error {
 
 	srv := &http.Server{
 		Addr:              opts.Addr,
-		Handler:           h2c.NewHandler(mux, &http2.Server{}),
+		Handler:           h2c.NewHandler(guard.middleware(mux), &http2.Server{}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

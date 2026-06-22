@@ -33,6 +33,9 @@ type Sandbox struct {
 	OnTimeout           string         `json:"on_timeout"`
 	AutoResume          bool           `json:"auto_resume,omitempty"`
 	Status              string         `json:"status"`
+	Secure              bool           `json:"secure,omitempty"`
+	EnvdAccessToken     string         `json:"envd_access_token,omitempty"`
+	TrafficAccessToken  string         `json:"traffic_access_token,omitempty"`
 	Network             *NetworkConfig `json:"network,omitempty"`
 	AllowInternetAccess *bool          `json:"allow_internet_access,omitempty"`
 	VolumeMounts        []VolumeMount  `json:"volume_mounts,omitempty"`

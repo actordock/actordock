@@ -46,6 +46,7 @@ type sandboxDetailResponse struct {
 	TemplateID          string                   `json:"templateID"`
 	Alias               string                   `json:"alias,omitempty"`
 	Domain              string                   `json:"domain,omitempty"`
+	EnvdAccessToken     string                   `json:"envdAccessToken,omitempty"`
 	AllowInternetAccess *bool                    `json:"allowInternetAccess"`
 	Network             *store.NetworkConfig     `json:"network,omitempty"`
 	VolumeMounts        []store.VolumeMount      `json:"volumeMounts,omitempty"`
@@ -82,6 +83,7 @@ func buildSandboxDetail(cfg config.Platform, sb store.Sandbox, state string, ali
 		TemplateID:          sb.Template,
 		Alias:               alias,
 		Domain:              cfg.Domain,
+		EnvdAccessToken:     sb.EnvdAccessToken,
 		AllowInternetAccess: sb.AllowInternetAccess,
 		Network:             sb.Network,
 		VolumeMounts:        append([]store.VolumeMount(nil), sb.VolumeMounts...),
@@ -98,13 +100,18 @@ func buildSandboxLifecycle(sb store.Sandbox) sandboxLifecycleResponse {
 }
 
 func buildSandboxResponse(cfg config.Platform, sb store.Sandbox) sandboxResponse {
-	return sandboxResponse{
+	resp := sandboxResponse{
 		ClientID:    cfg.ClientID,
 		EnvdVersion: cfg.EnvdVersion,
 		SandboxID:   sb.SandboxID,
 		TemplateID:  sb.Template,
 		Domain:      cfg.Domain,
 	}
+	if sb.Secure {
+		resp.EnvdAccessToken = sb.EnvdAccessToken
+		resp.TrafficAccessToken = sb.TrafficAccessToken
+	}
+	return resp
 }
 
 func sandboxEndAt(cfg config.Platform, sb store.Sandbox) string {

@@ -300,6 +300,90 @@ func TestCreateSandbox(t *testing.T) {
 	}
 }
 
+func TestCreateSecureSandbox(t *testing.T) {
+	t.Parallel()
+
+	envdSrv := httptest.NewServer(envd.NewTestHandler(slog.Default()))
+	t.Cleanup(envdSrv.Close)
+
+	actors := &fakeActors{backendAddr: envdSrv.Listener.Addr().String()}
+	st := newFakeStore()
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	srv := NewServer(testConfig(), actors, st, slog.Default())
+	srv.nowFunc = func() time.Time { return now }
+
+	body := []byte(`{"templateID":"base","secure":true}`)
+	req := httptest.NewRequest(http.MethodPost, "/sandboxes", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EnvdAccessToken == "" {
+		t.Fatal("envdAccessToken is empty")
+	}
+	if resp.TrafficAccessToken == "" {
+		t.Fatal("trafficAccessToken is empty")
+	}
+
+	got, ok := st.records[resp.SandboxID]
+	if !ok {
+		t.Fatalf("sandbox %q not in store", resp.SandboxID)
+	}
+	if !got.Secure {
+		t.Fatal("stored sandbox not secure")
+	}
+	if got.EnvdAccessToken != resp.EnvdAccessToken {
+		t.Fatalf("stored token = %q, response = %q", got.EnvdAccessToken, resp.EnvdAccessToken)
+	}
+
+	client := processv1connect.NewProcessClient(envdSrv.Client(), envdSrv.URL)
+	listReq := connect.NewRequest(&processv1.ListRequest{})
+	listReq.Header().Set("X-Access-Token", resp.EnvdAccessToken)
+	if _, err := client.List(context.Background(), listReq); err != nil {
+		t.Fatalf("envd list with configured token: %v", err)
+	}
+}
+
+func TestGetSecureSandboxReturnsToken(t *testing.T) {
+	t.Parallel()
+
+	st := newFakeStore()
+	st.records["sb-secure"] = store.Sandbox{
+		SandboxID:       "sb-secure",
+		ActorID:         "sb-secure",
+		Template:        "base",
+		CreatedAt:       time.Now().UTC(),
+		Status:          store.StatusRunning,
+		Secure:          true,
+		EnvdAccessToken: "tok-123",
+	}
+	srv := NewServer(testConfig(), &fakeActors{}, st, slog.Default())
+
+	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-secure", nil)
+	req.Header.Set("X-API-KEY", "dev")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp sandboxDetailResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if resp.EnvdAccessToken != "tok-123" {
+		t.Fatalf("envdAccessToken = %q", resp.EnvdAccessToken)
+	}
+}
+
 func TestCreateSandboxWithTimeout(t *testing.T) {
 	t.Parallel()
 	actors := &fakeActors{}

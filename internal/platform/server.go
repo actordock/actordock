@@ -211,12 +211,13 @@ type connectSandboxRequest struct {
 const resumeDefaultTimeoutSeconds = 15
 
 type sandboxResponse struct {
-	ClientID        string `json:"clientID"`
-	EnvdVersion     string `json:"envdVersion"`
-	SandboxID       string `json:"sandboxID"`
-	TemplateID      string `json:"templateID"`
-	Domain          string `json:"domain"`
-	EnvdAccessToken string `json:"envdAccessToken,omitempty"`
+	ClientID           string `json:"clientID"`
+	EnvdVersion        string `json:"envdVersion"`
+	SandboxID          string `json:"sandboxID"`
+	TemplateID         string `json:"templateID"`
+	Domain             string `json:"domain"`
+	EnvdAccessToken    string `json:"envdAccessToken,omitempty"`
+	TrafficAccessToken string `json:"trafficAccessToken,omitempty"`
 }
 
 type apiError struct {
@@ -251,9 +252,23 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	if req.Secure != nil {
 		secure = *req.Secure
 	}
+
+	var envdAccessToken string
+	var trafficAccessToken string
 	if secure {
-		writeAPIError(w, http.StatusBadRequest, "secure sandboxes are not supported in v0.0.1")
-		return
+		var err error
+		envdAccessToken, err = store.NewSandboxAccessToken()
+		if err != nil {
+			s.logger.Error("generate envd access token", "err", err)
+			writeAPIError(w, http.StatusInternalServerError, "failed to create sandbox")
+			return
+		}
+		trafficAccessToken, err = store.NewSandboxAccessToken()
+		if err != nil {
+			s.logger.Error("generate traffic access token", "err", err)
+			writeAPIError(w, http.StatusInternalServerError, "failed to create sandbox")
+			return
+		}
 	}
 
 	timeoutSeconds, err := store.ResolveTimeout(req.Timeout, s.cfg.DefaultSandboxTimeout)
@@ -295,18 +310,30 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if secure {
+		if err := s.syncSecureEnvdAuth(ctx, actorID, envdAccessToken); err != nil {
+			s.logger.Error("configure secure envd", "actor_id", actorID, "err", err)
+			_ = s.actors.DeleteSandbox(ctx, actorID)
+			writeAPIError(w, http.StatusInternalServerError, "failed to create sandbox")
+			return
+		}
+	}
+
 	now := s.nowFunc()
 	expiresAt := store.ExpiresAt(now, timeoutSeconds)
 	if err := s.store.Put(ctx, store.Sandbox{
-		SandboxID:    actorID,
-		ActorID:      actorID,
-		Template:     tmpl.TemplateID,
-		CreatedAt:    now,
-		ExpiresAt:    expiresAt,
-		OnTimeout:    onTimeout,
-		AutoResume:   autoResume,
-		Status:       store.StatusRunning,
-		VolumeMounts: volumeMounts,
+		SandboxID:          actorID,
+		ActorID:            actorID,
+		Template:           tmpl.TemplateID,
+		CreatedAt:          now,
+		ExpiresAt:          expiresAt,
+		OnTimeout:          onTimeout,
+		AutoResume:         autoResume,
+		Status:             store.StatusRunning,
+		Secure:             secure,
+		EnvdAccessToken:    envdAccessToken,
+		TrafficAccessToken: trafficAccessToken,
+		VolumeMounts:       volumeMounts,
 	}); err != nil {
 		s.logger.Error("persist sandbox", "actor_id", actorID, "err", err)
 		if delErr := s.actors.DeleteSandbox(ctx, actorID); delErr != nil {
@@ -317,8 +344,11 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := buildSandboxResponse(s.cfg, store.Sandbox{
-		SandboxID: actorID,
-		Template:  tmpl.TemplateID,
+		SandboxID:          actorID,
+		Template:           tmpl.TemplateID,
+		Secure:             secure,
+		EnvdAccessToken:    envdAccessToken,
+		TrafficAccessToken: trafficAccessToken,
 	})
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -374,6 +404,14 @@ func (s *Server) handleConnectSandbox(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("wait for envd on connect", "sandbox_id", sandboxID, "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to connect sandbox")
 		return
+	}
+
+	if sb.Secure && sb.EnvdAccessToken != "" {
+		if err := s.syncSecureEnvdAuth(ctx, sb.ActorID, sb.EnvdAccessToken); err != nil {
+			s.logger.Error("configure secure envd on connect", "sandbox_id", sandboxID, "err", err)
+			writeAPIError(w, http.StatusInternalServerError, "failed to connect sandbox")
+			return
+		}
 	}
 
 	now := s.nowFunc()
@@ -498,6 +536,14 @@ func (s *Server) handleResumeSandbox(w http.ResponseWriter, r *http.Request) {
 		s.logger.Error("wait for resumed sandbox", "sandbox_id", sandboxID, "err", err)
 		writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
 		return
+	}
+
+	if sb.Secure && sb.EnvdAccessToken != "" {
+		if err := s.syncSecureEnvdAuth(ctx, sb.ActorID, sb.EnvdAccessToken); err != nil {
+			s.logger.Error("configure secure envd on resume", "sandbox_id", sandboxID, "err", err)
+			writeAPIError(w, http.StatusInternalServerError, "failed to resume sandbox")
+			return
+		}
 	}
 
 	now := s.nowFunc()
