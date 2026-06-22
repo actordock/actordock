@@ -8,6 +8,8 @@ import {
   type SandboxMetric,
   type SandboxesMetricsResponse,
   type Template,
+  type TemplateDetail,
+  type TemplateTag,
   type Volume,
 } from "./types";
 
@@ -107,6 +109,20 @@ export async function fetchSandboxesMetrics(
 
 export async function fetchTemplates(): Promise<Template[]> {
   return request<Template[]>("/templates");
+}
+
+export async function fetchTemplate(templateID: string): Promise<TemplateDetail> {
+  return request<TemplateDetail>(
+    `/templates/${encodeURIComponent(templateID)}`,
+  );
+}
+
+export async function fetchTemplateTags(
+  templateID: string,
+): Promise<TemplateTag[]> {
+  return request<TemplateTag[]>(
+    `/templates/${encodeURIComponent(templateID)}/tags`,
+  );
 }
 
 export async function fetchVolumes(): Promise<Volume[]> {

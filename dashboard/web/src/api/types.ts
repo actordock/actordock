@@ -74,7 +74,49 @@ export type SandboxRow = Sandbox & {
 
 export type Template = {
   templateID: string;
+  buildID: string;
   buildStatus: string;
+  cpuCount: number;
+  memoryMB: number;
+  diskSizeMB: number;
+  envdVersion: string;
+  public: boolean;
+  aliases?: string[];
+  names?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  spawnCount?: number;
+  buildCount?: number;
+};
+
+export type TemplateBuild = {
+  buildID: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  cpuCount: number;
+  memoryMB: number;
+  diskSizeMB?: number;
+  envdVersion?: string;
+  finishedAt?: string | null;
+};
+
+export type TemplateDetail = {
+  templateID: string;
+  public: boolean;
+  aliases: string[];
+  names: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastSpawnedAt?: string | null;
+  spawnCount: number;
+  builds: TemplateBuild[];
+};
+
+export type TemplateTag = {
+  tag: string;
+  buildID: string;
+  createdAt: string;
 };
 
 export type Volume = {
