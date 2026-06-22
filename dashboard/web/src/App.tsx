@@ -1,8 +1,8 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components";
 import { useConnectionStatus } from "./hooks/useConnectionStatus";
+import { Monitoring } from "./pages/Monitoring";
 import { Overview } from "./pages/Overview";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { SandboxDetail } from "./pages/SandboxDetail";
 import { SandboxDetailLogs } from "./pages/SandboxDetailLogs";
 import { SandboxDetailMetrics } from "./pages/SandboxDetailMetrics";
@@ -43,15 +43,8 @@ export default function App() {
         <Route path="/volumes" element={<Volumes />} />
         <Route path="/volumes/:id" element={<VolumeDetail />} />
         <Route path="/snapshots" element={<Snapshots />} />
-        <Route
-          path="/monitoring"
-          element={
-            <PlaceholderPage
-              title="Monitoring"
-              subtitle="Aggregate metrics — coming in WP13."
-            />
-          }
-        />
+        <Route path="/sandboxes/monitoring" element={<Monitoring />} />
+        <Route path="/monitoring" element={<Navigate to="/sandboxes/monitoring" replace />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/theme-preview" element={<ThemePreview />} />
         <Route path="*" element={<Navigate to="/" replace />} />

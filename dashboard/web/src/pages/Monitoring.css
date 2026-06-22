@@ -1,0 +1,122 @@
+.monitoring-summary {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--stone-muted);
+}
+
+.monitoring-summary__hot {
+  color: var(--terracotta-danger);
+  font-weight: 500;
+}
+
+.monitoring-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.monitoring-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--stone-muted);
+  min-width: 180px;
+}
+
+.monitoring-field select {
+  padding: 8px 10px;
+  border: 1px solid var(--marble-shadow);
+  border-radius: var(--radius-sm);
+  background: var(--marble-card);
+  color: var(--stone-ink);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.monitoring-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--stone-muted);
+  padding-bottom: 8px;
+}
+
+.monitoring-muted {
+  color: var(--stone-muted);
+  font-size: 13px;
+}
+
+.monitoring-error {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  color: var(--terracotta-danger);
+  background: var(--terracotta-danger-bg);
+  border: 1px solid rgba(166, 93, 78, 0.3);
+}
+
+.monitoring-empty {
+  padding: 48px 24px;
+  text-align: center;
+  border: 1px solid var(--marble-shadow);
+  border-radius: var(--radius-md);
+  background: var(--marble-card);
+  box-shadow: var(--shadow-card);
+}
+
+.monitoring-empty h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 18px;
+}
+
+.monitoring-empty p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--stone-muted);
+}
+
+.monitoring-link {
+  color: var(--bronze-accent);
+  text-decoration: none;
+}
+
+.monitoring-link:hover {
+  text-decoration: underline;
+}
+
+.monitoring-metric {
+  font-variant-numeric: tabular-nums;
+}
+
+.monitoring-metric--hot {
+  color: var(--terracotta-danger);
+  font-weight: 600;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.btn--ghost {
+  background: var(--marble-base);
+  color: var(--stone-ink);
+  border-color: var(--marble-shadow);
+}
+
+.btn--ghost:hover {
+  border-color: var(--bronze-accent);
+  color: var(--bronze-deep);
+}

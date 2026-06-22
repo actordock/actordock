@@ -20,7 +20,7 @@ export const navItems: NavItem[] = [
   { label: "Templates", path: "/templates", icon: "templates" },
   { label: "Volumes", path: "/volumes", icon: "volumes" },
   { label: "Snapshots", path: "/snapshots", icon: "snapshots" },
-  { label: "Monitoring", path: "/monitoring", icon: "monitoring" },
+  { label: "Monitoring", path: "/sandboxes/monitoring", icon: "monitoring" },
   { label: "Settings", path: "/settings", icon: "settings" },
   { label: "Theme Preview", path: "/theme-preview", icon: "theme" },
 ];

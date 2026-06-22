@@ -15,6 +15,7 @@ type DataTableProps<T> = {
   rowKey: (row: T) => string;
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
+  rowClassName?: (row: T) => string | undefined;
 };
 
 export function DataTable<T>({
@@ -23,6 +24,7 @@ export function DataTable<T>({
   rowKey,
   emptyMessage = "No records found.",
   onRowClick,
+  rowClassName,
 }: DataTableProps<T>) {
   if (rows.length === 0) {
     return (
@@ -48,7 +50,12 @@ export function DataTable<T>({
           {rows.map((row) => (
             <tr
               key={rowKey(row)}
-              className={onRowClick ? "data-table__row--clickable" : undefined}
+              className={[
+                onRowClick ? "data-table__row--clickable" : "",
+                rowClassName?.(row) ?? "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
             >
               {columns.map((col) => (

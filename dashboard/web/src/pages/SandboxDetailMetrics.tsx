@@ -112,7 +112,7 @@ function SandboxDetailMetricsBody({ sandbox }: { sandbox: SandboxDetail }) {
             ? `Auto-refresh every ${refreshMs / 1000}s`
             : "Auto-refresh off (see Settings)"}
         </span>
-        <Link to="/monitoring" className="sandbox-detail-link">
+        <Link to="/sandboxes/monitoring" className="sandbox-detail-link">
           Cluster monitoring
         </Link>
       </div>

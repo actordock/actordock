@@ -1,9 +1,27 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { navItems } from "../../routes/nav";
 import { NavIconSvg } from "./NavIconSvg";
 import "./SideNav.css";
 
+function isNavItemActive(path: string, pathname: string): boolean {
+  if (path === "/") {
+    return pathname === "/";
+  }
+  if (path === "/sandboxes/monitoring") {
+    return pathname === "/sandboxes/monitoring";
+  }
+  if (path === "/sandboxes") {
+    return (
+      pathname === "/sandboxes" ||
+      (pathname.startsWith("/sandboxes/") && pathname !== "/sandboxes/monitoring")
+    );
+  }
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
+
 export function SideNav() {
+  const { pathname } = useLocation();
+
   return (
     <nav className="side-nav" aria-label="Main navigation">
       <div className="side-nav__brand">
@@ -16,8 +34,12 @@ export function SideNav() {
             <NavLink
               to={item.path}
               end={item.path === "/"}
-              className={({ isActive }) =>
-                `side-nav__link${isActive ? " side-nav__link--active" : ""}`
+              className={() =>
+                `side-nav__link${
+                  isNavItemActive(item.path, pathname)
+                    ? " side-nav__link--active"
+                    : ""
+                }`
               }
             >
               <NavIconSvg name={item.icon} className="side-nav__icon" />

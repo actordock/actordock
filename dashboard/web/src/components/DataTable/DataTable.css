@@ -36,6 +36,14 @@
   border-bottom: none;
 }
 
+.data-table tbody tr.data-table__row--hot {
+  background: rgba(166, 93, 78, 0.08);
+}
+
+.data-table tbody tr.data-table__row--hot:hover {
+  background: rgba(166, 93, 78, 0.12);
+}
+
 .data-table tbody tr:hover {
   background: rgba(245, 240, 232, 0.6);
 }
