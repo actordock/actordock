@@ -52,14 +52,13 @@ SANDBOX_DETAIL_FIELDS = frozenset(
 SANDBOX_DETAIL_OPTIONAL_FIELDS = frozenset(
     {
         "alias",
-        "envdAccessToken",
         "network",
         "metadata",
     }
 )
 
-# Omitted from JSON when empty (Go json omitempty); assert in volume-mount tests.
-SANDBOX_DETAIL_OMIT_EMPTY_FIELDS = frozenset({"volumeMounts"})
+# Omitted when unset (Go json omitempty); secure-only fields covered in test_secure.py.
+SANDBOX_DETAIL_OMIT_EMPTY_FIELDS = frozenset({"volumeMounts", "envdAccessToken"})
 
 LISTED_SANDBOX_FIELDS = frozenset(
     {
