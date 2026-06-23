@@ -11,4 +11,10 @@ Self-hosted. Kubernetes-native. One command to deploy.
 
 See [Quickstart](docs/user/quickstart.md) for prerequisites, env vars, and troubleshooting.
 
-[Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
+## Architecture
+
+E2B-compatible agent sandboxes on Kubernetes: SDK REST/HTTP through Actordock (Platform, Router, Scheduler, Redis), execution on Agent Substrate (ateapi, atelet/ateom, envd).
+
+![Actordock architecture](docs/assets/architecture.png)
+
+Details: [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
