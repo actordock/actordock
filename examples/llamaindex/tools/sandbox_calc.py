@@ -23,10 +23,9 @@ from e2b.exceptions import TimeoutException
 
 DAYS_PER_YEAR = 6
 CALC_SCRIPT = """\
-import sys
-tenure = int(sys.argv[1])
-days_per_year = 6
-print(tenure * days_per_year)
+#!/bin/sh
+tenure="$1"
+echo $((tenure * 6))
 """
 
 DEFAULT_MAX_ATTEMPTS = 15
@@ -55,8 +54,8 @@ def calculate_pto(tenure_years: int) -> int:
 
     sandbox = Sandbox.create(template="base", secure=False, timeout=120)
     try:
-        sandbox.files.write("/tmp/pto_calc.py", CALC_SCRIPT)
-        stdout = _run_with_retry(sandbox, f"python3 /tmp/pto_calc.py {tenure_years}")
+        sandbox.files.write("/tmp/pto_calc.sh", CALC_SCRIPT)
+        stdout = _run_with_retry(sandbox, f"sh /tmp/pto_calc.sh {tenure_years}")
         return int(stdout)
     finally:
         sandbox.kill()
