@@ -90,3 +90,6 @@ jobs:
 
       - name: E2E verify (E2B SDK)
         run: ./hack/verify-local.sh
+
+      - name: Example E2E (agent frameworks)
+        run: ./hack/verify-examples.sh
