@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import time
 
+from typing import Callable, TypeVar
+
 from e2b import Sandbox
 from e2b.exceptions import TimeoutException
 
@@ -31,20 +33,30 @@ echo $((tenure * 6))
 DEFAULT_MAX_ATTEMPTS = 15
 DEFAULT_RETRY_DELAY_SEC = 0.5
 
+T = TypeVar("T")
 
-def _run_with_retry(sandbox: Sandbox, cmd: str) -> str:
+
+def _retry_envd(fn: Callable[[], T]) -> T:
+    """Retry envd RPC until sandbox is reachable (may still be starting)."""
     last_err: Exception | None = None
     for attempt in range(DEFAULT_MAX_ATTEMPTS):
         try:
-            result = sandbox.commands.run(cmd)
-            return result.stdout.strip()
-        except TimeoutException as err:
+            return fn()
+        except (TimeoutException, OSError) as err:
             last_err = err
             if attempt + 1 >= DEFAULT_MAX_ATTEMPTS:
                 raise
             time.sleep(DEFAULT_RETRY_DELAY_SEC)
     assert last_err is not None
     raise last_err
+
+
+def _write_with_retry(sandbox: Sandbox, path: str, content: str) -> None:
+    _retry_envd(lambda: sandbox.files.write(path, content))
+
+
+def _run_with_retry(sandbox: Sandbox, cmd: str) -> str:
+    return _retry_envd(lambda: sandbox.commands.run(cmd).stdout.strip())
 
 
 def calculate_pto(tenure_years: int) -> int:
@@ -54,7 +66,7 @@ def calculate_pto(tenure_years: int) -> int:
 
     sandbox = Sandbox.create(template="base", secure=False, timeout=120)
     try:
-        sandbox.files.write("/tmp/pto_calc.sh", CALC_SCRIPT)
+        _write_with_retry(sandbox, "/tmp/pto_calc.sh", CALC_SCRIPT)
         stdout = _run_with_retry(sandbox, f"sh /tmp/pto_calc.sh {tenure_years}")
         return int(stdout)
     finally:
