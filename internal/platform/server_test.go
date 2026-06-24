@@ -124,30 +124,34 @@ func (f *fakeActors) ResumeSandboxBackend(ctx context.Context, actorID string, e
 }
 
 type fakeStore struct {
-	records          map[string]store.Sandbox
-	snapshots        map[string]store.Snapshot
-	volumes          map[string]store.Volume
-	volNames         map[string]string
-	catalogTemplates map[string]store.CatalogTemplateRecord
-	teamAPIKeys      map[string]store.TeamAPIKeyRecord
-	apiKeyHashes     map[string]string
-	userAccessTokens map[string]store.UserAccessTokenRecord
-	putErr           error
-	delErr           error
+	records             map[string]store.Sandbox
+	snapshots           map[string]store.Snapshot
+	volumes             map[string]store.Volume
+	volNames            map[string]string
+	catalogTemplates    map[string]store.CatalogTemplateRecord
+	templateBuilds      map[string]store.TemplateBuild
+	templateBuildLatest map[string]string
+	teamAPIKeys         map[string]store.TeamAPIKeyRecord
+	apiKeyHashes        map[string]string
+	userAccessTokens    map[string]store.UserAccessTokenRecord
+	putErr              error
+	delErr              error
 }
 
 func newFakeStore() *fakeStore {
 	return &fakeStore{
-		records:          make(map[string]store.Sandbox),
-		snapshots:        make(map[string]store.Snapshot),
-		volumes:          make(map[string]store.Volume),
-		volNames:         make(map[string]string),
-		catalogTemplates: make(map[string]store.CatalogTemplateRecord),
-		teamAPIKeys:      make(map[string]store.TeamAPIKeyRecord),
-		apiKeyHashes:     make(map[string]string),
-		userAccessTokens: make(map[string]store.UserAccessTokenRecord),
-		putErr:           nil,
-		delErr:           nil,
+		records:             make(map[string]store.Sandbox),
+		snapshots:           make(map[string]store.Snapshot),
+		volumes:             make(map[string]store.Volume),
+		volNames:            make(map[string]string),
+		catalogTemplates:    make(map[string]store.CatalogTemplateRecord),
+		templateBuilds:      make(map[string]store.TemplateBuild),
+		templateBuildLatest: make(map[string]string),
+		teamAPIKeys:         make(map[string]store.TeamAPIKeyRecord),
+		apiKeyHashes:        make(map[string]string),
+		userAccessTokens:    make(map[string]store.UserAccessTokenRecord),
+		putErr:              nil,
+		delErr:              nil,
 	}
 }
 
@@ -277,6 +281,83 @@ func (f *fakeStore) UpdateCatalogTemplate(_ context.Context, rec store.CatalogTe
 	}
 	f.catalogTemplates[rec.TemplateID] = rec
 	return nil
+}
+
+func templateBuildMapKey(templateID, buildID string) string {
+	return templateID + ":" + buildID
+}
+
+func (f *fakeStore) PutTemplateBuild(_ context.Context, build store.TemplateBuild) error {
+	f.templateBuilds[templateBuildMapKey(build.TemplateID, build.BuildID)] = build
+	f.templateBuildLatest[build.TemplateID] = build.BuildID
+	return nil
+}
+
+func (f *fakeStore) GetTemplateBuild(_ context.Context, templateID, buildID string) (store.TemplateBuild, error) {
+	build, ok := f.templateBuilds[templateBuildMapKey(templateID, buildID)]
+	if !ok {
+		return store.TemplateBuild{}, store.ErrTemplateBuildNotFound
+	}
+	return build, nil
+}
+
+func (f *fakeStore) UpdateTemplateBuild(_ context.Context, build store.TemplateBuild) error {
+	key := templateBuildMapKey(build.TemplateID, build.BuildID)
+	if _, ok := f.templateBuilds[key]; !ok {
+		return store.ErrTemplateBuildNotFound
+	}
+	f.templateBuilds[key] = build
+	return nil
+}
+
+func (f *fakeStore) ListTemplateBuilds(_ context.Context, templateID string) ([]store.TemplateBuild, error) {
+	out := make([]store.TemplateBuild, 0)
+	for _, build := range f.templateBuilds {
+		if build.TemplateID == templateID {
+			out = append(out, build)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) GetLatestTemplateBuild(_ context.Context, templateID string) (store.TemplateBuild, error) {
+	buildID, ok := f.templateBuildLatest[templateID]
+	if !ok {
+		return store.TemplateBuild{}, store.ErrTemplateBuildNotFound
+	}
+	return f.GetTemplateBuild(context.Background(), templateID, buildID)
+}
+
+func (f *fakeStore) ListLatestTemplateBuilds(_ context.Context) ([]store.TemplateBuild, error) {
+	out := make([]store.TemplateBuild, 0, len(f.templateBuildLatest))
+	for templateID, buildID := range f.templateBuildLatest {
+		build, err := f.GetTemplateBuild(context.Background(), templateID, buildID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, build)
+	}
+	return out, nil
+}
+
+func (f *fakeStore) AppendBuildLog(context.Context, store.BuildLogEntry) error {
+	return nil
+}
+
+func (f *fakeStore) ListBuildLogs(context.Context, string, string, int, int) ([]store.BuildLogEntry, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) PutTemplateBuildFile(context.Context, store.TemplateBuildFile) error {
+	return nil
+}
+
+func (f *fakeStore) GetTemplateBuildFile(context.Context, string) (store.TemplateBuildFile, error) {
+	return store.TemplateBuildFile{}, store.ErrTemplateBuildFileNotFound
+}
+
+func (f *fakeStore) MarkTemplateBuildFilePresent(context.Context, string, bool) error {
+	return store.ErrTemplateBuildFileNotFound
 }
 
 func (f *fakeStore) PutTeamAPIKey(_ context.Context, rec store.TeamAPIKeyRecord) error {

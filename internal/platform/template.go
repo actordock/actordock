@@ -109,6 +109,10 @@ func buildTemplateUpdateResponse(tmpl CatalogTemplate) templateUpdateResponse {
 }
 
 func buildTemplateResponse(tmpl CatalogTemplate) templateResponse {
+	buildStatus := tmpl.BuildStatus
+	if buildStatus == "" {
+		buildStatus = string(store.TemplateBuildStatusReady)
+	}
 	return templateResponse{
 		TemplateID:    tmpl.TemplateID,
 		BuildID:       tmpl.BuildID,
@@ -125,23 +129,30 @@ func buildTemplateResponse(tmpl CatalogTemplate) templateResponse {
 		SpawnCount:    0,
 		BuildCount:    0,
 		EnvdVersion:   tmpl.EnvdVersion,
-		BuildStatus:   "ready",
+		BuildStatus:   buildStatus,
 	}
 }
 
 func buildTemplateBuildResponse(tmpl CatalogTemplate) templateBuildResponse {
-	finishedAt := formatRFC3339(tmpl.UpdatedAt)
-	return templateBuildResponse{
+	status := tmpl.BuildStatus
+	if status == "" {
+		status = string(store.TemplateBuildStatusReady)
+	}
+	resp := templateBuildResponse{
 		BuildID:     tmpl.BuildID,
-		Status:      "ready",
+		Status:      status,
 		CreatedAt:   formatRFC3339(tmpl.CreatedAt),
 		UpdatedAt:   formatRFC3339(tmpl.UpdatedAt),
 		CPUCount:    tmpl.CPUCount,
 		MemoryMB:    tmpl.MemoryMB,
 		DiskSizeMB:  tmpl.DiskSizeMB,
 		EnvdVersion: tmpl.EnvdVersion,
-		FinishedAt:  &finishedAt,
 	}
+	if status == string(store.TemplateBuildStatusReady) {
+		finishedAt := formatRFC3339(tmpl.UpdatedAt)
+		resp.FinishedAt = &finishedAt
+	}
+	return resp
 }
 
 func buildTemplateWithBuildsResponse(tmpl CatalogTemplate) templateWithBuildsResponse {

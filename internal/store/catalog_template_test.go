@@ -28,7 +28,7 @@ func sampleCatalogTemplate(id string) CatalogTemplateRecord {
 	return CatalogTemplateRecord{
 		TemplateID:  id,
 		Namespace:   "actordock",
-		Name:        "base",
+		Name:        id,
 		Aliases:     []string{id},
 		Names:       []string{id},
 		CPUCount:    2,
@@ -59,7 +59,7 @@ func TestCatalogTemplateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCatalogTemplate: %v", err)
 	}
-	if got.Dockerfile != "FROM ubuntu" || got.Name != "base" {
+	if got.Dockerfile != "FROM ubuntu" || got.Name != "my-tpl" {
 		t.Fatalf("got = %+v", got)
 	}
 	list, err := s.ListCatalogTemplates(ctx)

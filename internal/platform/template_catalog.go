@@ -44,6 +44,7 @@ type CatalogTemplate struct {
 	DiskSizeMB  int
 	EnvdVersion string
 	BuildID     string
+	BuildStatus string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	Public      bool
@@ -134,10 +135,16 @@ func (c *staticTemplateCatalog) Update(context.Context, string, *bool) (CatalogT
 
 var errTemplateCatalogReadOnly = errors.New("template catalog is read-only")
 
+type templateBuildStore interface {
+	ListLatestTemplateBuilds(ctx context.Context) ([]store.TemplateBuild, error)
+	GetLatestTemplateBuild(ctx context.Context, templateID string) (store.TemplateBuild, error)
+}
+
 type writableTemplateCatalog struct {
-	base  TemplateCatalog
-	store catalogTemplateStore
-	cfg   config.Platform
+	base   TemplateCatalog
+	store  catalogTemplateStore
+	builds templateBuildStore
+	cfg    config.Platform
 }
 
 // NewWritableTemplateCatalog overlays Redis-backed user templates on a base catalog.
@@ -145,7 +152,11 @@ func NewWritableTemplateCatalog(cfg config.Platform, base TemplateCatalog, st ca
 	if base == nil {
 		base = NewStaticTemplateCatalog(cfg)
 	}
-	return &writableTemplateCatalog{base: base, store: st, cfg: cfg}
+	cat := &writableTemplateCatalog{base: base, store: st, cfg: cfg}
+	if bs, ok := st.(templateBuildStore); ok {
+		cat.builds = bs
+	}
+	return cat
 }
 
 func (c *writableTemplateCatalog) List(ctx context.Context) ([]CatalogTemplate, error) {
@@ -165,6 +176,9 @@ func (c *writableTemplateCatalog) List(ctx context.Context) ([]CatalogTemplate, 
 		tmpl := catalogTemplateFromRecord(rec)
 		byID[strings.ToLower(tmpl.TemplateID)] = tmpl
 	}
+	if err := c.mergeLatestBuilds(ctx, byID); err != nil {
+		return nil, err
+	}
 	out := make([]CatalogTemplate, 0, len(byID))
 	for _, tmpl := range byID {
 		out = append(out, tmpl)
@@ -173,6 +187,11 @@ func (c *writableTemplateCatalog) List(ctx context.Context) ([]CatalogTemplate, 
 }
 
 func (c *writableTemplateCatalog) Get(ctx context.Context, templateID string) (CatalogTemplate, error) {
+	if tmpl, err := c.getLatestBuildTemplate(ctx, templateID); err == nil {
+		return tmpl, nil
+	} else if !errors.Is(err, store.ErrTemplateBuildNotFound) {
+		return CatalogTemplate{}, err
+	}
 	if tmpl, err := c.getUser(ctx, templateID); err == nil {
 		return tmpl, nil
 	} else if !errors.Is(err, store.ErrCatalogTemplateNotFound) {
@@ -244,7 +263,7 @@ func (c *writableTemplateCatalog) Create(ctx context.Context, input CreateTempla
 	rec := store.CatalogTemplateRecord{
 		TemplateID:  templateID,
 		Namespace:   ns,
-		Name:        c.cfg.TemplateName,
+		Name:        templateID,
 		Aliases:     []string{alias},
 		Names:       []string{alias},
 		CPUCount:    cpuCount,
@@ -302,6 +321,7 @@ func (c *writableTemplateCatalog) getUser(ctx context.Context, templateID string
 }
 
 func catalogTemplateFromRecord(rec store.CatalogTemplateRecord) CatalogTemplate {
+	buildStatus := string(store.TemplateBuildStatusReady)
 	return CatalogTemplate{
 		TemplateID:  rec.TemplateID,
 		Namespace:   rec.Namespace,
@@ -313,10 +333,57 @@ func catalogTemplateFromRecord(rec store.CatalogTemplateRecord) CatalogTemplate 
 		DiskSizeMB:  rec.DiskSizeMB,
 		EnvdVersion: rec.EnvdVersion,
 		BuildID:     rec.BuildID,
+		BuildStatus: buildStatus,
 		CreatedAt:   rec.CreatedAt,
 		UpdatedAt:   rec.UpdatedAt,
 		Public:      rec.Public,
 	}
+}
+
+func catalogTemplateFromBuild(build store.TemplateBuild) CatalogTemplate {
+	names := []string{build.TemplateID}
+	return CatalogTemplate{
+		TemplateID:  build.TemplateID,
+		Namespace:   build.Namespace,
+		Name:        build.ActorName,
+		Aliases:     append([]string(nil), names...),
+		Names:       names,
+		CPUCount:    build.CPUCount,
+		MemoryMB:    build.MemoryMB,
+		DiskSizeMB:  defaultDiskSizeMB,
+		EnvdVersion: build.EnvdVersion,
+		BuildID:     build.BuildID,
+		BuildStatus: string(build.Status),
+		CreatedAt:   build.CreatedAt,
+		UpdatedAt:   build.UpdatedAt,
+		Public:      build.Public,
+	}
+}
+
+func (c *writableTemplateCatalog) mergeLatestBuilds(ctx context.Context, byID map[string]CatalogTemplate) error {
+	if c.builds == nil {
+		return nil
+	}
+	builds, err := c.builds.ListLatestTemplateBuilds(ctx)
+	if err != nil {
+		return err
+	}
+	for _, build := range builds {
+		tmpl := catalogTemplateFromBuild(build)
+		byID[strings.ToLower(tmpl.TemplateID)] = tmpl
+	}
+	return nil
+}
+
+func (c *writableTemplateCatalog) getLatestBuildTemplate(ctx context.Context, templateID string) (CatalogTemplate, error) {
+	if c.builds == nil {
+		return CatalogTemplate{}, store.ErrTemplateBuildNotFound
+	}
+	build, err := c.builds.GetLatestTemplateBuild(ctx, strings.TrimSpace(templateID))
+	if err != nil {
+		return CatalogTemplate{}, err
+	}
+	return catalogTemplateFromBuild(build), nil
 }
 
 func catalogTemplateToRecord(tmpl CatalogTemplate) store.CatalogTemplateRecord {
@@ -441,6 +508,7 @@ func catalogTemplateFromConfig(cfg config.Platform, name string, createdAt time.
 		DiskSizeMB:  defaultDiskSizeMB,
 		EnvdVersion: cfg.EnvdVersion,
 		BuildID:     stableTemplateBuildID(ns, name),
+		BuildStatus: string(store.TemplateBuildStatusReady),
 		CreatedAt:   createdAt.UTC(),
 		UpdatedAt:   createdAt.UTC(),
 		Public:      true,
@@ -475,6 +543,7 @@ func mapActorTemplate(cfg config.Platform, at *v1alpha1.ActorTemplate) CatalogTe
 		DiskSizeMB:  defaultDiskSizeMB,
 		EnvdVersion: cfg.EnvdVersion,
 		BuildID:     stableTemplateBuildID(ns, name),
+		BuildStatus: string(store.TemplateBuildStatusReady),
 		CreatedAt:   createdAt,
 		UpdatedAt:   updatedAt,
 		Public:      true,
