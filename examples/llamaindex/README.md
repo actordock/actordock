@@ -20,7 +20,7 @@ python run.py --tenure-years 3
 ## Flow
 
 1. **Retrieve** — `MockEmbedding` + in-memory index over `data/policies/*.md` (no OpenAI key)
-2. **Compute** — `calculate_pto()` uses the `python` sandbox template, uploads a script, runs `python3`, returns days
+2. **Compute** — `calculate_pto()` uses the `base` sandbox template, uploads a shell script, runs `sh`, returns days
 3. **Answer** — combines policy excerpt + numeric result
 
 ## E2E
