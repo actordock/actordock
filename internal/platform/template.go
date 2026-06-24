@@ -375,8 +375,45 @@ func (s *Server) handleGetTemplateFileUpload(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	bs, ok := s.store.(templateBuildPersistence)
+	if !ok {
+		s.logger.Error("get template file upload", "template_id", templateID, "err", "template build store unavailable")
+		writeAPIError(w, http.StatusInternalServerError, "failed to get template file upload")
+		return
+	}
+
+	file, err := bs.GetTemplateBuildFile(ctx, hash)
+	if err == nil && file.Present {
+		if s.buildFiles == nil || s.buildFiles.exists(hash) {
+			writeJSON(w, http.StatusCreated, templateBuildFileUploadResponse{Present: true})
+			return
+		}
+	} else if err != nil && !errors.Is(err, store.ErrTemplateBuildFileNotFound) {
+		s.logger.Error("get template file upload", "template_id", templateID, "hash", hash, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to get template file upload")
+		return
+	}
+
+	now := s.nowFunc().UTC()
+	if errors.Is(err, store.ErrTemplateBuildFileNotFound) {
+		file = store.TemplateBuildFile{
+			FilesHash: hash,
+			ObjectKey: buildFileObjectKey(hash),
+			Present:   false,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+		if err := bs.PutTemplateBuildFile(ctx, file); err != nil {
+			s.logger.Error("create template build file", "hash", hash, "err", err)
+			writeAPIError(w, http.StatusInternalServerError, "failed to get template file upload")
+			return
+		}
+	}
+
+	uploadURL := s.platformPublicURL(r) + "/template-build-files/" + hash
 	writeJSON(w, http.StatusCreated, templateBuildFileUploadResponse{
-		Present: true,
+		Present: false,
+		URL:     &uploadURL,
 	})
 }
 

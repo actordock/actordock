@@ -275,11 +275,10 @@ func TestGetTemplateTagsEmpty(t *testing.T) {
 	}
 }
 
-func TestGetTemplateFileUploadStub(t *testing.T) {
+func TestGetTemplateFileUploadNotPresent(t *testing.T) {
 	t.Parallel()
 
-	cfg := testConfig()
-	srv := NewServerWithCatalog(cfg, &fakeActors{}, newFakeStore(), testTemplateCatalog(cfg), slog.Default())
+	srv, _ := testServerWithBuildFiles(t)
 	req := httptest.NewRequest(http.MethodGet, "/templates/base/files/abc123", nil)
 	req.Header.Set("X-API-KEY", "dev")
 	rec := httptest.NewRecorder()
@@ -292,7 +291,7 @@ func TestGetTemplateFileUploadStub(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !resp.Present {
+	if resp.Present || resp.URL == nil {
 		t.Fatalf("resp = %+v", resp)
 	}
 }

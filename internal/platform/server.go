@@ -97,12 +97,13 @@ type platformStore interface {
 }
 
 type Server struct {
-	cfg       config.Platform
-	actors    sandboxClient
-	store     platformStore
-	templates TemplateCatalog
-	logger    *slog.Logger
-	nowFunc   func() time.Time
+	cfg        config.Platform
+	actors     sandboxClient
+	store      platformStore
+	templates  TemplateCatalog
+	buildFiles *templateBuildFileStorage
+	logger     *slog.Logger
+	nowFunc    func() time.Time
 }
 
 func NewServer(cfg config.Platform, actors sandboxClient, st platformStore, logger *slog.Logger) *Server {
@@ -119,7 +120,7 @@ func NewServerWithCatalog(cfg config.Platform, actors sandboxClient, st platform
 	if cs, ok := st.(catalogTemplateStore); ok {
 		catalog = NewWritableTemplateCatalog(cfg, catalog, cs)
 	}
-	return &Server{
+	srv := &Server{
 		cfg:       cfg,
 		actors:    actors,
 		store:     st,
@@ -127,6 +128,15 @@ func NewServerWithCatalog(cfg config.Platform, actors sandboxClient, st platform
 		logger:    logger,
 		nowFunc:   time.Now,
 	}
+	if dir := strings.TrimSpace(cfg.TemplateBuildFilesDir); dir != "" {
+		buildFiles, err := newTemplateBuildFileStorage(dir)
+		if err != nil {
+			logger.Error("template build file storage", "dir", dir, "err", err)
+		} else {
+			srv.buildFiles = buildFiles
+		}
+	}
+	return srv
 }
 
 func (s *Server) Handler() http.Handler {
@@ -154,8 +164,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /volumes/{volumeID}", s.requireAPIKey(http.HandlerFunc(s.handleDeleteVolume)))
 	mux.Handle("GET /templates", s.requireAPIKey(http.HandlerFunc(s.handleListTemplates)))
 	mux.Handle("POST /templates", s.requireAPIKey(http.HandlerFunc(s.handleCreateTemplate)))
+	mux.Handle("POST /v3/templates", s.requireAPIKey(http.HandlerFunc(s.handleCreateTemplateV3)))
 	mux.Handle("PATCH /templates/{id}", s.requireAPIKey(http.HandlerFunc(s.handlePatchTemplate)))
 	mux.Handle("GET /templates/{path...}", s.requireAPIKey(http.HandlerFunc(s.handleTemplatePath)))
+	mux.HandleFunc("PUT /template-build-files/{hash}", s.handlePutTemplateBuildFile)
 	mux.Handle("GET /api-keys", s.requireAPIKey(http.HandlerFunc(s.handleListAPIKeys)))
 	mux.Handle("POST /api-keys", s.requireAPIKey(http.HandlerFunc(s.handleCreateAPIKey)))
 	mux.Handle("POST /access-tokens", s.requireAPIKey(http.HandlerFunc(s.handleCreateAccessToken)))

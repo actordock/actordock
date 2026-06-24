@@ -131,6 +131,7 @@ type fakeStore struct {
 	catalogTemplates    map[string]store.CatalogTemplateRecord
 	templateBuilds      map[string]store.TemplateBuild
 	templateBuildLatest map[string]string
+	templateBuildFiles  map[string]store.TemplateBuildFile
 	teamAPIKeys         map[string]store.TeamAPIKeyRecord
 	apiKeyHashes        map[string]string
 	userAccessTokens    map[string]store.UserAccessTokenRecord
@@ -147,6 +148,7 @@ func newFakeStore() *fakeStore {
 		catalogTemplates:    make(map[string]store.CatalogTemplateRecord),
 		templateBuilds:      make(map[string]store.TemplateBuild),
 		templateBuildLatest: make(map[string]string),
+		templateBuildFiles:  make(map[string]store.TemplateBuildFile),
 		teamAPIKeys:         make(map[string]store.TeamAPIKeyRecord),
 		apiKeyHashes:        make(map[string]string),
 		userAccessTokens:    make(map[string]store.UserAccessTokenRecord),
@@ -348,16 +350,27 @@ func (f *fakeStore) ListBuildLogs(context.Context, string, string, int, int) ([]
 	return nil, nil
 }
 
-func (f *fakeStore) PutTemplateBuildFile(context.Context, store.TemplateBuildFile) error {
+func (f *fakeStore) PutTemplateBuildFile(_ context.Context, file store.TemplateBuildFile) error {
+	f.templateBuildFiles[file.FilesHash] = file
 	return nil
 }
 
-func (f *fakeStore) GetTemplateBuildFile(context.Context, string) (store.TemplateBuildFile, error) {
-	return store.TemplateBuildFile{}, store.ErrTemplateBuildFileNotFound
+func (f *fakeStore) GetTemplateBuildFile(_ context.Context, filesHash string) (store.TemplateBuildFile, error) {
+	file, ok := f.templateBuildFiles[filesHash]
+	if !ok {
+		return store.TemplateBuildFile{}, store.ErrTemplateBuildFileNotFound
+	}
+	return file, nil
 }
 
-func (f *fakeStore) MarkTemplateBuildFilePresent(context.Context, string, bool) error {
-	return store.ErrTemplateBuildFileNotFound
+func (f *fakeStore) MarkTemplateBuildFilePresent(_ context.Context, filesHash string, present bool) error {
+	file, ok := f.templateBuildFiles[filesHash]
+	if !ok {
+		return store.ErrTemplateBuildFileNotFound
+	}
+	file.Present = present
+	f.templateBuildFiles[filesHash] = file
+	return nil
 }
 
 func (f *fakeStore) PutTeamAPIKey(_ context.Context, rec store.TeamAPIKeyRecord) error {
