@@ -31,8 +31,8 @@ var (
 )
 
 const (
-	templateTagKeyPrefix    = "actordock:template-tag:"
-	templateTagIndexPrefix  = "actordock:template-tags:"
+	templateTagKeyPrefix   = "actordock:template-tag:"
+	templateTagIndexPrefix = "actordock:template-tags:"
 )
 
 // TemplateTagRecord maps a template tag to a build.
