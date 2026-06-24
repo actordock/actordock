@@ -26,8 +26,8 @@ import (
 )
 
 type Clients struct {
-	K8s          *kubernetes.Clientset
-	CRD          *apiextensionsclientset.Clientset
+	K8s        *kubernetes.Clientset
+	CRD        *apiextensionsclientset.Clientset
 	RuntimeK8s *versioned.Clientset
 	RuntimeAPI *runtimeclient.Client
 }
@@ -75,8 +75,8 @@ func NewClients(ctx context.Context) (*Clients, error) {
 	}
 
 	return &Clients{
-		K8s:          clientset,
-		CRD:          crdClient,
+		K8s:        clientset,
+		CRD:        crdClient,
 		RuntimeK8s: runtimeAPIClient,
 		RuntimeAPI: apiClient,
 	}, nil

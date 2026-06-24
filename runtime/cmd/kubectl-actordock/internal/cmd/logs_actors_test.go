@@ -192,10 +192,10 @@ func TestLogsActorRunner_Run_OneShotSuccess(t *testing.T) {
 			}
 			return &runtimeapipb.GetActorResponse{
 				Actor: &runtimeapipb.Actor{
-					ActorId:           actorID,
+					ActorId:             actorID,
 					SandboxPodName:      podName,
 					SandboxPodNamespace: namespace,
-					Status:            runtimeapipb.Actor_STATUS_RUNNING,
+					Status:              runtimeapipb.Actor_STATUS_RUNNING,
 				},
 			}, nil
 		},
@@ -310,10 +310,10 @@ func TestLogsActorRunner_Run_Follow_SuspendedToRunning(t *testing.T) {
 			// Subsequent calls: running
 			return &runtimeapipb.GetActorResponse{
 				Actor: &runtimeapipb.Actor{
-					ActorId:           actorID,
+					ActorId:             actorID,
 					SandboxPodName:      podName,
 					SandboxPodNamespace: namespace,
-					Status:            runtimeapipb.Actor_STATUS_RUNNING,
+					Status:              runtimeapipb.Actor_STATUS_RUNNING,
 				},
 			}, nil
 		},
@@ -437,10 +437,10 @@ func TestLogsActorRunner_Run_Follow_ActorMigration(t *testing.T) {
 				// 1. Initial call for stream 1: pod-1
 				return &runtimeapipb.GetActorResponse{
 					Actor: &runtimeapipb.Actor{
-						ActorId:           actorID,
+						ActorId:             actorID,
 						SandboxPodName:      "pod-1",
 						SandboxPodNamespace: "ns",
-						Status:            runtimeapipb.Actor_STATUS_RUNNING,
+						Status:              runtimeapipb.Actor_STATUS_RUNNING,
 					},
 				}, nil
 			}
@@ -455,10 +455,10 @@ func TestLogsActorRunner_Run_Follow_ActorMigration(t *testing.T) {
 
 			return &runtimeapipb.GetActorResponse{
 				Actor: &runtimeapipb.Actor{
-					ActorId:           actorID,
+					ActorId:             actorID,
 					SandboxPodName:      "pod-2",
 					SandboxPodNamespace: "ns",
-					Status:            runtimeapipb.Actor_STATUS_RUNNING,
+					Status:              runtimeapipb.Actor_STATUS_RUNNING,
 				},
 			}, nil
 		},
@@ -550,10 +550,10 @@ func TestLogsActorRunner_Run_Follow_ActorSuspendedMidStream(t *testing.T) {
 			if getActorCalls == 1 {
 				return &runtimeapipb.GetActorResponse{
 					Actor: &runtimeapipb.Actor{
-						ActorId:           actorID,
+						ActorId:             actorID,
 						SandboxPodName:      "pod-1",
 						SandboxPodNamespace: "ns",
-						Status:            runtimeapipb.Actor_STATUS_RUNNING,
+						Status:              runtimeapipb.Actor_STATUS_RUNNING,
 					},
 				}, nil
 			}
@@ -587,10 +587,10 @@ func TestLogsActorRunner_Run_Follow_ActorSuspendedMidStream(t *testing.T) {
 			// 4. Subsequent loop reconnection call: running again on pod-1
 			return &runtimeapipb.GetActorResponse{
 				Actor: &runtimeapipb.Actor{
-					ActorId:           actorID,
+					ActorId:             actorID,
 					SandboxPodName:      "pod-1",
 					SandboxPodNamespace: "ns",
-					Status:            runtimeapipb.Actor_STATUS_RUNNING,
+					Status:              runtimeapipb.Actor_STATUS_RUNNING,
 				},
 			}, nil
 		},

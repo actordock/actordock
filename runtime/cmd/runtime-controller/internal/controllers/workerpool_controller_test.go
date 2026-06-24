@@ -567,7 +567,7 @@ func makeWorkerPool(name, ns string, replicas int32, image string) *runtimev1alp
 	return &runtimev1alpha1.WorkerPool{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns},
 		Spec: runtimev1alpha1.WorkerPoolSpec{
-			Replicas:   replicas,
+			Replicas:     replicas,
 			SandboxImage: image,
 		},
 	}

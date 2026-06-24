@@ -38,8 +38,8 @@ type ComponentHealth struct {
 }
 
 type RouterHealthReport struct {
-	Envoy  ComponentHealth `json:"envoy"`
-	K8sAPI ComponentHealth `json:"k8s_api"`
+	Envoy      ComponentHealth `json:"envoy"`
+	K8sAPI     ComponentHealth `json:"k8s_api"`
 	RuntimeAPI ComponentHealth `json:"runtime_api"`
 }
 

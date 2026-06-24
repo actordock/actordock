@@ -23,9 +23,9 @@ import (
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/log"
 	"github.com/actordock/actordock/internal/redis"
+	"github.com/actordock/actordock/internal/runtimeapi"
 	"github.com/actordock/actordock/internal/scheduler"
 	"github.com/actordock/actordock/internal/store"
-	"github.com/actordock/actordock/internal/runtimeapi"
 )
 
 func main() {

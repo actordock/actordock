@@ -28,13 +28,13 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
-	"github.com/actordock/runtime/cmd/runtime-worker/internal/runtimegcs"
 	"github.com/actordock/runtime/cmd/runtime-worker/internal/memorypullcache"
+	"github.com/actordock/runtime/cmd/runtime-worker/internal/runtimegcs"
+	"github.com/actordock/runtime/internal/proto/runtimesandboxpb"
+	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
+	"github.com/actordock/runtime/internal/resources"
 	"github.com/actordock/runtime/internal/runtimeinterceptors"
 	"github.com/actordock/runtime/internal/sandboxpath"
-	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
-	"github.com/actordock/runtime/internal/proto/runtimesandboxpb"
-	"github.com/actordock/runtime/internal/resources"
 	"github.com/actordock/runtime/internal/serverboot"
 	"github.com/actordock/runtime/internal/version"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -183,7 +183,7 @@ func main() {
 type SandboxHerder struct {
 	runtimeworkerpb.UnimplementedWorkerHerderServer
 
-	sandboxDialer   *SandboxDialer
+	sandboxDialer *SandboxDialer
 	pullCache     *memorypullcache.MemoryPullCache
 	anonGCSClient runtimegcs.ObjectStorage
 	gcsClient     runtimegcs.ObjectStorage
@@ -200,7 +200,7 @@ func NewService(
 	pullCache *memorypullcache.MemoryPullCache,
 ) *SandboxHerder {
 	wms := &SandboxHerder{
-		sandboxDialer:   sandboxDialer,
+		sandboxDialer: sandboxDialer,
 		pullCache:     pullCache,
 		anonGCSClient: anonGCSClient,
 		gcsClient:     gcsClient,

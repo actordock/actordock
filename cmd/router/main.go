@@ -22,8 +22,8 @@ import (
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/log"
 	"github.com/actordock/actordock/internal/router"
-	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/runtimeapi"
+	"github.com/actordock/actordock/internal/store"
 )
 
 func main() {

@@ -19,8 +19,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/runtimeapi"
+	"github.com/actordock/actordock/internal/store"
 )
 
 type metadataStore interface {

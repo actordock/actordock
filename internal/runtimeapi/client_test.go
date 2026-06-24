@@ -42,8 +42,8 @@ type fakeControl struct {
 
 func (f *fakeControl) actor(actorID string, status runtimeapipb.Actor_Status) *runtimeapipb.Actor {
 	return &runtimeapipb.Actor{
-		ActorId:    actorID,
-		Status:     status,
+		ActorId:      actorID,
+		Status:       status,
 		SandboxPodIp: f.podIP,
 	}
 }

@@ -49,8 +49,8 @@ func TestActorResumer_ResumeActor(t *testing.T) {
 				resumeCalled++
 				return &runtimeapipb.ResumeActorResponse{
 					Actor: &runtimeapipb.Actor{
-						ActorId:    testActorID,
-						Status:     runtimeapipb.Actor_STATUS_RUNNING,
+						ActorId:      testActorID,
+						Status:       runtimeapipb.Actor_STATUS_RUNNING,
 						SandboxPodIp: expectedIP,
 					},
 				}, nil
@@ -80,8 +80,8 @@ func TestActorResumer_ResumeActor(t *testing.T) {
 				}
 				return &runtimeapipb.ResumeActorResponse{
 					Actor: &runtimeapipb.Actor{
-						ActorId:    testActorID,
-						Status:     runtimeapipb.Actor_STATUS_RUNNING,
+						ActorId:      testActorID,
+						Status:       runtimeapipb.Actor_STATUS_RUNNING,
 						SandboxPodIp: expectedIP,
 					},
 				}, nil
@@ -127,8 +127,8 @@ func TestActorResumer_ResumeActor(t *testing.T) {
 				time.Sleep(20 * time.Millisecond)
 				return &runtimeapipb.ResumeActorResponse{
 					Actor: &runtimeapipb.Actor{
-						ActorId:    testActorID,
-						Status:     runtimeapipb.Actor_STATUS_RUNNING,
+						ActorId:      testActorID,
+						Status:       runtimeapipb.Actor_STATUS_RUNNING,
 						SandboxPodIp: expectedIP,
 					},
 				}, nil

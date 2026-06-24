@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/actordock/runtime/internal/sandboxpath"
 	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
+	"github.com/actordock/runtime/internal/sandboxpath"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -108,7 +108,7 @@ func validRunRequest() *runtimeworkerpb.RunRequest {
 		ActorTemplateNamespace: "runtime-demo",
 		ActorTemplateName:      "counter",
 		ActorId:                "counter-1",
-		TargetSandboxPodUid:         "422938ba-8860-4983-a25d-d6bcb0a69d4e",
+		TargetSandboxPodUid:    "422938ba-8860-4983-a25d-d6bcb0a69d4e",
 		Spec:                   &runtimeworkerpb.WorkloadSpec{Containers: []*runtimeworkerpb.Container{{Name: "worker"}}},
 	}
 }
@@ -118,7 +118,7 @@ func validCheckpointRequest() *runtimeworkerpb.CheckpointRequest {
 		ActorTemplateNamespace: "runtime-demo",
 		ActorTemplateName:      "counter",
 		ActorId:                "counter-1",
-		TargetSandboxPodUid:         "422938ba-8860-4983-a25d-d6bcb0a69d4e",
+		TargetSandboxPodUid:    "422938ba-8860-4983-a25d-d6bcb0a69d4e",
 		Spec:                   &runtimeworkerpb.WorkloadSpec{Containers: []*runtimeworkerpb.Container{{Name: "worker"}}},
 		Type:                   runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_EXTERNAL,
 		Config: &runtimeworkerpb.CheckpointRequest_ExternalConfig{
@@ -134,7 +134,7 @@ func validRestoreRequest() *runtimeworkerpb.RestoreRequest {
 		ActorTemplateNamespace: "runtime-demo",
 		ActorTemplateName:      "counter",
 		ActorId:                "counter-1",
-		TargetSandboxPodUid:         "422938ba-8860-4983-a25d-d6bcb0a69d4e",
+		TargetSandboxPodUid:    "422938ba-8860-4983-a25d-d6bcb0a69d4e",
 		Spec:                   &runtimeworkerpb.WorkloadSpec{Containers: []*runtimeworkerpb.Container{{Name: "worker"}}},
 		Type:                   runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_EXTERNAL,
 		Config: &runtimeworkerpb.RestoreRequest_ExternalConfig{
@@ -190,7 +190,9 @@ func TestValidateCheckpointRequest(t *testing.T) {
 			r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_LOCAL
 			r.Config = &runtimeworkerpb.CheckpointRequest_LocalConfig{LocalConfig: &runtimeworkerpb.LocalCheckpointConfiguration{SnapshotPrefix: ""}}
 		}), true},
-		{"unspecified snapshot type", makeReq(func(r *runtimeworkerpb.CheckpointRequest) { r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_UNSPECIFIED }), true},
+		{"unspecified snapshot type", makeReq(func(r *runtimeworkerpb.CheckpointRequest) {
+			r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_UNSPECIFIED
+		}), true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -223,7 +225,9 @@ func TestValidateRestoreRequest(t *testing.T) {
 			r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_LOCAL
 			r.Config = &runtimeworkerpb.RestoreRequest_LocalConfig{LocalConfig: &runtimeworkerpb.LocalCheckpointConfiguration{SnapshotPrefix: ""}}
 		}), true},
-		{"unspecified snapshot type", makeReq(func(r *runtimeworkerpb.RestoreRequest) { r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_UNSPECIFIED }), true},
+		{"unspecified snapshot type", makeReq(func(r *runtimeworkerpb.RestoreRequest) {
+			r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_UNSPECIFIED
+		}), true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

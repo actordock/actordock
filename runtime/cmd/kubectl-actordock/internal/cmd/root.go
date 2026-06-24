@@ -34,7 +34,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:          "kubectl-actordock",
 	Short:        "A kubectl plugin for managing Actordock runtime environments",
-		Long:         `kubectl-actordock manages Actor and Worker lifecycles in Actordock.`,
+	Long:         `kubectl-actordock manages Actor and Worker lifecycles in Actordock.`,
 	Version:      version.String(),
 	SilenceUsage: true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

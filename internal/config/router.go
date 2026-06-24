@@ -22,9 +22,9 @@ import (
 type Router struct {
 	Server
 	RuntimeAPIAddr string
-	RedisAddr  string
-	Domain     string
-	EnvdPort   int
+	RedisAddr      string
+	Domain         string
+	EnvdPort       int
 }
 
 func RouterFromEnv() (Router, error) {
@@ -37,10 +37,10 @@ func RouterFromEnv() (Router, error) {
 		return Router{}, fmt.Errorf("ACTORDOCK_ENVD_PORT must be a valid port")
 	}
 	return Router{
-		Server:     server,
+		Server:         server,
 		RuntimeAPIAddr: envOrDefault("ACTORDOCK_RUNTIME_API_ADDR", "api.actordock-system.svc:443"),
-		RedisAddr:  envOrDefault("ACTORDOCK_REDIS_ADDR", "redis.actordock.svc:6379"),
-		Domain:     envOrDefault("ACTORDOCK_DOMAIN", "localhost"),
-		EnvdPort:   envdPort,
+		RedisAddr:      envOrDefault("ACTORDOCK_REDIS_ADDR", "redis.actordock.svc:6379"),
+		Domain:         envOrDefault("ACTORDOCK_DOMAIN", "localhost"),
+		EnvdPort:       envdPort,
 	}, nil
 }

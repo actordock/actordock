@@ -20,8 +20,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/runtimeapi"
+	"github.com/actordock/actordock/internal/store"
 )
 
 type fakeStore struct {

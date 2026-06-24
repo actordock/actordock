@@ -23,8 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/actordock/runtime/internal/runtimeclient"
 	"github.com/actordock/runtime/internal/e2e"
+	"github.com/actordock/runtime/internal/runtimeclient"
 	"github.com/actordock/runtime/pkg/api/v1alpha1"
 	"github.com/actordock/runtime/pkg/proto/runtimeapipb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -323,7 +323,7 @@ func createActorTemplate(ctx context.Context, t *testing.T, clients *e2e.Clients
 		},
 		Spec: v1alpha1.WorkerPoolSpec{
 			Replicas:          5,
-			SandboxImage:        existingWp.Spec.SandboxImage,
+			SandboxImage:      existingWp.Spec.SandboxImage,
 			SandboxClass:      existingWp.Spec.SandboxClass,
 			SandboxConfigName: existingWp.Spec.SandboxConfigName,
 		},

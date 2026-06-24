@@ -26,9 +26,9 @@ import (
 	"time"
 
 	"github.com/actordock/runtime/cmd/runtime-api/internal/store/runtimeredis"
-	"github.com/actordock/runtime/internal/runtimeinterceptors"
 	"github.com/actordock/runtime/internal/envtestbins"
 	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
+	"github.com/actordock/runtime/internal/runtimeinterceptors"
 	runtimev1alpha1 "github.com/actordock/runtime/pkg/api/v1alpha1"
 	"github.com/actordock/runtime/pkg/client/clientset/versioned"
 	"github.com/actordock/runtime/pkg/client/informers/externalversions"
@@ -231,7 +231,7 @@ type testContext struct {
 	service             *Service
 	client              runtimeapipb.ControlClient
 	k8sClient           kubernetes.Interface
-	runtimeAPIClient     versioned.Interface
+	runtimeAPIClient    versioned.Interface
 	persistence         *runtimeredis.Persistence
 	fakeWorker          *FakeWorkerServer
 	cleanup             func()
@@ -347,7 +347,7 @@ func setupTest(t *testing.T, ns string) *testContext {
 		service:             service,
 		client:              client,
 		k8sClient:           k8sClient,
-		runtimeAPIClient:     runtimeAPIClient,
+		runtimeAPIClient:    runtimeAPIClient,
 		persistence:         persistence,
 		fakeWorker:          fakeWorker,
 		cleanup:             cleanup,
@@ -476,7 +476,7 @@ func createWorkerPool(t *testing.T, tc *testContext, ns string, name string, lab
 			Labels:    labels,
 		},
 		Spec: runtimev1alpha1.WorkerPoolSpec{
-			Replicas:   1,
+			Replicas:     1,
 			SandboxImage: "runtime-sandbox@sha256:abc",
 		},
 	}
@@ -951,9 +951,9 @@ func TestResumeActor(t *testing.T) {
 			ActorTemplateNamespace: ns,
 			ActorTemplateName:      "tmpl1",
 			Status:                 runtimeapipb.Actor_STATUS_RUNNING,
-			SandboxPodNamespace:      ns,
-			SandboxPodName:           "worker-1",
-			SandboxPodIp:             "127.0.0.1",
+			SandboxPodNamespace:    ns,
+			SandboxPodName:         "worker-1",
+			SandboxPodIp:           "127.0.0.1",
 			WorkerPoolName:         "pool1",
 		},
 	}

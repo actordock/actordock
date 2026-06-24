@@ -80,8 +80,8 @@ func main() {
 	}
 
 	if err = (&controllers.ActorTemplateReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
 		RuntimeAPIClient: runtimeAPIClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ActorTemplate")

@@ -31,9 +31,9 @@ func TestPrintActorsTo_Table(t *testing.T) {
 			ActorTemplateName:      "template-1",
 			Status:                 runtimeapipb.Actor_STATUS_RUNNING,
 			Version:                2,
-			SandboxPodNamespace:      "worker-ns",
-			SandboxPodName:           "pod-1",
-			SandboxPodIp:             "1.2.3.4",
+			SandboxPodNamespace:    "worker-ns",
+			SandboxPodName:         "pod-1",
+			SandboxPodIp:           "1.2.3.4",
 		},
 	}
 

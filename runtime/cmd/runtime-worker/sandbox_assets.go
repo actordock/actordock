@@ -27,9 +27,9 @@ import (
 	"runtime"
 
 	"github.com/actordock/runtime/cmd/runtime-worker/internal/runtimegcs"
-	"github.com/actordock/runtime/internal/sandboxpath"
 	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
 	"github.com/actordock/runtime/internal/resources"
+	"github.com/actordock/runtime/internal/sandboxpath"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

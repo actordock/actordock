@@ -24,8 +24,8 @@ import (
 	"strings"
 
 	"github.com/actordock/actordock/internal/config"
-	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/runtimeapi"
+	"github.com/actordock/actordock/internal/store"
 	"github.com/google/uuid"
 )
 

@@ -21,8 +21,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/actordock/runtime/internal/runtimeclient"
 	"github.com/actordock/runtime/internal/resources"
+	"github.com/actordock/runtime/internal/runtimeclient"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"

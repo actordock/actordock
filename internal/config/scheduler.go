@@ -22,10 +22,10 @@ import (
 const defaultSchedulerPollInterval = 5 * time.Second
 
 type Scheduler struct {
-	LogLevel     string
-	RedisAddr    string
-	RuntimeAPIAddr   string
-	PollInterval time.Duration
+	LogLevel       string
+	RedisAddr      string
+	RuntimeAPIAddr string
+	PollInterval   time.Duration
 }
 
 func SchedulerFromEnv() (Scheduler, error) {
@@ -37,10 +37,10 @@ func SchedulerFromEnv() (Scheduler, error) {
 		return Scheduler{}, fmt.Errorf("SCHEDULER_POLL_INTERVAL must be positive")
 	}
 	return Scheduler{
-		LogLevel:     envOrDefault("SCHEDULER_LOG_LEVEL", envOrDefault("ACTORDOCK_LOG_LEVEL", "info")),
-		RedisAddr:    envOrDefault("SCHEDULER_REDIS_ADDR", "redis.actordock.svc:6379"),
-		RuntimeAPIAddr:   envOrDefault("SCHEDULER_RUNTIME_API_ADDR", "api.actordock-system.svc:443"),
-		PollInterval: pollInterval,
+		LogLevel:       envOrDefault("SCHEDULER_LOG_LEVEL", envOrDefault("ACTORDOCK_LOG_LEVEL", "info")),
+		RedisAddr:      envOrDefault("SCHEDULER_REDIS_ADDR", "redis.actordock.svc:6379"),
+		RuntimeAPIAddr: envOrDefault("SCHEDULER_RUNTIME_API_ADDR", "api.actordock-system.svc:443"),
+		PollInterval:   pollInterval,
 	}, nil
 }
 

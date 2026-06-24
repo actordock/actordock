@@ -17,8 +17,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/actordock/runtime/internal/runtimeclient"
 	"github.com/actordock/runtime/internal/localjwtauthority"
+	"github.com/actordock/runtime/internal/runtimeclient"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
