@@ -24,10 +24,12 @@ from e2b import Sandbox
 from e2b.exceptions import TimeoutException
 
 DAYS_PER_YEAR = 6
+SANDBOX_TEMPLATE = "python"
 CALC_SCRIPT = """\
-#!/bin/sh
-tenure="$1"
-echo $((tenure * 6))
+import sys
+
+tenure = int(sys.argv[1])
+print(tenure * 6)
 """
 
 DEFAULT_MAX_ATTEMPTS = 15
@@ -64,10 +66,10 @@ def calculate_pto(tenure_years: int) -> int:
     if tenure_years < 0:
         raise ValueError("tenure_years must be non-negative")
 
-    sandbox = Sandbox.create(template="base", secure=False, timeout=120)
+    sandbox = Sandbox.create(template=SANDBOX_TEMPLATE, secure=False, timeout=120)
     try:
-        _write_with_retry(sandbox, "/tmp/pto_calc.sh", CALC_SCRIPT)
-        stdout = _run_with_retry(sandbox, f"sh /tmp/pto_calc.sh {tenure_years}")
+        _write_with_retry(sandbox, "/tmp/pto_calc.py", CALC_SCRIPT)
+        stdout = _run_with_retry(sandbox, f"python3 /tmp/pto_calc.py {tenure_years}")
         return int(stdout)
     finally:
         sandbox.kill()

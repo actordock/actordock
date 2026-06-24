@@ -113,15 +113,8 @@ deploy_actordock_images() {
   (cd "${substrate_root}" && ko resolve -f "${root}/manifests/substrate/workerpool.yaml") \
     | kubectl_ctx apply -f -
 
-  log_step "Deploying ActorTemplate base"
-  kubectl_ctx delete actortemplate base -n actordock --ignore-not-found
-  if kubectl_ctx get actortemplate base -n actordock >/dev/null 2>&1; then
-    kubectl_ctx wait --for=delete actortemplate/base -n actordock --timeout=120s
-  fi
-  sed "s|\${BUCKET_NAME}|${BUCKET_NAME:-ate-snapshots}|g" \
-    "${root}/manifests/substrate/actortemplate-base.yaml.tmpl" \
-    | (cd "${root}" && ko resolve -f -) \
-    | kubectl_ctx apply -f -
+  apply_actortemplate "${root}" base "${root}/manifests/substrate/actortemplate-base.yaml.tmpl"
+  apply_actortemplate "${root}" python "${root}/manifests/substrate/actortemplate-python.yaml.tmpl"
 
   log_step "Building dashboard web assets"
   require_cmd npm
@@ -139,12 +132,33 @@ deploy_actordock_images() {
   kubectl_ctx rollout status deployment/scheduler -n actordock --timeout=180s
   kubectl_ctx rollout status deployment/dashboard -n actordock --timeout=180s
 
-  wait_actortemplate_base
+  wait_actortemplate_ready base
+  wait_actortemplate_ready python
+}
+
+apply_actortemplate() {
+  local root="$1"
+  local name="$2"
+  local manifest="$3"
+
+  log_step "Deploying ActorTemplate ${name}"
+  kubectl_ctx delete actortemplate "${name}" -n actordock --ignore-not-found
+  if kubectl_ctx get actortemplate "${name}" -n actordock >/dev/null 2>&1; then
+    kubectl_ctx wait --for=delete actortemplate/"${name}" -n actordock --timeout=120s
+  fi
+  sed "s|\${BUCKET_NAME}|${BUCKET_NAME:-ate-snapshots}|g" \
+    "${manifest}" \
+    | (cd "${root}" && ko resolve -f -) \
+    | kubectl_ctx apply -f -
+}
+
+wait_actortemplate_ready() {
+  log_step "Waiting for ActorTemplate ${1} golden snapshot"
+  kubectl_ctx wait --for=condition=Ready actortemplate/"${1}" -n actordock --timeout=600s
 }
 
 wait_actortemplate_base() {
-  log_step "Waiting for ActorTemplate base golden snapshot"
-  kubectl_ctx wait --for=condition=Ready actortemplate/base -n actordock --timeout=600s
+  wait_actortemplate_ready base
 }
 
 write_env_local() {
