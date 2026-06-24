@@ -42,8 +42,8 @@ func TestPrintActorsTo_Table(t *testing.T) {
 	}
 	output := buf.String()
 
-	expected := `NAMESPACE   TEMPLATE     ID     STATUS           ATEOM POD         ATEOM IP   VERSION
-default     template-1   id-1   STATUS_RUNNING   worker-ns/pod-1   1.2.3.4    2
+	expected := `NAMESPACE   TEMPLATE     ID     STATUS           SANDBOX POD       SANDBOX IP   VERSION
+default     template-1   id-1   STATUS_RUNNING   worker-ns/pod-1   1.2.3.4      2
 `
 	if diff := cmp.Diff(expected, output); diff != "" {
 		t.Errorf("output mismatch (-want +got):\n%s", diff)
@@ -128,10 +128,10 @@ func TestPrintActorsTo_Table_Sorted(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expected := `NAMESPACE   TEMPLATE     ID      STATUS             ATEOM POD   ATEOM IP   VERSION
-default     template-1   alpha   STATUS_RUNNING     <none>                 0
-default     template-1   zebra   STATUS_SUSPENDED   <none>                 0
-other       template-2   beta    STATUS_SUSPENDED   <none>                 0
+	expected := `NAMESPACE   TEMPLATE     ID      STATUS             SANDBOX POD   SANDBOX IP   VERSION
+default     template-1   alpha   STATUS_RUNNING     <none>                     0
+default     template-1   zebra   STATUS_SUSPENDED   <none>                     0
+other       template-2   beta    STATUS_SUSPENDED   <none>                     0
 `
 	if diff := cmp.Diff(expected, buf.String()); diff != "" {
 		t.Errorf("output mismatch (-want +got):\n%s", diff)

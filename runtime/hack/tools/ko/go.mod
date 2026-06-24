@@ -1,4 +1,4 @@
-module github.com/agent-substrate/substrate/hack/tools/ko
+module github.com/actordock/runtime/hack/tools/ko
 
 go 1.26.3
 

@@ -65,7 +65,7 @@ func NewClients(ctx context.Context) (*Clients, error) {
 		return nil, fmt.Errorf("runtime clientset: %w", err)
 	}
 
-	// Establish port-forward tunnel and connect to ATE API
+	// Establish port-forward tunnel and connect to runtime API
 	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 

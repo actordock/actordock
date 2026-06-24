@@ -1,4 +1,4 @@
-module github.com/agent-substrate/substrate/hack/tools/controller-gen
+module github.com/actordock/runtime/hack/tools/controller-gen
 
 go 1.26.1
 

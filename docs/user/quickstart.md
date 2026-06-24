@@ -298,7 +298,7 @@ See [dashboard/README.md](../../dashboard/README.md) for build targets (`make ve
 - **Runtime pods not ready** — wait or re-run `./hack/install-local.sh`; cold start can exceed default rollout timeouts.
 - **ActorTemplate `base` not Ready** — check `kubectl --context kind-actordock get actortemplate -n actordock` and actordock-system pods.
 - **E2E connection refused** — ensure port-forwards to platform (`8080`) and router (`8081`) are running.
-- **No free workers** — delete stale sandboxes via platform `DELETE /sandboxes/{id}` or `kubectl ate delete actor <id>`.
+- **No free workers** — delete stale sandboxes via platform `DELETE /sandboxes/{id}` or `kubectl actordock delete actor <id>`.
 
 ## Further reading
 

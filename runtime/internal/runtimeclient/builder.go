@@ -64,7 +64,7 @@ func (c *Client) Close() {
 	}
 }
 
-// NewClient creates a new Ate API client. If endpoint is empty, it automatically port-forwards
+// NewClient creates a new runtime API client. If endpoint is empty, it automatically port-forwards
 // to the runtime-api pod in the actordock-system namespace.
 func NewClient(ctx context.Context, kubeconfigPath, k8sContext, endpoint string, traceEnabled bool) (*Client, error) {
 	tp, err := initTracing(ctx, traceEnabled)

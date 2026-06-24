@@ -54,7 +54,7 @@ func PrintActorsTo(out io.Writer, actors []*runtimeapipb.Actor, format string) e
 		return printProto(out, &runtimeapipb.ListActorsResponse{Actors: actors}, format)
 	case "table":
 		w := tabwriter.NewWriter(out, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "NAMESPACE\tTEMPLATE\tID\tSTATUS\tATEOM POD\tATEOM IP\tVERSION")
+		fmt.Fprintln(w, "NAMESPACE\tTEMPLATE\tID\tSTATUS\tSANDBOX POD\tSANDBOX IP\tVERSION")
 		for _, actor := range actors {
 			ns := actor.GetActorTemplateNamespace()
 			tmpl := actor.GetActorTemplateName()

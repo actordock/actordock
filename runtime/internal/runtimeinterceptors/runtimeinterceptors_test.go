@@ -114,7 +114,7 @@ func TestServerUnaryInterceptorRedactsEnvFromProtoRequestLogs(t *testing.T) {
 		},
 	}
 
-	_, err := ServerUnaryInterceptor(context.Background(), req, &grpc.UnaryServerInfo{FullMethod: "/runtime-worker.AteomHerder/Run"}, func(ctx context.Context, req interface{}) (interface{}, error) {
+	_, err := ServerUnaryInterceptor(context.Background(), req, &grpc.UnaryServerInfo{FullMethod: "/actordock.runtimeworker.WorkerHerder/Run"}, func(ctx context.Context, req interface{}) (interface{}, error) {
 		return &runtimeworkerpb.RunResponse{}, nil
 	})
 	if err != nil {

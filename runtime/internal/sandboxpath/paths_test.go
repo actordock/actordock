@@ -29,7 +29,7 @@ func TestSandboxPath(t *testing.T) {
 	}
 }
 
-func TestAteomSocketPathLimits(t *testing.T) {
+func TestSandboxSocketPathLimits(t *testing.T) {
 	podUID := "123e4567-e89b-12d3-a456-426614174000"
 
 	sockPath := SandboxSocketPath(podUID)

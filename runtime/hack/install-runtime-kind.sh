@@ -32,7 +32,7 @@ export KO_DEFAULTPLATFORMS="linux/${goarch}"
 export RUNTIME_INSTALL_KIND="true"
 # use default bucket name for local deployment
 export BUCKET_NAME="actordock-snapshots"
-# unset other env from ate-dev-env.sh in case the developer already sourced them
+# unset other env from runtime-dev-env.sh in case the developer already sourced them
 unset GCE_REGION CLUSTER_LOCATION NETWORK SUBNETWORK MEMORYSTORE_INSTANCE PROJECT_ID
 
 hack/install-runtime.sh "$@"

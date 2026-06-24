@@ -39,7 +39,7 @@ const (
 	systemNamespace = "actordock-system"
 )
 
-// Controller manages the DNS configuration for the ATE.
+// Controller manages the DNS configuration for the runtime.
 type Controller struct {
 	Client       client.Client
 	Interval     time.Duration

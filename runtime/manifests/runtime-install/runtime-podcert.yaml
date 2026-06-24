@@ -20,7 +20,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: podcert-ate-dev-signer
+  name: podcert-runtime-dev-signer
 rules:
 # The service signer needs to be able to read services and pods.
 - apiGroups:
@@ -78,11 +78,11 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: podcert-ate-dev-signer
+  name: podcert-runtime-dev-signer
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: podcert-ate-dev-signer
+  name: podcert-runtime-dev-signer
 subjects:
 - kind: ServiceAccount
   namespace: runtime-podcert-system

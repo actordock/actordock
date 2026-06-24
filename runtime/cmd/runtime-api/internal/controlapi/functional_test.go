@@ -88,7 +88,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("create actordock-system namespace: %v", err)
 	}
 
-	// Create shared Atelet Pod
+	// Create shared Worker Pod
 	workerSidecarPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "runtime-worker-shared",
@@ -117,7 +117,7 @@ func TestMain(m *testing.M) {
 		}
 	}
 
-	// Start Fake Atelet Server on port 8085
+	// Start Fake Worker Server on port 8085
 	workerGrpcServer := grpc.NewServer()
 	runtimeworkerpb.RegisterWorkerHerderServer(workerGrpcServer, fakeWorker)
 	workerLis, err := net.Listen("tcp", "127.0.0.1:8085")
@@ -293,7 +293,7 @@ func setupTest(t *testing.T, ns string) *testContext {
 	dialer := NewWorkerDialer(workerInformer.GetIndexer(), workerPodSidecarInformer.GetIndexer())
 	service := NewService(persistence, actorTemplateLister, workerPoolLister, sandboxConfigLister, dialer, k8sClient)
 
-	// 5. Start REAL gRPC Server for ATE API
+	// 5. Start REAL gRPC Server for runtime API
 	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(runtimeinterceptors.ServerUnaryInterceptor))
 	runtimeapipb.RegisterControlServer(grpcServer, service)
 
@@ -902,12 +902,12 @@ func TestListWorkers(t *testing.T) {
 // TestResumeActor tests the full workflow of resuming a suspended actor.
 // Workflow:
 // 1. Creates a mock ActorTemplate.
-// 2. Creates a mock Atelet Pod in 'actordock-system' namespace on 'node1'.
+// 2. Creates a mock Worker Pod in 'actordock-system' namespace on 'node1'.
 // 3. Creates a mock worker Pod in the test namespace on 'node1'.
 // 4. Waits for the WorkerPoolSyncer to mirror the worker to Redis.
 // 5. Creates an actor (starts as SUSPENDED).
 // 6. Calls ResumeActor RPC.
-// 7. Verifies that the fake Atelet received the Restore call.
+// 7. Verifies that the fake Worker received the Restore call.
 // 8. Verifies that the actor status is updated to RUNNING.
 func TestResumeActor(t *testing.T) {
 	ns := namespaceForTest("ns-resume")
@@ -1230,12 +1230,12 @@ func TestResumeActor_RequiresBothSelectorsToMatch(t *testing.T) {
 // TestResumeActor_Reentrancy tests the failure recovery and re-entrancy of ResumeActor.
 // Workflow:
 // 1. Creates a mock ActorTemplate.
-// 2. Creates a mock Atelet Pod and a mock Worker Pod.
+// 2. Creates a mock Worker Pod and a mock Worker Pod.
 // 3. Waits for the WorkerPoolSyncer to mirror the worker to store.
 // 4. Creates an actor in SUSPENDED state.
-// 5. Configures fake Atelet to FAIL on Restore.
+// 5. Configures fake Worker to FAIL on Restore.
 // 6. Calls ResumeActor and verifies it fails, but actor status becomes RESUMING.
-// 7. Configures fake Atelet to SUCCEED on Restore.
+// 7. Configures fake Worker to SUCCEED on Restore.
 // 8. Calls ResumeActor again and verifies it succeeds and actor status becomes RUNNING.
 func TestResumeActor_Reentrancy(t *testing.T) {
 	ns := namespaceForTest("ns-resume-reentrancy")
@@ -1257,7 +1257,7 @@ func TestResumeActor_Reentrancy(t *testing.T) {
 	}
 	id := "id1"
 
-	// STEP 1: Make Atelet FAIL on Restore!
+	// STEP 1: Make Worker FAIL on Restore!
 	tc.fakeWorker.FailRestore = fmt.Errorf("mock runtime-worker failure")
 
 	_, err = tc.client.ResumeActor(context.Background(), &runtimeapipb.ResumeActorRequest{
@@ -1276,7 +1276,7 @@ func TestResumeActor_Reentrancy(t *testing.T) {
 		t.Errorf("expected status RESUMING, got %v", actor.GetStatus())
 	}
 
-	// STEP 2: Make Atelet SUCCEED!
+	// STEP 2: Make Worker SUCCEED!
 	tc.fakeWorker.FailRestore = nil
 	tc.fakeWorker.RestoreCalled = false // reset for verification
 
@@ -1304,13 +1304,13 @@ func TestResumeActor_Reentrancy(t *testing.T) {
 // TestSuspendActor tests the full workflow of suspending a running actor.
 // Workflow:
 // 1. Creates a mock ActorTemplate.
-// 2. Creates a mock Atelet Pod on 'node1'.
+// 2. Creates a mock Worker Pod on 'node1'.
 // 3. Creates a mock worker Pod on 'node1'.
 // 4. Waits for the WorkerPoolSyncer to mirror the worker to Redis.
 // 5. Creates an actor.
 // 6. Calls ResumeActor to transition it to RUNNING.
 // 7. Calls SuspendActor RPC.
-// 8. Verifies that the fake Atelet received the Suspend call.
+// 8. Verifies that the fake Worker received the Suspend call.
 func TestSuspendActor(t *testing.T) {
 	ns := namespaceForTest("ns-suspend")
 	tc := setupTest(t, ns)
@@ -1388,13 +1388,13 @@ func TestSuspendActor(t *testing.T) {
 // TestPauseActor tests the full workflow of pausing a running actor.
 // Workflow:
 // 1. Creates a mock ActorTemplate.
-// 2. Creates a mock Atelet Pod on 'node1'.
+// 2. Creates a mock Worker Pod on 'node1'.
 // 3. Creates a mock worker Pod on 'node1'.
 // 4. Waits for the WorkerPoolSyncer to mirror the worker to Redis.
 // 5. Creates an actor.
 // 6. Calls ResumeActor to transition it to RUNNING.
 // 7. Calls PauseActor RPC.
-// 8. Verifies that the fake Atelet received the Pause call.
+// 8. Verifies that the fake Worker received the Pause call.
 func TestPauseActor(t *testing.T) {
 	ns := namespaceForTest("ns-pause")
 	tc := setupTest(t, ns)
@@ -1886,7 +1886,7 @@ func TestResumeActor_LockConflict(t *testing.T) {
 	}
 	id := "id1"
 
-	// Set a delay on the fake Atelet to hold the lock
+	// Set a delay on the fake Worker to hold the lock
 	tc.fakeWorker.RestoreDelay = 1 * time.Second
 
 	// Launch Request A in a goroutine
@@ -1933,7 +1933,7 @@ func TestResumeActor_DanglingWorker(t *testing.T) {
 	}
 	id := "id1"
 
-	// 2. Configure fake Atelet to FAIL on Restore!
+	// 2. Configure fake Worker to FAIL on Restore!
 	tc.fakeWorker.FailRestore = fmt.Errorf("mock runtime-worker failure")
 
 	// 3. Call ResumeActor -> Expect failure
@@ -1964,7 +1964,7 @@ func TestResumeActor_DanglingWorker(t *testing.T) {
 	// 6. Create Worker Pod B
 	createWorkerPod(t, tc, ns, "worker-b", "node1", "pool1")
 
-	// 7. Configure fake Atelet to SUCCEED on Restore
+	// 7. Configure fake Worker to SUCCEED on Restore
 	tc.fakeWorker.FailRestore = nil
 	tc.fakeWorker.RestoreCalled = false // reset
 

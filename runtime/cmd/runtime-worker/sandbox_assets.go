@@ -81,7 +81,7 @@ func recordFromRequest(sa *runtimeworkerpb.SandboxAssets) (*sandboxAssetsRecord,
 // local path. For gVisor this is the single "runsc" asset, passed to runtime-sandbox as
 // RunscPath. Binaries are content-addressed and cached, so re-fetching at
 // Checkpoint/Restore is a no-op once present.
-func (s *AteomHerder) ensureSandboxBinary(ctx context.Context, rec *sandboxAssetsRecord) (string, error) {
+func (s *SandboxHerder) ensureSandboxBinary(ctx context.Context, rec *sandboxAssetsRecord) (string, error) {
 	if err := os.MkdirAll(sandboxpath.StaticFilesDir, 0o700); err != nil {
 		return "", fmt.Errorf("while creating static files dir: %w", err)
 	}
@@ -96,7 +96,7 @@ func (s *AteomHerder) ensureSandboxBinary(ctx context.Context, rec *sandboxAsset
 // fetchAsset downloads one content-addressed asset (verifying its sha256) into
 // the shared static-files cache and returns its local path. On a cache hit it
 // returns immediately.
-func (s *AteomHerder) fetchAsset(ctx context.Context, entry assetEntry) (string, error) {
+func (s *SandboxHerder) fetchAsset(ctx context.Context, entry assetEntry) (string, error) {
 	if err := resources.ValidateRunscHash(entry.SHA256); err != nil {
 		return "", status.Error(codes.InvalidArgument, err.Error())
 	}

@@ -61,7 +61,7 @@ const (
 	IngressHTTPListener  = "ingress_http_listener"
 	IngressHTTPSListener = "ingress_https_listener"
 	RouteName            = "actordock_routes"
-	ClusterName          = "ate-cluster"
+	ClusterName          = "runtime-cluster"
 )
 
 // XdsServer implements an aggregated discovery service server for dynamic Envoy router nodes.

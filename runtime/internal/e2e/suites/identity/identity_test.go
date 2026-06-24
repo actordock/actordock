@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	probeNamespace = "ate-e2e-probe"
+	probeNamespace = "runtime-e2e-probe"
 	probeTemplate  = "probe"
 )
 

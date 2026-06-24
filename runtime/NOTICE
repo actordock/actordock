@@ -1,8 +1,8 @@
 Actordock Runtime
 =================
 
-This directory contains code derived from Agent Substrate
-(https://github.com/agent-substrate/substrate), originally developed by Google LLC.
+This directory contains runtime control-plane code originally developed by
+Google LLC as open source.
 
 Upstream commit: 9f8475493b6eeab9ecda837e114078a3dd0a4e41
 

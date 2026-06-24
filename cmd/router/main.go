@@ -40,11 +40,11 @@ func run(ctx context.Context) error {
 	}
 	logger := log.New(cfg.LogLevel)
 
-	ate, err := runtimeapi.Dial(cfg.RuntimeAPIAddr)
+	runtimeClient, err := runtimeapi.Dial(cfg.RuntimeAPIAddr)
 	if err != nil {
 		return err
 	}
-	defer ate.Close()
+	defer runtimeClient.Close()
 
 	st, err := store.NewRedis(cfg.RedisAddr)
 	if err != nil {
@@ -52,5 +52,5 @@ func run(ctx context.Context) error {
 	}
 	defer st.Close()
 
-	return router.NewServer(cfg, ate, st, logger).Run(ctx)
+	return router.NewServer(cfg, runtimeClient, st, logger).Run(ctx)
 }

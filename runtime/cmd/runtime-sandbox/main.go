@@ -156,7 +156,7 @@ func do(ctx context.Context) error {
 type SandboxService struct {
 	runtimesandboxpb.UnimplementedSandboxServer
 
-	// Let's go ahead and assume that Ateom RPCs that are running `runsc`
+	// Let's go ahead and assume that Sandbox RPCs that are running `runsc`
 	// subcommands are probably not safe to call concurrently.
 	lock sync.Mutex
 

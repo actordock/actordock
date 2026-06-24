@@ -125,7 +125,7 @@ func (rh *routerHealth) check(ctx context.Context) {
 		}
 	}
 
-	// 3. Check ATE API gRPC
+	// 3. Check runtime API gRPC
 	{
 		healthy, msg := rh.checkRuntimeAPI(ctx)
 		if healthy {
@@ -138,7 +138,7 @@ func (rh *routerHealth) check(ctx context.Context) {
 			rh.report.RuntimeAPI.Message = msg
 			rh.report.RuntimeAPI.LastFailure = time.Now()
 			rh.report.RuntimeAPI.FailureCount++
-			slog.ErrorContext(ctx, "ATE API gRPC health check failed", slog.String("msg", msg))
+			slog.ErrorContext(ctx, "runtime API gRPC health check failed", slog.String("msg", msg))
 		}
 	}
 }

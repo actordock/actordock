@@ -1,6 +1,6 @@
 # DNS Controller
 
-The DNS Controller orchsterates the configuration needed to setup the ATE routing.
+The DNS Controller orchsterates the configuration needed to setup the runtime routing.
 
 We want to resolve requests for <actor id>.actors.actordock.dev to the router service address.
 

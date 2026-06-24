@@ -286,7 +286,7 @@ func pingRedisWithRetries(ctx context.Context, client *redis.ClusterClient) erro
 	return fmt.Errorf("ping Redis/Valkey after 30 retries: %w", pingErr)
 }
 
-// newKubeClients builds the standard Kubernetes clientset and the ate
+// newKubeClients builds the standard Kubernetes clientset and the runtime
 // (runtime CRD) clientset from in-cluster config.
 func newKubeClients() (*kubernetes.Clientset, versioned.Interface, error) {
 	config, err := rest.InClusterConfig()
@@ -299,7 +299,7 @@ func newKubeClients() (*kubernetes.Clientset, versioned.Interface, error) {
 	}
 	runtimeCRClient, err := versioned.NewForConfig(config)
 	if err != nil {
-		return nil, nil, fmt.Errorf("create ate clientset: %w", err)
+		return nil, nil, fmt.Errorf("create runtime clientset: %w", err)
 	}
 	return clientset, runtimeCRClient, nil
 }

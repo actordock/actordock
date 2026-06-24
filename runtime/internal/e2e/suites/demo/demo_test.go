@@ -76,7 +76,7 @@ func TestActorLifecycle(t *testing.T) {
 }
 
 func createActor(ctx context.Context, t *testing.T, clients *e2e.Clients, nsObj *e2e.Namespace, at *v1alpha1.ActorTemplate) error {
-	// Create an Actor using the ATE API.
+	// Create an Actor using the runtime API.
 	actorID := "demo-actor-1-" + nsObj.Name
 
 	t.Logf("Creating Actor %q using runtime API...", actorID)
@@ -302,12 +302,12 @@ func createActorTemplate(ctx context.Context, t *testing.T, clients *e2e.Clients
 	}
 
 	// Query existing WorkerPool and ActorTemplate to get the resolved container images
-	existingWp, err := clients.RuntimeK8s.ApiV1alpha1().WorkerPools("ate-demo-counter").Get(ctx, "counter", metav1.GetOptions{})
+	existingWp, err := clients.RuntimeK8s.ApiV1alpha1().WorkerPools("runtime-demo-counter").Get(ctx, "counter", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("failed to get existing WorkerPool: %v", err)
 	}
 
-	existingAt, err := clients.RuntimeK8s.ApiV1alpha1().ActorTemplates("ate-demo-counter").Get(ctx, "counter", metav1.GetOptions{})
+	existingAt, err := clients.RuntimeK8s.ApiV1alpha1().ActorTemplates("runtime-demo-counter").Get(ctx, "counter", metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("failed to get existing ActorTemplate: %v", err)
 	}
@@ -346,7 +346,7 @@ func createActorTemplate(ctx context.Context, t *testing.T, clients *e2e.Clients
 			PauseImage: existingAt.Spec.PauseImage,
 			Containers: existingAt.Spec.Containers,
 			SnapshotsConfig: v1alpha1.SnapshotsConfig{
-				Location: "gs://" + env["BUCKET_NAME"] + "/ate-demo-counter",
+				Location: "gs://" + env["BUCKET_NAME"] + "/runtime-demo-counter",
 			},
 		},
 	}

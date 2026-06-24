@@ -21,7 +21,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: ate-prometheus
+  name: runtime-prometheus
 rules:
 - apiGroups: [""]
   resources: ["pods"]
@@ -30,12 +30,12 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: ate-prometheus
+  name: runtime-prometheus
   namespace: actordock-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: ate-prometheus
+  name: runtime-prometheus
 subjects:
 - kind: ServiceAccount
   name: prometheus
@@ -44,12 +44,12 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: ate-prometheus
+  name: runtime-prometheus
   namespace: otel-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: ate-prometheus
+  name: runtime-prometheus
 subjects:
 - kind: ServiceAccount
   name: prometheus

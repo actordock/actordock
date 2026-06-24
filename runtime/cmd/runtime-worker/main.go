@@ -178,9 +178,9 @@ func main() {
 	}
 }
 
-// AteomHerder is a service that allows controlling workloads on individual
+// SandboxHerder is a service that allows controlling workloads on individual
 // sandboxes.
-type AteomHerder struct {
+type SandboxHerder struct {
 	runtimeworkerpb.UnimplementedWorkerHerderServer
 
 	sandboxDialer   *SandboxDialer
@@ -189,7 +189,7 @@ type AteomHerder struct {
 	gcsClient     runtimegcs.ObjectStorage
 }
 
-var _ runtimeworkerpb.WorkerHerderServer = (*AteomHerder)(nil)
+var _ runtimeworkerpb.WorkerHerderServer = (*SandboxHerder)(nil)
 
 // NewService creates a new WorkersManagerService.
 func NewService(
@@ -198,8 +198,8 @@ func NewService(
 	anonGCSClient runtimegcs.ObjectStorage,
 	gcsClient runtimegcs.ObjectStorage,
 	pullCache *memorypullcache.MemoryPullCache,
-) *AteomHerder {
-	wms := &AteomHerder{
+) *SandboxHerder {
+	wms := &SandboxHerder{
 		sandboxDialer:   sandboxDialer,
 		pullCache:     pullCache,
 		anonGCSClient: anonGCSClient,
@@ -208,7 +208,7 @@ func NewService(
 	return wms
 }
 
-func (s *AteomHerder) Run(ctx context.Context, req *runtimeworkerpb.RunRequest) (*runtimeworkerpb.RunResponse, error) {
+func (s *SandboxHerder) Run(ctx context.Context, req *runtimeworkerpb.RunRequest) (*runtimeworkerpb.RunResponse, error) {
 	if err := validateRunRequest(req); err != nil {
 		// status.Error so the interceptor surfaces InvalidArgument and the
 		// message instead of masking both as Internal.
@@ -243,7 +243,7 @@ func (s *AteomHerder) Run(ctx context.Context, req *runtimeworkerpb.RunRequest) 
 		return nil, err
 	}
 
-	client, err := s.dialAteom(ctx, req.GetTargetSandboxPodUid())
+	client, err := s.dialSandbox(ctx, req.GetTargetSandboxPodUid())
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ func (s *AteomHerder) Run(ctx context.Context, req *runtimeworkerpb.RunRequest) 
 		ActorTemplateName:      tmpl,
 		ActorId:                actorID,
 		RunscPath:              runscPath,
-		Spec:                   buildAteomWorkloadSpec(req.GetSpec()),
+		Spec:                   buildSandboxWorkloadSpec(req.GetSpec()),
 	}); err != nil {
 		return nil, fmt.Errorf("while calling runtime-sandbox.RunWorkload: %w", err)
 	}
@@ -299,7 +299,7 @@ func recordSnapshotSize(ctx context.Context, kind, path, atNamespace, atName str
 	))
 }
 
-func (s *AteomHerder) Checkpoint(ctx context.Context, req *runtimeworkerpb.CheckpointRequest) (*runtimeworkerpb.CheckpointResponse, error) {
+func (s *SandboxHerder) Checkpoint(ctx context.Context, req *runtimeworkerpb.CheckpointRequest) (*runtimeworkerpb.CheckpointResponse, error) {
 	if err := validateCheckpointRequest(req); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -321,7 +321,7 @@ func (s *AteomHerder) Checkpoint(ctx context.Context, req *runtimeworkerpb.Check
 
 	checkpointDir := sandboxpath.CheckpointStateDir(ns, tmpl, actorID)
 
-	client, err := s.dialAteom(ctx, req.GetTargetSandboxPodUid())
+	client, err := s.dialSandbox(ctx, req.GetTargetSandboxPodUid())
 	if err != nil {
 		return nil, err
 	}
@@ -332,7 +332,7 @@ func (s *AteomHerder) Checkpoint(ctx context.Context, req *runtimeworkerpb.Check
 		ActorTemplateName:      tmpl,
 		ActorId:                actorID,
 		RunscPath:              runscPath,
-		Spec:                   buildAteomWorkloadSpec(req.GetSpec()),
+		Spec:                   buildSandboxWorkloadSpec(req.GetSpec()),
 	}); err != nil {
 		return nil, fmt.Errorf("while calling runtime-sandbox.CheckpointWorkload: %w", err)
 	}
@@ -357,7 +357,7 @@ func (s *AteomHerder) Checkpoint(ctx context.Context, req *runtimeworkerpb.Check
 	return &runtimeworkerpb.CheckpointResponse{}, nil
 }
 
-func (s *AteomHerder) moveLocalCheckpoint(ctx context.Context, req *runtimeworkerpb.CheckpointRequest, checkpointDir string, rec *sandboxAssetsRecord) error {
+func (s *SandboxHerder) moveLocalCheckpoint(ctx context.Context, req *runtimeworkerpb.CheckpointRequest, checkpointDir string, rec *sandboxAssetsRecord) error {
 	localCheckpointPath := filepath.Join(sandboxpath.LocalCheckpointsDir(req.GetActorTemplateNamespace(), req.GetActorTemplateName(), req.GetActorId()), req.GetLocalConfig().GetSnapshotPrefix())
 	if err := os.MkdirAll(localCheckpointPath, 0o700); err != nil {
 		return fmt.Errorf("while creating local checkpoint directory: %w", err)
@@ -388,7 +388,7 @@ func (s *AteomHerder) moveLocalCheckpoint(ctx context.Context, req *runtimeworke
 	return nil
 }
 
-func (s *AteomHerder) uploadExternalCheckpoint(ctx context.Context, req *runtimeworkerpb.CheckpointRequest, checkpointDir string, rec *sandboxAssetsRecord) error {
+func (s *SandboxHerder) uploadExternalCheckpoint(ctx context.Context, req *runtimeworkerpb.CheckpointRequest, checkpointDir string, rec *sandboxAssetsRecord) error {
 	ns, tmpl := req.GetActorTemplateNamespace(), req.GetActorTemplateName()
 	prefix := strings.TrimSuffix(req.GetExternalConfig().GetSnapshotUriPrefix(), "/")
 
@@ -433,7 +433,7 @@ func (s *AteomHerder) uploadExternalCheckpoint(ctx context.Context, req *runtime
 	return nil
 }
 
-func (s *AteomHerder) Restore(ctx context.Context, req *runtimeworkerpb.RestoreRequest) (*runtimeworkerpb.RestoreResponse, error) {
+func (s *SandboxHerder) Restore(ctx context.Context, req *runtimeworkerpb.RestoreRequest) (*runtimeworkerpb.RestoreResponse, error) {
 	if err := validateRestoreRequest(req); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -494,7 +494,7 @@ func (s *AteomHerder) Restore(ctx context.Context, req *runtimeworkerpb.RestoreR
 		return nil, err
 	}
 
-	client, err := s.dialAteom(ctx, req.GetTargetSandboxPodUid())
+	client, err := s.dialSandbox(ctx, req.GetTargetSandboxPodUid())
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +506,7 @@ func (s *AteomHerder) Restore(ctx context.Context, req *runtimeworkerpb.RestoreR
 		ActorTemplateName:      tmpl,
 		ActorId:                actorID,
 		RunscPath:              runscPath,
-		Spec:                   buildAteomWorkloadSpec(req.GetSpec()),
+		Spec:                   buildSandboxWorkloadSpec(req.GetSpec()),
 	}); err != nil {
 		return nil, fmt.Errorf("while calling runtime-sandbox.RestoreWorkload: %w", err)
 	}
@@ -520,7 +520,7 @@ func (s *AteomHerder) Restore(ctx context.Context, req *runtimeworkerpb.RestoreR
 	return &runtimeworkerpb.RestoreResponse{}, nil
 }
 
-func (s *AteomHerder) copyLocalCheckpoint(ctx context.Context, snapshotPrefix string, srcDir, dstDir string) error {
+func (s *SandboxHerder) copyLocalCheckpoint(ctx context.Context, snapshotPrefix string, srcDir, dstDir string) error {
 	for _, fileName := range []string{"checkpoint.img", "pages.img", "pages_meta.img"} {
 		if ctx.Err() != nil {
 			return fmt.Errorf("context cancelled: %w", ctx.Err())
@@ -560,7 +560,7 @@ func copyFile(src, dst string) (int64, error) {
 	return nBytes, err
 }
 
-func (s *AteomHerder) downloadExternalCheckpoint(ctx context.Context, snapshotUriPrefix string, dstDir string) error {
+func (s *SandboxHerder) downloadExternalCheckpoint(ctx context.Context, snapshotUriPrefix string, dstDir string) error {
 	checkpointImgPath := filepath.Join(dstDir, "checkpoint.img")
 	pagesImgPath := filepath.Join(dstDir, "pages.img")
 	pagesMetaImgPath := filepath.Join(dstDir, "pages_meta.img")
@@ -589,7 +589,7 @@ func (s *AteomHerder) downloadExternalCheckpoint(ctx context.Context, snapshotUr
 
 // prepareOCIBundles pulls images and assembles OCI bundles for the pause
 // container and every application container in spec, in parallel.
-func (s *AteomHerder) prepareOCIBundles(
+func (s *SandboxHerder) prepareOCIBundles(
 	ctx context.Context,
 	actorTemplateNamespace, actorTemplateName, actorID string,
 	spec *runtimeworkerpb.WorkloadSpec,
@@ -665,9 +665,9 @@ func (s *AteomHerder) prepareOCIBundles(
 	return g.Wait()
 }
 
-// dialAteom opens (or reuses) the gRPC connection to the target runtime-sandbox
+// dialSandbox opens (or reuses) the gRPC connection to the target runtime-sandbox
 // pod and returns an runtime-sandbox client.
-func (s *AteomHerder) dialAteom(ctx context.Context, targetSandboxPodUID string) (runtimesandboxpb.SandboxClient, error) {
+func (s *SandboxHerder) dialSandbox(ctx context.Context, targetSandboxPodUID string) (runtimesandboxpb.SandboxClient, error) {
 	conn, err := s.sandboxDialer.DialSandboxPod(ctx, targetSandboxPodUID)
 	if err != nil {
 		return nil, fmt.Errorf("while getting runtime-sandbox conn for %s: %w", targetSandboxPodUID, err)
@@ -675,9 +675,9 @@ func (s *AteomHerder) dialAteom(ctx context.Context, targetSandboxPodUID string)
 	return runtimesandboxpb.NewSandboxClient(conn), nil
 }
 
-// buildAteomWorkloadSpec projects the runtime-worker-facing workload spec onto
+// buildSandboxWorkloadSpec projects the runtime-worker-facing workload spec onto
 // the runtime-sandbox-facing one — currently just the container names.
-func buildAteomWorkloadSpec(spec *runtimeworkerpb.WorkloadSpec) *runtimesandboxpb.WorkloadSpec {
+func buildSandboxWorkloadSpec(spec *runtimeworkerpb.WorkloadSpec) *runtimesandboxpb.WorkloadSpec {
 	out := &runtimesandboxpb.WorkloadSpec{}
 	for _, ctr := range spec.GetContainers() {
 		out.Containers = append(out.Containers, &runtimesandboxpb.Container{Name: ctr.GetName()})
@@ -776,11 +776,11 @@ func validateRestoreRequest(req *runtimeworkerpb.RestoreRequest) error {
 
 // validateActorRequest is the shared core for the fields common to all three
 // RPCs.
-func validateActorRequest(namespace, template, actorID, targetAteomUID string, spec *runtimeworkerpb.WorkloadSpec) error {
+func validateActorRequest(namespace, template, actorID, targetSandboxPodUID string, spec *runtimeworkerpb.WorkloadSpec) error {
 	if err := resources.ValidateActorRef(namespace, template, actorID); err != nil {
 		return err
 	}
-	if err := resources.ValidateAteomUID(targetAteomUID); err != nil {
+	if err := resources.ValidateSandboxPodUID(targetSandboxPodUID); err != nil {
 		return err
 	}
 	names := make([]string, 0, len(spec.GetContainers()))

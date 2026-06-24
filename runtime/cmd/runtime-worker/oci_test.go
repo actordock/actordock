@@ -127,7 +127,7 @@ func TestCreateMountPoint(t *testing.T) {
 		if err := createMountPoint(root, IdentityMountPath); err != nil {
 			t.Fatalf("createMountPoint: %v", err)
 		}
-		info, err := os.Stat(filepath.Join(root, "run", "ate"))
+		info, err := os.Stat(filepath.Join(root, "run", "actordock"))
 		if err != nil {
 			t.Fatalf("mount point not created in rootfs: %v", err)
 		}

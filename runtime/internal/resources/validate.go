@@ -59,14 +59,14 @@ func ValidateActorRef(namespace, template, actorID string) error {
 	return nil
 }
 
-// ValidateAteomUID rejects a target runtime-sandbox pod UID that could escape the host
+// ValidateSandboxPodUID rejects a target runtime-sandbox pod UID that could escape the host
 // paths built from it: the netns path (/run/netns/runtime-sandbox:<uid>) and the runtime-sandbox
 // control socket (.../sandboxes/<uid>/runtime-sandbox.sock). Kubernetes pod UIDs are UUIDs,
 // which are valid DNS-1123 labels, so a label check accepts every legitimate
 // value while rejecting separators and "..".
-func ValidateAteomUID(targetAteomUID string) error {
-	if errs := validation.IsDNS1123Label(targetAteomUID); len(errs) > 0 {
-		return fmt.Errorf("invalid target runtime-sandbox UID %q: %s", targetAteomUID, strings.Join(errs, "; "))
+func ValidateSandboxPodUID(targetSandboxPodUID string) error {
+	if errs := validation.IsDNS1123Label(targetSandboxPodUID); len(errs) > 0 {
+		return fmt.Errorf("invalid target runtime-sandbox UID %q: %s", targetSandboxPodUID, strings.Join(errs, "; "))
 	}
 	return nil
 }

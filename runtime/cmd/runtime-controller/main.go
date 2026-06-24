@@ -57,7 +57,7 @@ func main() {
 
 	runtimeAPIConn, err := grpc.NewClient(*runtimeAPIConnSpec, grpc.WithTransportCredentials(clientCreds))
 	if err != nil {
-		setupLog.Error(err, "Error creating grpc connection to ate api")
+		setupLog.Error(err, "Error creating grpc connection to runtime API")
 		os.Exit(1)
 	}
 

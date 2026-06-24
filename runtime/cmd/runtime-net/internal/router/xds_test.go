@@ -58,12 +58,12 @@ func TestXdsServer_UpdateSnapshot(t *testing.T) {
 		t.Errorf("Expected 2 cluster definitions, got %d", len(clustersMap))
 	}
 
-	if raw, exists := clustersMap["ate-cluster"]; !exists {
-		t.Error("Static 'ate-cluster' is missing from clusters")
+	if raw, exists := clustersMap["runtime-cluster"]; !exists {
+		t.Error("Static 'runtime-cluster' is missing from clusters")
 	} else {
 		c := raw.(*clusterv3.Cluster)
-		if c.GetName() != "ate-cluster" {
-			t.Errorf("Expected name 'ate-cluster', got %s", c.GetName())
+		if c.GetName() != "runtime-cluster" {
+			t.Errorf("Expected name 'runtime-cluster', got %s", c.GetName())
 		}
 
 		// Validate Endpoint address mapped from Server parameters

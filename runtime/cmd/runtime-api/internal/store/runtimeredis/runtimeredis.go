@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package runtimeredis is an ate storage backend built on Redis.
+// Package runtimeredis is an runtime storage backend built on Redis.
 //
 // Actors are stored in keys of the form
 // `actor:<actor-id>`.  They are

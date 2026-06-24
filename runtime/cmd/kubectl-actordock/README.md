@@ -12,7 +12,7 @@ You can use `go install` to compile the tool and place the binary directly into 
 ```bash
 go install ./cmd/kubectl-actordock
 ```
-You can now run it seamlessly anywhere as a native Kubernetes command: `kubectl ate <command>`.
+You can now run it seamlessly anywhere as a native Kubernetes command: `kubectl actordock <command>`.
 
 ### 2. Run directly from source (Development)
 If you are testing changes to the codebase, you can bypass compilation and run the CLI directly from the source tree:
@@ -52,7 +52,7 @@ The kind overlay installed by `hack/install-runtime-kind.sh --deploy-actordock-s
 Port-forward the Jaeger UI and invoke any command with `--trace`:
 ```bash
 kubectl port-forward -n otel-system svc/jaeger 16686:16686 &
-kubectl ate get actor my-counter-1 --trace
+kubectl actordock get actor my-counter-1 --trace
 # open http://localhost:16686 and search for the most recent trace
 ```
 
@@ -75,18 +75,18 @@ List and inspect the state of actors and workers across the cluster.
 
 ```bash
 # List all actors in a clean table format
-kubectl ate get actors
+kubectl actordock get actors
 
 # Get a specific actor by ID and output as raw YAML
-kubectl ate get actor <actor-id> -o yaml
+kubectl actordock get actor <actor-id> -o yaml
 
 # List all physical workers and see which actors are assigned to them
-kubectl ate get workers
+kubectl actordock get workers
 ```
 
-> **Note:** Actors and workers are not Kubernetes CRDs — they live in the runtime control plane (valkey/redis), not `etcd`. `kubectl get actor` and `kubectl get worker` will not return anything; only `kubectl ate get …` queries the control plane. `kubectl get actortemplate` and `kubectl get workerpool` *do* work, because those are CRDs.
+> **Note:** Actors and workers are not Kubernetes CRDs — they live in the runtime control plane (valkey/redis), not `etcd`. `kubectl get actor` and `kubectl get worker` will not return anything; only `kubectl actordock get …` queries the control plane. `kubectl get actortemplate` and `kubectl get workerpool` *do* work, because those are CRDs.
 
-#### `kubectl ate get actor` output columns
+#### `kubectl actordock get actor` output columns
 
 | Column | Meaning |
 |---|---|
@@ -94,11 +94,11 @@ kubectl ate get workers
 | `TEMPLATE` | The `ActorTemplate` name. |
 | `ID` | Actor ID. User-provided for application actors; UUID for the golden actor that each template materialises during `ResumeGoldenActor`. |
 | `STATUS` | One of `STATUS_RESUMING`, `STATUS_RUNNING`, `STATUS_SUSPENDING`, `STATUS_SUSPENDED`. |
-| `ATEOM POD` | The worker pod (namespace/name) currently hosting the actor. Empty while suspended. |
-| `ATEOM IP` | The pod IP of that worker. Empty while suspended. |
+| `SANDBOX POD` | The worker pod (namespace/name) currently hosting the actor. Empty while suspended. |
+| `SANDBOX IP` | The pod IP of that worker. Empty while suspended. |
 | `VERSION` | Monotonic integer that increments on every state transition (resume / suspend / checkpoint). Useful for distinguishing snapshots. |
 
-#### `kubectl ate get worker` output columns
+#### `kubectl actordock get worker` output columns
 
 | Column | Meaning |
 |---|---|
@@ -114,26 +114,26 @@ Manage the execution state of your workloads.
 
 ```bash
 # Create a new actor deriving from a specific ActorTemplate
-kubectl ate create actor my-actor --template=ate-demo-counter/counter
+kubectl actordock create actor my-actor --template=runtime-demo-counter/counter
 
 # Resume an actor (assigns it to a free worker and restores its state)
-kubectl ate resume actor my-actor
+kubectl actordock resume actor my-actor
 
 # Suspend an actor (snapshots its state to storage and frees the worker)
-kubectl ate suspend actor my-actor
+kubectl actordock suspend actor my-actor
 
 # Delete an actor.
-kubectl ate delete actor my-actor
+kubectl actordock delete actor my-actor
 ```
 
 ### Logs
 
-`kubectl ate logs` requires a resource-type subcommand; running `kubectl ate logs <id>` on its own prints help. The only supported resource type is `actors`:
+`kubectl actordock logs` requires a resource-type subcommand; running `kubectl actordock logs <id>` on its own prints help. The only supported resource type is `actors`:
 
 ```bash
 # Stream logs for an actor (follows by default; aggregated across worker
 # reassignments so the same actor is queryable as it teleports between pods).
-kubectl ate logs actors my-actor
+kubectl actordock logs actors my-actor
 ```
 
 Logs are streamable only while the actor is bound to a worker (i.e., `STATUS_RUNNING`). For history across worker migrations, route through a centralized log backend (Cloud Logging, Loki, etc.); see `docs/observability.md`.
@@ -143,17 +143,17 @@ Commands for bootstrapping the runtime control plane and debugging local environ
 
 ```bash
 # Generate a new CA pool and push it directly to a Kubernetes Secret
-kubectl ate admin make-ca-pool \
+kubectl actordock admin make-ca-pool \
   --name workerpool-ca-certs \
   --secret-namespace actordock-system \
   --ca-id "1"
 
 # Generate a new JWT authority pool and push it to a Kubernetes Secret
-kubectl ate admin make-jwt-pool \
+kubectl actordock admin make-jwt-pool \
   --name session-id-jwt-pool \
   --secret-namespace actordock-system \
   --key-id "1"
 
 # DANGEROUS: Completely flush all Actor and Worker tracking state from Redis
-kubectl ate admin debug-flush-redis
+kubectl actordock admin debug-flush-redis
 ```

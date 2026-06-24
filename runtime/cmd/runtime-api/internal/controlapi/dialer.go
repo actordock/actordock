@@ -28,7 +28,7 @@ import (
 
 var ErrWorkerPodNotFound = errors.New("worker pod not found")
 
-// WorkerDialer handles gRPC connections to Atelet pods.
+// WorkerDialer handles gRPC connections to Worker pods.
 type WorkerDialer struct {
 	workerIndexer cache.Indexer
 	workerPodSidecarIndexer cache.Indexer
@@ -44,7 +44,7 @@ func NewWorkerDialer(workerIndexer cache.Indexer, workerPodSidecarIndexer cache.
 	}
 }
 
-// DialForWorker returns a gRPC connection to the Atelet running on the same node as the specified worker pod.
+// DialForWorker returns a gRPC connection to the Worker running on the same node as the specified worker pod.
 // Returns ErrWorkerPodNotFound if the worker pod is not found in the informer cache.
 func (d *WorkerDialer) DialForWorker(workerPodNamespace, workerPodName string) (*grpc.ClientConn, error) {
 	workerPodKey := workerPodNamespace + "/" + workerPodName

@@ -217,7 +217,7 @@ func (s *AssignWorkerStep) findFreeWorker(workers []*runtimeapipb.Worker, eligib
 	return nil
 }
 
-type CallAteletRestoreStep struct {
+type CallWorkerRestoreStep struct {
 	dialer              *WorkerDialer
 	kubeClient          kubernetes.Interface
 	secretCache         *envSecretCache
@@ -225,11 +225,11 @@ type CallAteletRestoreStep struct {
 	sandboxConfigLister listersv1alpha1.SandboxConfigLister
 }
 
-func (s *CallAteletRestoreStep) Name() string { return "CallAteletRestore" }
-func (s *CallAteletRestoreStep) IsComplete(ctx context.Context, input *ResumeInput, state *ResumeState) (bool, error) {
+func (s *CallWorkerRestoreStep) Name() string { return "CallWorkerRestore" }
+func (s *CallWorkerRestoreStep) IsComplete(ctx context.Context, input *ResumeInput, state *ResumeState) (bool, error) {
 	return state.Actor.GetStatus() == runtimeapipb.Actor_STATUS_RUNNING, nil
 }
-func (s *CallAteletRestoreStep) Execute(ctx context.Context, input *ResumeInput, state *ResumeState) error {
+func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput, state *ResumeState) error {
 	workerConn, err := s.dialer.DialForWorker(state.Actor.GetSandboxPodNamespace(), state.Actor.GetSandboxPodName())
 	if err != nil {
 		return err
@@ -327,7 +327,7 @@ func (s *CallAteletRestoreStep) Execute(ctx context.Context, input *ResumeInput,
 	// Unreachable
 }
 
-func (s *CallAteletRestoreStep) RetryBackoff() *wait.Backoff { return nil }
+func (s *CallWorkerRestoreStep) RetryBackoff() *wait.Backoff { return nil }
 
 type FinalizeRunningStep struct {
 	store store.Interface

@@ -20,7 +20,7 @@ import (
 )
 
 func TestValidateActorRef(t *testing.T) {
-	const okNS, okTmpl, okID = "ate-demo", "counter", "counter-1"
+	const okNS, okTmpl, okID = "runtime-demo", "counter", "counter-1"
 
 	tests := []struct {
 		name         string
@@ -33,7 +33,7 @@ func TestValidateActorRef(t *testing.T) {
 		// Label vs subdomain distinction: template names are DNS-1123
 		// subdomains (dots allowed); namespaces and actor IDs are labels.
 		{"dotted template valid (subdomain)", okNS, "probe.v1", okID, false},
-		{"dotted namespace invalid (label)", "ate.demo", okTmpl, okID, true},
+		{"dotted namespace invalid (label)", "bad.demo", okTmpl, okID, true},
 		{"dotted id invalid (label)", okNS, okTmpl, "probe.alpha", true},
 
 		{"id traversal", okNS, okTmpl, "..", true},
@@ -63,7 +63,7 @@ func TestValidateActorRef(t *testing.T) {
 	}
 }
 
-func TestValidateAteomUID(t *testing.T) {
+func TestValidateSandboxPodUID(t *testing.T) {
 	tests := []struct {
 		name    string
 		uid     string
@@ -78,8 +78,8 @@ func TestValidateAteomUID(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := ValidateAteomUID(tt.uid); (err != nil) != tt.wantErr {
-				t.Errorf("ValidateAteomUID(%q) err = %v, wantErr %v", tt.uid, err, tt.wantErr)
+			if err := ValidateSandboxPodUID(tt.uid); (err != nil) != tt.wantErr {
+				t.Errorf("ValidateSandboxPodUID(%q) err = %v, wantErr %v", tt.uid, err, tt.wantErr)
 			}
 		})
 	}

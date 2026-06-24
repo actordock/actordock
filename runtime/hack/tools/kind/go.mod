@@ -1,4 +1,4 @@
-module github.com/agent-substrate/substrate/hack/tools/kind
+module github.com/actordock/runtime/hack/tools/kind
 
 go 1.26.1
 

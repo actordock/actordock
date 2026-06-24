@@ -42,11 +42,11 @@ func run(ctx context.Context) error {
 	}
 	logger := log.New(cfg.LogLevel)
 
-	ate, err := runtimeapi.Dial(cfg.RuntimeAPIAddr)
+	runtimeClient, err := runtimeapi.Dial(cfg.RuntimeAPIAddr)
 	if err != nil {
 		return err
 	}
-	defer ate.Close()
+	defer runtimeClient.Close()
 
 	waitCtx, waitCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer waitCancel()
@@ -66,5 +66,5 @@ func run(ctx context.Context) error {
 		catalog = platform.NewStaticTemplateCatalog(cfg)
 	}
 
-	return platform.NewServerWithCatalog(cfg, ate, st, catalog, logger).Run(ctx)
+	return platform.NewServerWithCatalog(cfg, runtimeClient, st, catalog, logger).Run(ctx)
 }

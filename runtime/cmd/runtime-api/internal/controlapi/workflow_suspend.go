@@ -92,16 +92,16 @@ func (s *MarkSuspendingStep) Execute(ctx context.Context, input *SuspendInput, s
 
 func (s *MarkSuspendingStep) RetryBackoff() *wait.Backoff { return nil }
 
-type CallAteletSuspendStep struct {
+type CallWorkerSuspendStep struct {
 	dialer *WorkerDialer
 }
 
-func (s *CallAteletSuspendStep) Name() string { return "CallAteletSuspend" }
-func (s *CallAteletSuspendStep) IsComplete(ctx context.Context, input *SuspendInput, state *SuspendState) (bool, error) {
-	// If we are already SUSPENDED, we've already called Atelet
+func (s *CallWorkerSuspendStep) Name() string { return "CallWorkerSuspend" }
+func (s *CallWorkerSuspendStep) IsComplete(ctx context.Context, input *SuspendInput, state *SuspendState) (bool, error) {
+	// If we are already SUSPENDED, we've already called Worker
 	return state.Actor.GetStatus() == runtimeapipb.Actor_STATUS_SUSPENDED, nil
 }
-func (s *CallAteletSuspendStep) Execute(ctx context.Context, input *SuspendInput, state *SuspendState) error {
+func (s *CallWorkerSuspendStep) Execute(ctx context.Context, input *SuspendInput, state *SuspendState) error {
 	if state.Actor.GetSandboxPodNamespace() == "" {
 		return fmt.Errorf("actor is in SUSPENDING state but has no active worker")
 	}
@@ -161,7 +161,7 @@ func (s *CallAteletSuspendStep) Execute(ctx context.Context, input *SuspendInput
 	return nil
 }
 
-func (s *CallAteletSuspendStep) RetryBackoff() *wait.Backoff { return nil }
+func (s *CallWorkerSuspendStep) RetryBackoff() *wait.Backoff { return nil }
 
 type FinalizeSuspendedStep struct {
 	store store.Interface

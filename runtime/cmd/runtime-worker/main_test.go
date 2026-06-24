@@ -76,7 +76,7 @@ func TestWriteFileAtomic(t *testing.T) {
 }
 
 func TestValidateActorRequest(t *testing.T) {
-	const okNS, okTmpl, okID, okUID = "ate-demo", "counter", "counter-1", "422938ba-8860-4983-a25d-d6bcb0a69d4e"
+	const okNS, okTmpl, okID, okUID = "runtime-demo", "counter", "counter-1", "422938ba-8860-4983-a25d-d6bcb0a69d4e"
 	okSpec := &runtimeworkerpb.WorkloadSpec{Containers: []*runtimeworkerpb.Container{{Name: "worker"}}}
 
 	tests := []struct {
@@ -105,7 +105,7 @@ func TestValidateActorRequest(t *testing.T) {
 // break one field per case.
 func validRunRequest() *runtimeworkerpb.RunRequest {
 	return &runtimeworkerpb.RunRequest{
-		ActorTemplateNamespace: "ate-demo",
+		ActorTemplateNamespace: "runtime-demo",
 		ActorTemplateName:      "counter",
 		ActorId:                "counter-1",
 		TargetSandboxPodUid:         "422938ba-8860-4983-a25d-d6bcb0a69d4e",
@@ -115,7 +115,7 @@ func validRunRequest() *runtimeworkerpb.RunRequest {
 
 func validCheckpointRequest() *runtimeworkerpb.CheckpointRequest {
 	return &runtimeworkerpb.CheckpointRequest{
-		ActorTemplateNamespace: "ate-demo",
+		ActorTemplateNamespace: "runtime-demo",
 		ActorTemplateName:      "counter",
 		ActorId:                "counter-1",
 		TargetSandboxPodUid:         "422938ba-8860-4983-a25d-d6bcb0a69d4e",
@@ -131,7 +131,7 @@ func validCheckpointRequest() *runtimeworkerpb.CheckpointRequest {
 
 func validRestoreRequest() *runtimeworkerpb.RestoreRequest {
 	return &runtimeworkerpb.RestoreRequest{
-		ActorTemplateNamespace: "ate-demo",
+		ActorTemplateNamespace: "runtime-demo",
 		ActorTemplateName:      "counter",
 		ActorId:                "counter-1",
 		TargetSandboxPodUid:         "422938ba-8860-4983-a25d-d6bcb0a69d4e",
@@ -253,7 +253,7 @@ func TestFetchAssetRejectsBadHash(t *testing.T) {
 		t.Fatalf("planting cache file: %v", err)
 	}
 
-	s := &AteomHerder{}
+	s := &SandboxHerder{}
 	if _, err := s.fetchAsset(context.Background(), assetEntry{SHA256: badHash}); err == nil {
 		t.Error("fetchAsset returned a cache hit for an invalid hash; validation must run before the os.Stat early return")
 	}
@@ -265,10 +265,10 @@ func TestFetchAssetRejectsBadHash(t *testing.T) {
 // Internal. Guards against a future removal or reordering of the validation
 // call at any boundary.
 func TestRPCBoundariesReject(t *testing.T) {
-	s := &AteomHerder{}
+	s := &SandboxHerder{}
 	ctx := context.Background()
 	badUID := "../escape" // valid actor ref, invalid runtime-sandbox UID
-	const okNS, okTmpl, okID = "ate-demo", "counter", "counter-1"
+	const okNS, okTmpl, okID = "runtime-demo", "counter", "counter-1"
 	okSpec := &runtimeworkerpb.WorkloadSpec{Containers: []*runtimeworkerpb.Container{{Name: "worker"}}}
 
 	wantInvalidArgument := func(t *testing.T, rpc string, err error) {
