@@ -35,9 +35,6 @@ if [[ -z "${KUBECTL_CONTEXT:-}" ]]; then
 fi
 # otherwise just use the current cluster in KUBECONFIG ...
 
-# RUNTIME_DEMOS is an array that registers the prefix name of the demo functions.
-RUNTIME_DEMOS=()
-
 # ANSI color codes for prettier output
 COLOR_CYAN='\033[1;36m'
 COLOR_RESET='\033[0m'
@@ -55,7 +52,7 @@ function usage() {
   echo ""
   echo "  --deploy-runtime-system                    Deploy core system (CRDs, runtime-worker, apiserver)"
   echo "  --delete-runtime-system                    Delete core system"
-  echo "  --delete-all                           Delete core system and all registered demos"
+  echo "  --delete-all                           Delete core system"
   echo ""
   echo "Infrastructure components:"
   echo ""
@@ -70,17 +67,8 @@ function usage() {
   echo "  --create-session-id-ca-pool-secret     Create session ID CA pool secret"
   echo "  --create-runtime-podcert-cas Create podcertificate controller CAs"
   echo "  --create-valkey-ca-certs-secret        Create Valkey CA certs secret"
-  echo "  --creruntime-api-env-vars           Create runtime-api env vars"
+  echo "  --create-runtime-api-env-vars           Create runtime-api env vars"
   echo ""
-  for demo_name in "${RUNTIME_DEMOS[@]:-}"; do
-    echo "Demo: ${demo_name}"
-    echo ""
-    echo "  --deploy-${demo_name}                         Deploy ${demo_name}"
-    echo "  --delete-${demo_name}                         Delete ${demo_name}"
-    if declare -F "${demo_name}_usage" >/dev/null 2>&1; then
-      "${demo_name}_usage"
-    fi
-  done
 }
 
 run_kubectl() {
@@ -340,11 +328,6 @@ delete_runtime_net() {
 
 delete_all() {
   log_step "delete_all"
-  for demo_name in "${RUNTIME_DEMOS[@]:-}"; do
-    if declare -F "${demo_name}_delete" >/dev/null 2>&1; then
-      "${demo_name}_delete"
-    fi
-  done
   delete_runtime_system
 }
 
@@ -364,18 +347,6 @@ for arg in "$@"; do
 done
 
 while [[ "$#" -gt 0 ]]; do
-  # Run ${demo}_cmdline if it exists. If it returns 0, then we successfully
-  # handled this argument and can continue. Otherwise, fallthrough to check
-  # the other arguments.
-  for demo_name in "${RUNTIME_DEMOS[@]:-}"; do
-    if declare -F "${demo_name}_cmdline" >/dev/null 2>&1; then
-      if "${demo_name}_cmdline" "$1"; then
-        shift
-        continue 2
-      fi
-    fi
-  done
-
   case $1 in
     --deploy-runtime-system) deploy_runtime_system ;;
     --delete-runtime-system) delete_runtime_system ;;

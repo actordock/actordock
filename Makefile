@@ -19,10 +19,6 @@ GO := go
 KO := ko
 BINDIR := bin
 
-VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-VERSION_PKG := github.com/actordock/actordock/internal/version
-LDFLAGS := -X=$(VERSION_PKG).Version=$(VERSION)
-
 BINARIES := platform router envd scheduler
 
 DASHBOARD_WEB := dashboard/web
@@ -36,10 +32,9 @@ build: $(addprefix $(BINDIR)/,$(BINARIES))
 
 $(BINDIR)/%:
 	@mkdir -p $(BINDIR)
-	$(GO) build -ldflags "$(LDFLAGS)" -o $@ ./cmd/$*
+	$(GO) build -o $@ ./cmd/$*
 
 build-images:
-	GOFLAGS='"-ldflags=$(LDFLAGS)"' \
 	$(KO) build \
 		./cmd/platform \
 		./cmd/router \
@@ -51,10 +46,9 @@ build-dashboard: $(DASHBOARD_BIN)
 $(DASHBOARD_BIN):
 	@mkdir -p $(BINDIR)
 	cd $(DASHBOARD_WEB) && npm ci && npm run build
-	$(GO) build -ldflags "$(LDFLAGS)" -o $@ ./dashboard/cmd/dashboard
+	$(GO) build -o $@ ./dashboard/cmd/dashboard
 
 build-dashboard-image:
-	GOFLAGS='"-ldflags=$(LDFLAGS)"' \
 	$(KO) build ./dashboard/cmd/dashboard
 
 verify-dashboard:

@@ -128,10 +128,6 @@ wait_actortemplate_ready() {
   kubectl_ctx wait --for=condition=Ready actortemplate/"${1}" -n actordock --timeout=600s
 }
 
-wait_actortemplate_base() {
-  wait_actortemplate_ready base
-}
-
 write_env_local() {
   local root="$1"
   cat >"${root}/hack/.env.local" <<EOF

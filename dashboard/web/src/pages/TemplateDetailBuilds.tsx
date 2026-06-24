@@ -55,8 +55,8 @@ export function TemplateDetailBuilds() {
   return (
     <>
       <p className="template-detail-muted template-detail-builds-note">
-        Build history is read-only. Upload and rebuild flows are deferred to
-        Substrate backlog.
+        Build history is read-only. Upload and rebuild flows are not available
+        yet.
       </p>
       <DataTable
         columns={columns}

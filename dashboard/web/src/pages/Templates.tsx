@@ -131,8 +131,7 @@ export function Templates() {
       />
 
       <p className="templates-note">
-        Template build and upload are not available in the dashboard yet (Substrate
-        backlog).
+        Template build and upload are not available in the dashboard yet.
       </p>
 
       {loadState.kind === "error" ? (

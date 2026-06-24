@@ -51,42 +51,9 @@ build-images:
 build-kubectl-actordock:
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(KUBECTL_ACTORDOCK) ./cmd/kubectl-actordock
 
-.PHONY: build-runtime-net
-build-runtime-net:
-	$(GO) build -ldflags "$(LDFLAGS)" -o $(BINDIR)/runtime-net ./cmd/runtime-net
-
-.PHONY: build-demos
-build-demos:
-	GOFLAGS='"-ldflags=$(LDFLAGS)"' \
-	    $(KO) build ./demos/counter
-
 .PHONY: test
 test:
 	$(GO) test ./...
-
-.PHONY: e2e
-e2e: build build-demos
-	hack/run-e2e.sh
-
-.PHONY: fmt verify-fmt
-
-# Formats all Go files in the project
-fmt:
-	@./hack/update/gofmt.sh
-
-# Fails if any Go files are not formatted properly
-verify-fmt:
-	@./hack/verify/gofmt.sh
-
-.PHONY: lint
-
-# Runs golangci-lint and fails on any reported issues.
-lint:
-	@./hack/verify/golangci-lint.sh
-
-.PHONY: verify
-verify: test
-	bash hack/verify-all.sh
 
 .PHONY: clean
 clean:

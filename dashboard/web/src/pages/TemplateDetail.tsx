@@ -111,7 +111,7 @@ export function TemplateDetail() {
           type="button"
           className="btn btn--ghost"
           disabled
-          title="Template builds are managed via Substrate (backlog)"
+          title="Template builds are not available yet"
         >
           Build template
         </button>

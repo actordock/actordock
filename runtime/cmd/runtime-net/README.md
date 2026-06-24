@@ -38,5 +38,4 @@ RBAC permissions:
 
 ## testing
 
-Run the package tests with `go test ./cmd/runtime-net/...`. Cluster e2e
-tests use the shared `hack/run-e2e.sh` runner.
+Run the package tests with `go test ./cmd/runtime-net/...`.
