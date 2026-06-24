@@ -19,7 +19,7 @@ Count Platform REST only. envd RPC (commands, filesystem) is separate but requir
 
 | Metric | v0.0.10 | v0.1.0 (now) |
 |--------|---------|---------------|
-| Operations | 27 / 56 (**48%**) | **33 / 56 (59%)** |
+| Operations | 27 / 56 (**48%**) | **40 / 56 (71%)** |
 | Fields (full-field ops only) | ~123 / ~220 (**~56%**) | **≥132 / ~220 (≥60%)** |
 
 Field % = sum of fields in **fully implemented** operations ÷ total fields across all 56 operations.
@@ -58,9 +58,9 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 19 | POST | `/sandboxes/{sandboxID}/refreshes` | done (v0.0.6) |
 | 20 | POST | `/sandboxes/{sandboxID}/snapshots` | done (v0.0.8) |
 | 21 | GET | `/snapshots` | done (v0.0.8) |
-| 22 | POST | `/v3/templates` | defer |
+| 22 | POST | `/v3/templates` | done (template build v3) |
 | 23 | POST | `/v2/templates` | defer |
-| 24 | GET | `/templates/{templateID}/files/{hash}` | done (v0.0.10 stub) |
+| 24 | GET | `/templates/{templateID}/files/{hash}` | done (v0.0.10) |
 | 25 | GET | `/templates` | done (v0.0.10) |
 | 26 | POST | `/templates` | done (v0.1.0; metadata only, no build) |
 | 27 | GET | `/templates/{templateID}` | done (v0.0.10) |
@@ -68,12 +68,12 @@ Field % = sum of fields in **fully implemented** operations ÷ total fields acro
 | 29 | DELETE | `/templates/{templateID}` | defer |
 | 30 | PATCH | `/templates/{templateID}` | done (v0.1.0; metadata only) |
 | 31 | POST | `/templates/{templateID}/builds/{buildID}` | defer |
-| 32 | POST | `/v2/templates/{templateID}/builds/{buildID}` | defer |
-| 33 | PATCH | `/v2/templates/{templateID}` | defer |
-| 34 | GET | `/templates/{templateID}/builds/{buildID}/status` | defer |
-| 35 | GET | `/templates/{templateID}/builds/{buildID}/logs` | defer |
-| 36 | POST | `/templates/tags` | defer |
-| 37 | DELETE | `/templates/tags` | defer |
+| 32 | POST | `/v2/templates/{templateID}/builds/{buildID}` | done (template build v3) |
+| 33 | PATCH | `/v2/templates/{templateID}` | done (template build v3) |
+| 34 | GET | `/templates/{templateID}/builds/{buildID}/status` | done (template build v3) |
+| 35 | GET | `/templates/{templateID}/builds/{buildID}/logs` | done (template build v3) |
+| 36 | POST | `/templates/tags` | done (template build v3) |
+| 37 | DELETE | `/templates/tags` | done (template build v3) |
 | 38 | GET | `/templates/{templateID}/tags` | done (v0.0.10) |
 | 39 | GET | `/templates/aliases/{alias}` | done (v0.0.10) |
 | 40 | GET | `/nodes` | defer |
@@ -193,6 +193,7 @@ Each release closes **new operations with full fields** and any **backfill** row
 | [v0.0.10](v0.0.10.md) | +5 | `alias`, template GET schemas | 48% | ~56% |
 | [v0.0.11](v0.0.11.md) | — (optional UI, not E2B REST) | — | 48% | ~56% |
 | [v0.1.0](v0.1.0.md) | +6 | sandbox create/get/list **done**; api-keys + access-tokens | **59%** | **≥60%** |
+| template build v3 | +7 | v3 create, v2 build trigger, status/logs, tags, PATCH v2 | **71%** | **≥60%** |
 
 ## Release gate (every v0.0.x PR)
 
@@ -203,6 +204,6 @@ Each release closes **new operations with full fields** and any **backfill** row
 
 ## Out of scope for v0.1.0
 
-Template **build** pipeline, admin API, nodes, `GET /teams`, team metrics — **entire operations deferred** (not partial routes).
+Admin API, nodes, `GET /teams`, team metrics — **entire operations deferred** (not partial routes).
 
-Post-v0.1.0: remaining 23 operations, each shipped with full fields per the same rule.
+Post-v0.1.0: remaining 16 operations, each shipped with full fields per the same rule.

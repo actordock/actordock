@@ -42,7 +42,7 @@ Run the E2E demo (port-forward + E2B Python SDK):
 ./hack/verify-local.sh
 ```
 
-Covers commands, filesystem, secure sandbox, sandbox field parity, auth routes, template write APIs, visibility, timeout metadata, scheduler auto-cleanup, idle suspend (pause lifecycle + router auto-resume), observability routes (metrics, logs, refreshes), sandbox extras (connect PTY, network policy, snapshots), and dashboard smoke.
+Covers commands, filesystem, secure sandbox, sandbox field parity, auth routes, template write APIs, **template build (E2B v3 `Template.build`)**, visibility, timeout metadata, scheduler auto-cleanup, idle suspend (pause lifecycle + router auto-resume), observability routes (metrics, logs, refreshes), sandbox extras (connect PTY, network policy, snapshots), and dashboard smoke.
 
 ### Filesystem (read / write / list)
 
@@ -239,20 +239,46 @@ cd e2e && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/pytest tests/ -v
 ```
 
-## Templates (v0.0.10)
+## Templates (v0.0.10+)
 
-Templates are **pre-provisioned** `ActorTemplate` CRs in the cluster (default: `base`). There is no user template build pipeline in v0.0.10.
+Official templates `base` and `python` are pre-provisioned `ActorTemplate` CRs. User templates can be registered via `POST /templates` (metadata only) or built with the E2B v3 SDK:
+
+```python
+import uuid
+from e2b import Template, Sandbox
+
+name = f"my-tools-{uuid.uuid4().hex[:8]}"
+template = (
+    Template()
+    .from_template("python")
+    .run_cmd("apk add --no-cache python3 py3-pip")
+    .run_cmd("pip install --no-cache-dir httpx")
+)
+Template.build(template, name, cpu_count=2, memory_mb=512)
+
+sbx = Sandbox.create(template=name, secure=False, timeout=300)
+try:
+    out = sbx.commands.run('python3 -c "import httpx; print(httpx.__version__)"')
+    assert "httpx" in out.stdout
+finally:
+    sbx.kill()
+```
+
+Requires `template-builder` (deployed by `./hack/install-local.sh`) and the Kind local registry.
 
 ```python
 from e2b import Template
 
 assert Template.exists("base")
+assert Template.exists("python")
 ```
 
 ```bash
 curl -sS -H "X-API-KEY: dev" http://localhost:8080/templates | jq .
 curl -sS -H "X-API-KEY: dev" http://localhost:8080/templates/aliases/base | jq .
 ```
+
+E2E: `e2e/tests/test_template_build.py`.
 
 ## Volumes (v0.0.9)
 
