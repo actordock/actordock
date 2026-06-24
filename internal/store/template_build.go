@@ -26,9 +26,9 @@ import (
 )
 
 var (
-	ErrTemplateBuildNotFound   = errors.New("template build not found")
-	ErrTemplateBuildIDEmpty    = errors.New("template build id is required")
-	ErrTemplateBuildFileNotFound = errors.New("template build file not found")
+	ErrTemplateBuildNotFound      = errors.New("template build not found")
+	ErrTemplateBuildIDEmpty       = errors.New("template build id is required")
+	ErrTemplateBuildFileNotFound  = errors.New("template build file not found")
 	ErrTemplateBuildFileHashEmpty = errors.New("template build file hash is required")
 )
 
@@ -38,8 +38,8 @@ type TemplateBuildStatus string
 const (
 	TemplateBuildStatusWaiting  TemplateBuildStatus = "waiting"
 	TemplateBuildStatusBuilding TemplateBuildStatus = "building"
-	TemplateBuildStatusReady      TemplateBuildStatus = "ready"
-	TemplateBuildStatusError      TemplateBuildStatus = "error"
+	TemplateBuildStatusReady    TemplateBuildStatus = "ready"
+	TemplateBuildStatusError    TemplateBuildStatus = "error"
 )
 
 const (
