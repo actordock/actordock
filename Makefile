@@ -19,7 +19,7 @@ GO := go
 KO := ko
 BINDIR := bin
 
-BINARIES := platform router envd scheduler
+BINARIES := platform router envd scheduler template-builder
 
 DASHBOARD_WEB := dashboard/web
 DASHBOARD_BIN := $(BINDIR)/dashboard
@@ -39,7 +39,8 @@ build-images:
 		./cmd/platform \
 		./cmd/router \
 		./cmd/envd \
-		./cmd/scheduler
+		./cmd/scheduler \
+		./cmd/template-builder
 
 build-dashboard: $(DASHBOARD_BIN)
 

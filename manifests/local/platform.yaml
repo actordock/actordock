@@ -53,6 +53,8 @@ spec:
               value: "80"
             - name: ACTORDOCK_REDIS_ADDR
               value: "redis.actordock.svc:6379"
+            - name: ACTORDOCK_TEMPLATE_BUILD_FILES_DIR
+              value: "/var/lib/actordock/template-build/files"
             - name: ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT
               value: "300"
           readinessProbe:
@@ -61,6 +63,13 @@ spec:
               port: http
             initialDelaySeconds: 2
             periodSeconds: 5
+          volumeMounts:
+            - name: template-build-data
+              mountPath: /var/lib/actordock/template-build
+      volumes:
+        - name: template-build-data
+          persistentVolumeClaim:
+            claimName: template-build-workdir
 ---
 apiVersion: v1
 kind: Service

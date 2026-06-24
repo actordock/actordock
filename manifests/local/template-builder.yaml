@@ -1,0 +1,93 @@
+# Copyright 2026 The Actordock Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# See manifests/local/template-build-pvc.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: template-builder
+  namespace: actordock
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: template-builder
+  namespace: actordock
+rules:
+  - apiGroups: ["actordock.dev"]
+    resources: ["actortemplates"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: template-builder
+  namespace: actordock
+subjects:
+  - kind: ServiceAccount
+    name: template-builder
+    namespace: actordock
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: template-builder
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: template-builder
+  namespace: actordock
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: template-builder
+  template:
+    metadata:
+      labels:
+        app: template-builder
+    spec:
+      serviceAccountName: template-builder
+      containers:
+        - name: template-builder
+          image: ko://github.com/actordock/actordock/cmd/template-builder
+          env:
+            - name: TEMPLATE_BUILDER_LOG_LEVEL
+              value: "info"
+            - name: TEMPLATE_BUILDER_REDIS_ADDR
+              value: "redis.actordock.svc:6379"
+            - name: ACTORDOCK_TEMPLATE_NAMESPACE
+              value: "actordock"
+            - name: ACTORDOCK_BUILD_REGISTRY
+              value: "kind-registry:5000"
+            - name: ACTORDOCK_BUILD_REGISTRY_INSECURE
+              value: "true"
+            - name: ACTORDOCK_BUILD_DATA_DIR
+              value: "/var/lib/actordock/template-build"
+            - name: ACTORDOCK_TEMPLATE_BUILD_FILES_DIR
+              value: "/var/lib/actordock/template-build/files"
+            - name: ACTORDOCK_BUILD_WORK_DIR
+              value: "/var/lib/actordock/template-build/work"
+            - name: ACTORDOCK_BUILD_PVC_NAME
+              value: "template-build-workdir"
+          volumeMounts:
+            - name: template-build-data
+              mountPath: /var/lib/actordock/template-build
+      volumes:
+        - name: template-build-data
+          persistentVolumeClaim:
+            claimName: template-build-workdir

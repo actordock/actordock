@@ -102,6 +102,7 @@ deploy_actordock_images() {
   kubectl_ctx rollout status deployment/platform -n actordock --timeout=180s
   kubectl_ctx rollout status deployment/router -n actordock --timeout=180s
   kubectl_ctx rollout status deployment/scheduler -n actordock --timeout=180s
+  kubectl_ctx rollout status deployment/template-builder -n actordock --timeout=180s
   kubectl_ctx rollout status deployment/dashboard -n actordock --timeout=180s
 
   wait_actortemplate_ready base
