@@ -165,6 +165,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /templates", s.requireAPIKey(http.HandlerFunc(s.handleListTemplates)))
 	mux.Handle("POST /templates", s.requireAPIKey(http.HandlerFunc(s.handleCreateTemplate)))
 	mux.Handle("POST /v3/templates", s.requireAPIKey(http.HandlerFunc(s.handleCreateTemplateV3)))
+	mux.Handle("POST /v2/templates/{templateID}/builds/{buildID}", s.requireAPIKey(http.HandlerFunc(s.handleStartTemplateBuildV2)))
 	mux.Handle("PATCH /templates/{id}", s.requireAPIKey(http.HandlerFunc(s.handlePatchTemplate)))
 	mux.Handle("GET /templates/{path...}", s.requireAPIKey(http.HandlerFunc(s.handleTemplatePath)))
 	mux.HandleFunc("PUT /template-build-files/{hash}", s.handlePutTemplateBuildFile)

@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Server struct {
@@ -67,4 +68,15 @@ func envIntOrDefault(key string, fallback int) (int, error) {
 		return 0, fmt.Errorf("parse %q: %w", v, err)
 	}
 	return n, nil
+}
+
+func parseCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }

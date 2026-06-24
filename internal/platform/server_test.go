@@ -132,6 +132,8 @@ type fakeStore struct {
 	templateBuilds      map[string]store.TemplateBuild
 	templateBuildLatest map[string]string
 	templateBuildFiles  map[string]store.TemplateBuildFile
+	templateBuildQueue  []store.TemplateBuildJob
+	buildLogs           []store.BuildLogEntry
 	teamAPIKeys         map[string]store.TeamAPIKeyRecord
 	apiKeyHashes        map[string]string
 	userAccessTokens    map[string]store.UserAccessTokenRecord
@@ -342,12 +344,31 @@ func (f *fakeStore) ListLatestTemplateBuilds(_ context.Context) ([]store.Templat
 	return out, nil
 }
 
-func (f *fakeStore) AppendBuildLog(context.Context, store.BuildLogEntry) error {
+func (f *fakeStore) AppendBuildLog(_ context.Context, entry store.BuildLogEntry) error {
+	f.buildLogs = append(f.buildLogs, entry)
 	return nil
 }
 
-func (f *fakeStore) ListBuildLogs(context.Context, string, string, int, int) ([]store.BuildLogEntry, error) {
-	return nil, nil
+func (f *fakeStore) ListBuildLogs(_ context.Context, templateID, buildID string, offset, limit int) ([]store.BuildLogEntry, error) {
+	var out []store.BuildLogEntry
+	for _, entry := range f.buildLogs {
+		if entry.TemplateID == templateID && entry.BuildID == buildID {
+			out = append(out, entry)
+		}
+	}
+	if offset > len(out) {
+		return nil, nil
+	}
+	out = out[offset:]
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (f *fakeStore) EnqueueTemplateBuild(_ context.Context, job store.TemplateBuildJob) error {
+	f.templateBuildQueue = append(f.templateBuildQueue, job)
+	return nil
 }
 
 func (f *fakeStore) PutTemplateBuildFile(_ context.Context, file store.TemplateBuildFile) error {
@@ -2449,6 +2470,7 @@ func testConfig() config.Platform {
 		ClientID:              "actordock",
 		DefaultSandboxTimeout: 300,
 		VolumeRoot:            "/var/lib/actordock/volumes",
+		OfficialBaseTemplates: []string{"base", "python"},
 	}
 }
 

@@ -29,10 +29,14 @@ import (
 
 type templateBuildPersistence interface {
 	PutTemplateBuild(ctx context.Context, build store.TemplateBuild) error
+	GetTemplateBuild(ctx context.Context, templateID, buildID string) (store.TemplateBuild, error)
+	UpdateTemplateBuild(ctx context.Context, build store.TemplateBuild) error
 	GetLatestTemplateBuild(ctx context.Context, templateID string) (store.TemplateBuild, error)
 	PutTemplateBuildFile(ctx context.Context, file store.TemplateBuildFile) error
 	GetTemplateBuildFile(ctx context.Context, filesHash string) (store.TemplateBuildFile, error)
 	MarkTemplateBuildFilePresent(ctx context.Context, filesHash string, present bool) error
+	AppendBuildLog(ctx context.Context, entry store.BuildLogEntry) error
+	EnqueueTemplateBuild(ctx context.Context, job store.TemplateBuildJob) error
 }
 
 type templateBuildFileStorage struct {
