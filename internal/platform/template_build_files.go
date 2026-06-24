@@ -36,6 +36,7 @@ type templateBuildPersistence interface {
 	GetTemplateBuildFile(ctx context.Context, filesHash string) (store.TemplateBuildFile, error)
 	MarkTemplateBuildFilePresent(ctx context.Context, filesHash string, present bool) error
 	AppendBuildLog(ctx context.Context, entry store.BuildLogEntry) error
+	ListBuildLogs(ctx context.Context, templateID, buildID string, offset, limit int) ([]store.BuildLogEntry, error)
 	EnqueueTemplateBuild(ctx context.Context, job store.TemplateBuildJob) error
 }
 

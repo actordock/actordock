@@ -184,6 +184,17 @@ func (s *Server) handleTemplatePath(w http.ResponseWriter, r *http.Request) {
 	case len(parts) == 2 && parts[1] == "tags":
 		r.SetPathValue("templateID", parts[0])
 		s.handleGetTemplateTags(w, r)
+	case len(parts) == 4 && parts[1] == "builds":
+		r.SetPathValue("templateID", parts[0])
+		r.SetPathValue("buildID", parts[2])
+		switch parts[3] {
+		case "status":
+			s.handleGetTemplateBuildStatus(w, r)
+		case "logs":
+			s.handleGetTemplateBuildLogs(w, r)
+		default:
+			writeAPIError(w, http.StatusNotFound, "template not found")
+		}
 	case len(parts) == 3 && parts[1] == "files":
 		r.SetPathValue("templateID", parts[0])
 		r.SetPathValue("hash", parts[2])
@@ -272,7 +283,7 @@ func (s *Server) handlePatchTemplate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	tmpl, err := s.templates.Update(ctx, templateID, req.Public)
+	tmpl, err := s.patchTemplatePublic(ctx, templateID, req.Public)
 	if errors.Is(err, ErrTemplateNotFound) {
 		writeAPIError(w, http.StatusNotFound, "template not found")
 		return
@@ -353,7 +364,13 @@ func (s *Server) handleGetTemplateTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, []templateTagResponse{})
+	tags, err := s.listTemplateTags(ctx, templateID)
+	if err != nil {
+		s.logger.Error("list template tags", "template_id", templateID, "err", err)
+		writeAPIError(w, http.StatusInternalServerError, "failed to get template tags")
+		return
+	}
+	writeJSON(w, http.StatusOK, tags)
 }
 
 func (s *Server) handleGetTemplateFileUpload(w http.ResponseWriter, r *http.Request) {

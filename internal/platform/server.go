@@ -166,6 +166,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /templates", s.requireAPIKey(http.HandlerFunc(s.handleCreateTemplate)))
 	mux.Handle("POST /v3/templates", s.requireAPIKey(http.HandlerFunc(s.handleCreateTemplateV3)))
 	mux.Handle("POST /v2/templates/{templateID}/builds/{buildID}", s.requireAPIKey(http.HandlerFunc(s.handleStartTemplateBuildV2)))
+	mux.Handle("GET /templates/{templateID}/builds/{buildID}/status", s.requireAPIKey(http.HandlerFunc(s.handleGetTemplateBuildStatus)))
+	mux.Handle("GET /templates/{templateID}/builds/{buildID}/logs", s.requireAPIKey(http.HandlerFunc(s.handleGetTemplateBuildLogs)))
+	mux.Handle("POST /templates/tags", s.requireAPIKey(http.HandlerFunc(s.handleAssignTemplateTags)))
+	mux.Handle("DELETE /templates/tags", s.requireAPIKey(http.HandlerFunc(s.handleDeleteTemplateTags)))
+	mux.Handle("PATCH /v2/templates/{templateID}", s.requireAPIKey(http.HandlerFunc(s.handlePatchTemplateV2)))
 	mux.Handle("PATCH /templates/{id}", s.requireAPIKey(http.HandlerFunc(s.handlePatchTemplate)))
 	mux.Handle("GET /templates/{path...}", s.requireAPIKey(http.HandlerFunc(s.handleTemplatePath)))
 	mux.HandleFunc("PUT /template-build-files/{hash}", s.handlePutTemplateBuildFile)
@@ -286,10 +291,14 @@ func (s *Server) handleCreateSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	tmpl, err := s.templates.Get(ctx, req.TemplateID)
+	tmpl, err := s.resolveSandboxTemplate(ctx, req.TemplateID)
 	if err != nil {
 		if errors.Is(err, ErrTemplateNotFound) {
 			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("unsupported template %q", req.TemplateID))
+			return
+		}
+		if errors.Is(err, ErrTemplateTagNotReady) {
+			writeAPIError(w, http.StatusBadRequest, fmt.Sprintf("template tag for %q is not ready", req.TemplateID))
 			return
 		}
 		s.logger.Error("resolve template", "template_id", req.TemplateID, "err", err)

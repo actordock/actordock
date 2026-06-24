@@ -40,6 +40,11 @@ func (s *stubImageBuilder) Build(context.Context, BuildRequest) (string, error) 
 type memoryBuildStore struct {
 	builds store.TemplateBuild
 	logs   []store.BuildLogEntry
+	tags   map[string]store.TemplateTagRecord
+}
+
+func tagKey(templateID, tag string) string {
+	return templateID + "\x00" + tag
 }
 
 func (m *memoryBuildStore) GetTemplateBuild(_ context.Context, templateID, buildID string) (store.TemplateBuild, error) {
@@ -63,6 +68,24 @@ func (m *memoryBuildStore) DequeueTemplateBuild(context.Context) (store.Template
 	return store.TemplateBuildJob{}, context.Canceled
 }
 
+func (m *memoryBuildStore) PutTemplateTag(_ context.Context, rec store.TemplateTagRecord) error {
+	if m.tags == nil {
+		m.tags = make(map[string]store.TemplateTagRecord)
+	}
+	m.tags[tagKey(rec.TemplateID, rec.Tag)] = rec
+	return nil
+}
+
+func (m *memoryBuildStore) ListTemplateTags(_ context.Context, templateID string) ([]store.TemplateTagRecord, error) {
+	out := make([]store.TemplateTagRecord, 0)
+	for _, rec := range m.tags {
+		if rec.TemplateID == templateID {
+			out = append(out, rec)
+		}
+	}
+	return out, nil
+}
+
 func TestWorkerProcessBuild(t *testing.T) {
 	t.Parallel()
 
@@ -78,17 +101,19 @@ func TestWorkerProcessBuild(t *testing.T) {
 
 	mem := &memoryBuildStore{
 		builds: store.TemplateBuild{
-			TemplateID:  "custom-app",
-			BuildID:     "build-1",
-			Status:      store.TemplateBuildStatusWaiting,
-			StepsJSON:   stepsJSON,
-			CPUCount:    2,
-			MemoryMB:    512,
-			Namespace:   "actordock",
-			ActorName:   "custom-app",
-			EnvdVersion: "0.1.0",
-			CreatedAt:   now,
-			UpdatedAt:   now,
+			TemplateID:   "custom-app",
+			BuildID:      "build-1",
+			Status:       store.TemplateBuildStatusWaiting,
+			StepsJSON:    stepsJSON,
+			CPUCount:     2,
+			MemoryMB:     512,
+			Namespace:    "actordock",
+			ActorName:    "custom-app",
+			FromTemplate: "base",
+			Tags:         []string{"prod"},
+			EnvdVersion:  "0.1.0",
+			CreatedAt:    now,
+			UpdatedAt:    now,
 		},
 	}
 
@@ -132,6 +157,9 @@ func TestWorkerProcessBuild(t *testing.T) {
 	if mem.builds.Status != store.TemplateBuildStatusReady {
 		t.Fatalf("status = %q", mem.builds.Status)
 	}
+	if mem.builds.PinnedImage == "" {
+		t.Fatalf("pinned image not set")
+	}
 
 	var created v1alpha1.ActorTemplate
 	if err := k8s.Get(context.Background(), types.NamespacedName{Namespace: "actordock", Name: "custom-app"}, &created); err != nil {
@@ -139,5 +167,13 @@ func TestWorkerProcessBuild(t *testing.T) {
 	}
 	if created.Spec.Containers[0].Image != "kind-registry:5000/actordock/templates/custom-app@sha256:deadbeef" {
 		t.Fatalf("image = %q", created.Spec.Containers[0].Image)
+	}
+
+	var tagged v1alpha1.ActorTemplate
+	if err := k8s.Get(context.Background(), types.NamespacedName{Namespace: "actordock", Name: "custom-app--prod"}, &tagged); err != nil {
+		t.Fatalf("get tagged actortemplate: %v", err)
+	}
+	if tagged.Spec.Containers[0].Image != "kind-registry:5000/actordock/templates/custom-app@sha256:deadbeef" {
+		t.Fatalf("tagged image = %q", tagged.Spec.Containers[0].Image)
 	}
 }

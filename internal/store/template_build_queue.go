@@ -26,9 +26,11 @@ import (
 const templateBuildQueueKey = "actordock:template-build-queue"
 
 // TemplateBuildJob is a queued template build for the template-builder worker.
+// When SyncTag is set the worker only materializes that tag's ActorTemplate.
 type TemplateBuildJob struct {
 	TemplateID string    `json:"template_id"`
 	BuildID    string    `json:"build_id"`
+	SyncTag    string    `json:"sync_tag,omitempty"`
 	EnqueuedAt time.Time `json:"enqueued_at"`
 }
 
@@ -43,6 +45,16 @@ func validateTemplateBuildJob(job TemplateBuildJob) error {
 		return fmt.Errorf("template build job enqueued_at is required")
 	}
 	return nil
+}
+
+// EnqueueTemplateTagSync queues a tag-only ActorTemplate sync for template-builder.
+func (r *Redis) EnqueueTemplateTagSync(ctx context.Context, templateID, buildID, tag string) error {
+	return r.EnqueueTemplateBuild(ctx, TemplateBuildJob{
+		TemplateID: templateID,
+		BuildID:    buildID,
+		SyncTag:    strings.TrimSpace(tag),
+		EnqueuedAt: time.Now().UTC(),
+	})
 }
 
 func (r *Redis) EnqueueTemplateBuild(ctx context.Context, job TemplateBuildJob) error {

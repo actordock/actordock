@@ -80,13 +80,16 @@ func (w *Worker) Run(ctx context.Context) error {
 			return err
 		}
 		if err := w.Process(ctx, job); err != nil {
-			// Error is persisted on the build record; continue with the next job.
 			_ = err
 		}
 	}
 }
 
 func (w *Worker) Process(ctx context.Context, job store.TemplateBuildJob) error {
+	if strings.TrimSpace(job.SyncTag) != "" {
+		return w.processTagSync(ctx, job)
+	}
+
 	build, err := w.store.GetTemplateBuild(ctx, job.TemplateID, job.BuildID)
 	if err != nil {
 		return err
@@ -97,7 +100,7 @@ func (w *Worker) Process(ctx context.Context, job store.TemplateBuildJob) error 
 		return err
 	}
 
-	processErr := w.process(ctx, job, build)
+	pinnedImage, processErr := w.process(ctx, job, build)
 	if processErr != nil {
 		w.appendLog(ctx, job.TemplateID, job.BuildID, "error", processErr.Error(), "build")
 		now := w.now().UTC()
@@ -112,29 +115,22 @@ func (w *Worker) Process(ctx context.Context, job store.TemplateBuildJob) error 
 	now := w.now().UTC()
 	build.Status = store.TemplateBuildStatusReady
 	build.ErrorMessage = ""
+	build.PinnedImage = pinnedImage
 	build.UpdatedAt = now
 	build.FinishedAt = &now
 	w.appendLog(ctx, job.TemplateID, job.BuildID, "info", "template build ready", "build")
 	return w.store.UpdateTemplateBuild(ctx, build)
 }
 
-func (w *Worker) process(ctx context.Context, job store.TemplateBuildJob, build store.TemplateBuild) error {
+func (w *Worker) process(ctx context.Context, job store.TemplateBuildJob, build store.TemplateBuild) (string, error) {
 	spec, err := ParseStartSpec(build.StepsJSON)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	baseName := strings.TrimSpace(spec.FromTemplate)
-	if baseName == "" {
-		baseName = w.cfg.DefaultBaseTemplate
-	}
-	baseAT, err := loadActorTemplate(ctx, w.k8s, w.cfg.TemplateNamespace, baseName)
+	baseAT, baseEnvd, err := w.loadBase(ctx, build)
 	if err != nil {
-		return err
-	}
-	baseEnvd, err := envdFromActorTemplate(baseAT)
-	if err != nil {
-		return err
+		return "", err
 	}
 
 	fromImage := strings.TrimSpace(spec.FromImage)
@@ -144,28 +140,28 @@ func (w *Worker) process(ctx context.Context, job store.TemplateBuildJob, build 
 
 	dockerfile, err := SynthesizeDockerfile(fromImage, spec.Steps)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	contextDir := fmt.Sprintf("%s/%s", w.workDir, job.BuildID)
 	if err := os.MkdirAll(w.workDir, 0o755); err != nil {
-		return err
+		return "", err
 	}
 	if err := os.RemoveAll(contextDir); err != nil && !os.IsNotExist(err) {
-		return err
+		return "", err
 	}
 	defer func() { _ = os.RemoveAll(contextDir) }()
 
 	w.appendLog(ctx, job.TemplateID, job.BuildID, "info", "preparing build context", "build")
 	if err := PrepareContextDir(contextDir, dockerfile, w.filesDir, spec.Steps); err != nil {
-		return err
+		return "", err
 	}
 
-	tag := sanitizeImageTag(job.BuildID)
-	if tag == "" {
-		tag = uuid.NewString()
+	imageTag := sanitizeImageTag(job.BuildID)
+	if imageTag == "" {
+		imageTag = uuid.NewString()
 	}
-	destination := fmt.Sprintf("%s/actordock/templates/%s:%s", strings.TrimRight(w.cfg.BuildRegistry, "/"), job.TemplateID, tag)
+	destination := fmt.Sprintf("%s/actordock/templates/%s:%s", strings.TrimRight(w.cfg.BuildRegistry, "/"), job.TemplateID, imageTag)
 
 	w.appendLog(ctx, job.TemplateID, job.BuildID, "info", "running image build", "build")
 	pinnedImage, err := w.builder.Build(ctx, BuildRequest{
@@ -174,19 +170,24 @@ func (w *Worker) process(ctx context.Context, job store.TemplateBuildJob, build 
 		BuildID:     job.BuildID,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	w.appendLog(ctx, job.TemplateID, job.BuildID, "info", "creating ActorTemplate", "build")
 	if err := w.templates.Replace(ctx, job.TemplateID, pinnedImage, baseAT, baseEnvd); err != nil {
-		return err
+		return "", err
 	}
 
 	w.appendLog(ctx, job.TemplateID, job.BuildID, "info", "waiting for golden snapshot", "build")
 	if err := w.waitReady(ctx, job.TemplateID); err != nil {
-		return err
+		return "", err
 	}
-	return nil
+
+	w.appendLog(ctx, job.TemplateID, job.BuildID, "info", "syncing template tags", "build")
+	if err := w.syncBuildTags(ctx, job.TemplateID, job.BuildID, build, pinnedImage, baseAT, baseEnvd); err != nil {
+		return "", err
+	}
+	return pinnedImage, nil
 }
 
 func (w *Worker) markStatus(ctx context.Context, build *store.TemplateBuild, status store.TemplateBuildStatus, message string) error {

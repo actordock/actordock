@@ -71,6 +71,7 @@ type TemplateBuild struct {
 	UpdatedAt    time.Time           `json:"updated_at"`
 	FinishedAt   *time.Time          `json:"finished_at,omitempty"`
 	ErrorMessage string              `json:"error_message,omitempty"`
+	PinnedImage  string              `json:"pinned_image,omitempty"`
 }
 
 // BuildLogEntry is an append-only build log line.

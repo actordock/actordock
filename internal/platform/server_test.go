@@ -134,6 +134,7 @@ type fakeStore struct {
 	templateBuildFiles  map[string]store.TemplateBuildFile
 	templateBuildQueue  []store.TemplateBuildJob
 	buildLogs           []store.BuildLogEntry
+	templateTags        map[string]store.TemplateTagRecord
 	teamAPIKeys         map[string]store.TeamAPIKeyRecord
 	apiKeyHashes        map[string]string
 	userAccessTokens    map[string]store.UserAccessTokenRecord
@@ -151,6 +152,7 @@ func newFakeStore() *fakeStore {
 		templateBuilds:      make(map[string]store.TemplateBuild),
 		templateBuildLatest: make(map[string]string),
 		templateBuildFiles:  make(map[string]store.TemplateBuildFile),
+		templateTags:        make(map[string]store.TemplateTagRecord),
 		teamAPIKeys:         make(map[string]store.TeamAPIKeyRecord),
 		apiKeyHashes:        make(map[string]string),
 		userAccessTokens:    make(map[string]store.UserAccessTokenRecord),
@@ -366,9 +368,52 @@ func (f *fakeStore) ListBuildLogs(_ context.Context, templateID, buildID string,
 	return out, nil
 }
 
+func templateTagMapKey(templateID, tag string) string {
+	return templateID + "\x00" + tag
+}
+
+func (f *fakeStore) PutTemplateTag(_ context.Context, rec store.TemplateTagRecord) error {
+	f.templateTags[templateTagMapKey(rec.TemplateID, rec.Tag)] = rec
+	return nil
+}
+
+func (f *fakeStore) GetTemplateTag(_ context.Context, templateID, tag string) (store.TemplateTagRecord, error) {
+	rec, ok := f.templateTags[templateTagMapKey(templateID, tag)]
+	if !ok {
+		return store.TemplateTagRecord{}, store.ErrTemplateTagNotFound
+	}
+	return rec, nil
+}
+
+func (f *fakeStore) ListTemplateTags(_ context.Context, templateID string) ([]store.TemplateTagRecord, error) {
+	out := make([]store.TemplateTagRecord, 0)
+	for _, rec := range f.templateTags {
+		if rec.TemplateID == templateID {
+			out = append(out, rec)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) DeleteTemplateTags(_ context.Context, templateID string, tags []string) error {
+	for _, tag := range tags {
+		delete(f.templateTags, templateTagMapKey(templateID, tag))
+	}
+	return nil
+}
+
 func (f *fakeStore) EnqueueTemplateBuild(_ context.Context, job store.TemplateBuildJob) error {
 	f.templateBuildQueue = append(f.templateBuildQueue, job)
 	return nil
+}
+
+func (f *fakeStore) EnqueueTemplateTagSync(_ context.Context, templateID, buildID, tag string) error {
+	return f.EnqueueTemplateBuild(context.Background(), store.TemplateBuildJob{
+		TemplateID: templateID,
+		BuildID:    buildID,
+		SyncTag:    tag,
+		EnqueuedAt: time.Now().UTC(),
+	})
 }
 
 func (f *fakeStore) PutTemplateBuildFile(_ context.Context, file store.TemplateBuildFile) error {
