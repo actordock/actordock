@@ -1,0 +1,39 @@
+{{- if .Values.runtime.enabled }}
+apiVersion: actordock.dev/v1alpha1
+kind: WorkerPool
+metadata:
+  name: {{ .Values.runtime.workerPool.name }}
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    workload: actordock
+    {{- include "actordock-stack.labels" . | nindent 4 }}
+  annotations:
+    actordock.dev/runtime-commit: {{ .Values.runtime.lock.commit | quote }}
+spec:
+  replicas: {{ .Values.runtime.workerPool.replicas }}
+  sandboxImage: {{ .Values.runtime.workerPool.sandboxImage | quote }}
+---
+apiVersion: actordock.dev/v1alpha1
+kind: ActorTemplate
+metadata:
+  name: {{ .Values.runtime.actorTemplate.name }}
+  namespace: {{ include "actordock-stack.namespace" . }}
+  labels:
+    {{- include "actordock-stack.labels" . | nindent 4 }}
+  annotations:
+    actordock.dev/runtime-commit: {{ .Values.runtime.lock.commit | quote }}
+spec:
+  workerSelector:
+    matchLabels:
+      workload: actordock
+  pauseImage: {{ .Values.runtime.actorTemplate.pauseImage | quote }}
+  containers:
+    - name: envd
+      image: {{ include "actordock-stack.image" (dict "image" .Values.images.envd "root" .) }}
+      command: ["/ko-app/envd"]
+      env:
+        - name: ENVD_LISTEN_ADDR
+          value: ":80"
+  snapshotsConfig:
+    location: gs://{{ .Values.runtime.actorTemplate.snapshotsBucket }}/actordock/
+{{- end }}

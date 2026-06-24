@@ -1,0 +1,9 @@
+Actordock Runtime
+=================
+
+This directory contains code derived from Agent Substrate
+(https://github.com/agent-substrate/substrate), originally developed by Google LLC.
+
+Upstream commit: 9f8475493b6eeab9ecda837e114078a3dd0a4e41
+
+Licensed under the Apache License, Version 2.0. See LICENSE in this directory.

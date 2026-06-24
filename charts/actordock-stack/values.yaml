@@ -8,7 +8,7 @@ global:
 # Shared Actordock configuration (env vars on platform/router/scheduler).
 actordock:
   domain: localhost
-  ateapiAddr: api.ate-system.svc:443
+  runtimeAPIAddr: api.actordock-system.svc:443
   redis:
     addr: "" # default: redis.<namespace>.svc:6379
   envdPort: "80"
@@ -100,18 +100,17 @@ dashboard:
       initialDelaySeconds: 2
       periodSeconds: 5
 
-# Substrate CRs in the actordock namespace. Requires ate-system already installed.
-substrate:
+# Runtime CRs in the actordock namespace. Requires actordock-system already installed.
+runtime:
   enabled: true
   lock:
-    repository: https://github.com/agent-substrate/substrate
     commit: 9f8475493b6eeab9ecda837e114078a3dd0a4e41
   workerPool:
     name: actordock
     replicas: 2
-    # Set to your built ateom-gvisor image (ko://.../cmd/ateom-gvisor).
-    ateomImage: ghcr.io/agent-substrate/ateom-gvisor:latest
+    # Set to your built runtime-sandbox image (ko://.../cmd/runtime-sandbox).
+    sandboxImage: ghcr.io/actordock/runtime-sandbox:latest
   actorTemplate:
     name: base
     pauseImage: registry.k8s.io/pause:3.10.2@sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4
-    snapshotsBucket: ate-snapshots
+    snapshotsBucket: actordock-snapshots

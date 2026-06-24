@@ -15,7 +15,7 @@ metadata:
   labels:
     {{- include "actordock-stack.labels" . | nindent 4 }}
 rules:
-  - apiGroups: ["ate.dev"]
+  - apiGroups: ["actordock.dev"]
     resources: ["actortemplates"]
     verbs: ["get", "list", "watch"]
 ---

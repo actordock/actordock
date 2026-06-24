@@ -24,7 +24,7 @@ import (
 
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/envd"
-	"github.com/actordock/actordock/internal/substrate"
+	"github.com/actordock/actordock/internal/runtimeapi"
 )
 
 type fakeBackend struct {
@@ -141,7 +141,7 @@ func TestProxyResumesPausedSandbox(t *testing.T) {
 
 func TestProxySandboxNotFound(t *testing.T) {
 	t.Parallel()
-	srv := NewServer(testConfig(), &fakeBackend{err: substrate.ErrNotFound}, nil, slog.Default())
+	srv := NewServer(testConfig(), &fakeBackend{err: runtimeapi.ErrNotFound}, nil, slog.Default())
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("E2b-Sandbox-Id", "missing")
 	rec := httptest.NewRecorder()

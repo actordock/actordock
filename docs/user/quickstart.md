@@ -15,12 +15,12 @@ Run the E2B SDK against a local Actordock cluster on Kind.
 ./hack/install-local.sh
 ```
 
-This creates Kind cluster `actordock`, deploys pinned [Substrate](https://github.com/agent-substrate/substrate), and deploys Actordock (platform, router, scheduler, dashboard, envd template `base`).
+This creates Kind cluster `actordock`, deploys the vendored `runtime/` stack, and deploys Actordock (platform, router, scheduler, dashboard, envd template `base`).
 
 Re-deploy Actordock only (cluster already exists):
 
 ```bash
-./hack/install-local.sh --skip-substrate
+./hack/install-local.sh --skip-runtime
 ```
 
 ## Verify
@@ -80,7 +80,7 @@ Local Kind dev still sets `E2B_VALIDATE_API_KEY=false` in `hack/.env.local` for 
 
 ### Helm (non-Kind pilot)
 
-For GKE/EKS/k3s with an existing `ate-system` namespace:
+For GKE/EKS/k3s with an existing `actordock-system` namespace:
 
 ```bash
 helm install actordock ./charts/actordock-stack -n actordock --create-namespace \
@@ -88,7 +88,7 @@ helm install actordock ./charts/actordock-stack -n actordock --create-namespace 
   --set images.platform.tag='0.1.0'
 ```
 
-See [charts/actordock-stack/README.md](../../charts/actordock-stack/README.md) for prerequisites, image tags, and Substrate pin.
+See [charts/actordock-stack/README.md](../../charts/actordock-stack/README.md) for prerequisites, image tags, and Runtime pin.
 
 Kind development continues to use `./hack/install-local.sh` above.
 
@@ -214,7 +214,7 @@ finally:
 
 ### Snapshots
 
-Create a Substrate checkpoint and list metadata from Redis:
+Create a runtime checkpoint and list metadata from Redis:
 
 ```python
 from e2b import Sandbox
@@ -261,7 +261,7 @@ from e2b import Volume, Sandbox
 
 vol = Volume.create("my-data")
 sbx = Sandbox.create(template="base", volume_mounts={"/mnt/data": vol})
-# volumeMounts persisted on sandbox; runtime mount requires future Substrate support
+# volumeMounts persisted on sandbox; runtime mount requires future runtime support
 sbx.kill()
 vol.delete()
 ```
@@ -295,8 +295,8 @@ See [dashboard/README.md](../../dashboard/README.md) for build targets (`make ve
 
 ## Troubleshooting
 
-- **Substrate pods not ready** — wait or re-run `./hack/install-local.sh`; cold start can exceed default rollout timeouts.
-- **ActorTemplate `base` not Ready** — check `kubectl --context kind-actordock get actortemplate -n actordock` and ate-system pods.
+- **Runtime pods not ready** — wait or re-run `./hack/install-local.sh`; cold start can exceed default rollout timeouts.
+- **ActorTemplate `base` not Ready** — check `kubectl --context kind-actordock get actortemplate -n actordock` and actordock-system pods.
 - **E2E connection refused** — ensure port-forwards to platform (`8080`) and router (`8081`) are running.
 - **No free workers** — delete stale sandboxes via platform `DELETE /sandboxes/{id}` or `kubectl ate delete actor <id>`.
 

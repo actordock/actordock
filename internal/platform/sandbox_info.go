@@ -19,7 +19,7 @@ import (
 
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/store"
-	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/actordock/runtime/pkg/proto/runtimeapipb"
 )
 
 const (
@@ -156,16 +156,16 @@ func cloneStringMap(m map[string]string) map[string]string {
 	return out
 }
 
-func storeStatusFromActor(status ateapipb.Actor_Status) string {
+func storeStatusFromActor(status runtimeapipb.Actor_Status) string {
 	switch status {
-	case ateapipb.Actor_STATUS_RESUMING:
+	case runtimeapipb.Actor_STATUS_RESUMING:
 		return store.StatusPending
-	case ateapipb.Actor_STATUS_RUNNING:
+	case runtimeapipb.Actor_STATUS_RUNNING:
 		return store.StatusRunning
-	case ateapipb.Actor_STATUS_SUSPENDED,
-		ateapipb.Actor_STATUS_PAUSED,
-		ateapipb.Actor_STATUS_SUSPENDING,
-		ateapipb.Actor_STATUS_PAUSING:
+	case runtimeapipb.Actor_STATUS_SUSPENDED,
+		runtimeapipb.Actor_STATUS_PAUSED,
+		runtimeapipb.Actor_STATUS_SUSPENDING,
+		runtimeapipb.Actor_STATUS_PAUSING:
 		return store.StatusPaused
 	default:
 		return store.StatusRunning

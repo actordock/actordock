@@ -1,6 +1,9 @@
 /bin/
+/runtime/bin/
+/.gocache/
+/.gotmp/
 /.ko/
-/.substrate/
+/.runtime-vendor/
 /hack/.env.local
 /e2e/.venv
 /e2e/**/__pycache__/

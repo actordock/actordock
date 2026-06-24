@@ -104,7 +104,7 @@ func TestPlatformFromEnvDefaultSandboxTimeout(t *testing.T) {
 
 func TestSchedulerFromEnvDefaults(t *testing.T) {
 	t.Setenv("SCHEDULER_REDIS_ADDR", "")
-	t.Setenv("SCHEDULER_ATEAPI_ADDR", "")
+	t.Setenv("SCHEDULER_RUNTIME_API_ADDR", "")
 	t.Setenv("SCHEDULER_POLL_INTERVAL", "")
 
 	cfg, err := SchedulerFromEnv()
@@ -114,8 +114,8 @@ func TestSchedulerFromEnvDefaults(t *testing.T) {
 	if cfg.RedisAddr != "redis.actordock.svc:6379" {
 		t.Fatalf("RedisAddr = %q", cfg.RedisAddr)
 	}
-	if cfg.ATEAPIAddr != "api.ate-system.svc:443" {
-		t.Fatalf("ATEAPIAddr = %q", cfg.ATEAPIAddr)
+	if cfg.RuntimeAPIAddr != "api.actordock-system.svc:443" {
+		t.Fatalf("RuntimeAPIAddr = %q", cfg.RuntimeAPIAddr)
 	}
 	if cfg.PollInterval != defaultSchedulerPollInterval {
 		t.Fatalf("PollInterval = %v, want %v", cfg.PollInterval, defaultSchedulerPollInterval)
@@ -124,7 +124,7 @@ func TestSchedulerFromEnvDefaults(t *testing.T) {
 
 func TestSchedulerFromEnvOverrides(t *testing.T) {
 	t.Setenv("SCHEDULER_REDIS_ADDR", "redis:6379")
-	t.Setenv("SCHEDULER_ATEAPI_ADDR", "ateapi:443")
+	t.Setenv("SCHEDULER_RUNTIME_API_ADDR", "runtime-api:443")
 	t.Setenv("SCHEDULER_POLL_INTERVAL", "10s")
 
 	cfg, err := SchedulerFromEnv()
@@ -134,8 +134,8 @@ func TestSchedulerFromEnvOverrides(t *testing.T) {
 	if cfg.RedisAddr != "redis:6379" {
 		t.Fatalf("RedisAddr = %q", cfg.RedisAddr)
 	}
-	if cfg.ATEAPIAddr != "ateapi:443" {
-		t.Fatalf("ATEAPIAddr = %q", cfg.ATEAPIAddr)
+	if cfg.RuntimeAPIAddr != "runtime-api:443" {
+		t.Fatalf("RuntimeAPIAddr = %q", cfg.RuntimeAPIAddr)
 	}
 	if cfg.PollInterval != 10*time.Second {
 		t.Fatalf("PollInterval = %v", cfg.PollInterval)

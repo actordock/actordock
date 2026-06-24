@@ -1,8 +1,8 @@
 Actordock stack installed in namespace {{ include "actordock-stack.namespace" . }}.
 
-{{- if .Values.substrate.enabled }}
+{{- if .Values.runtime.enabled }}
 
-Substrate CRs (WorkerPool + ActorTemplate) were applied. Ensure ate-system is
+Runtime CRs (WorkerPool + ActorTemplate) were applied. Ensure actordock-system is
 running and images in values.yaml match your registry before creating sandboxes.
 {{- end }}
 

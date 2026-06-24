@@ -1,6 +1,6 @@
 # actordock
 
-**Hundreds of agent sandboxes. A handful of Pods.** Actordock ships Agent Substrate worker multiplexing behind an E2B-compatible API—gVisor isolation, sub-second suspend/resume, RAM and filesystem snapshots on idle, 30×+ session oversubscription on warm Workers. Point the E2B SDK at your cluster; no code changes.
+**Hundreds of agent sandboxes. A handful of Pods.** Actordock multiplexes agent sandboxes behind an E2B-compatible API—gVisor isolation, sub-second suspend/resume, RAM and filesystem snapshots on idle, 30×+ session oversubscription on warm Workers. Point the E2B SDK at your cluster; no code changes.
 
 Self-hosted. Kubernetes-native. One command to deploy.
 
@@ -13,7 +13,7 @@ See [Quickstart](docs/user/quickstart.md) for prerequisites, env vars, and troub
 
 ## Architecture
 
-E2B-compatible agent sandboxes on Kubernetes: SDK REST/HTTP through Actordock (Platform, Router, Scheduler, Redis), execution on Agent Substrate (ateapi, atelet/ateom, envd).
+E2B-compatible agent sandboxes on Kubernetes: SDK REST/HTTP through Actordock (Platform, Router, Scheduler, Redis), execution on the vendored runtime (runtime-api, runtime-worker/runtime-sandbox, envd).
 
 ![Actordock architecture](docs/assets/architecture.png)
 

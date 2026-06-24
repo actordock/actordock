@@ -64,11 +64,11 @@ Work not scheduled for the current release. GitHub label: `backlog`.
 
 | Topic | Issues | Notes |
 |-------|--------|-------|
-| Volume runtime bind-mount | [#48](https://github.com/actordock/actordock/issues/48), [#49](https://github.com/actordock/actordock/issues/49) | Substrate per-actor bind mounts + actordock wiring; cross-sandbox file persistence |
-| Sandbox envVars (runtime) | [#74](https://github.com/actordock/actordock/issues/74), [#75](https://github.com/actordock/actordock/issues/75) | Substrate `CreateActor` env + actordock create wiring; not Redis-only |
-| Sandbox network egress | [#76](https://github.com/actordock/actordock/issues/76), [#77](https://github.com/actordock/actordock/issues/77) | Substrate atelet egress policy + actordock create/PUT wiring |
-| Substrate template build | [#59](https://github.com/actordock/actordock/issues/59) | User template build → ActorTemplate; build logs/files |
-| Substrate template metadata | [#60](https://github.com/actordock/actordock/issues/60) | CR fields + optional ateapi template catalog RPCs |
+| Volume runtime bind-mount | [#48](https://github.com/actordock/actordock/issues/48), [#49](https://github.com/actordock/actordock/issues/49) | Runtime per-actor bind mounts + actordock wiring; cross-sandbox file persistence |
+| Sandbox envVars (runtime) | [#74](https://github.com/actordock/actordock/issues/74), [#75](https://github.com/actordock/actordock/issues/75) | runtime `CreateActor` env + actordock create wiring; not Redis-only |
+| Sandbox network egress | [#76](https://github.com/actordock/actordock/issues/76), [#77](https://github.com/actordock/actordock/issues/77) | runtime-worker egress policy + actordock create/PUT wiring |
+| Runtime template build | [#59](https://github.com/actordock/actordock/issues/59) | User template build → ActorTemplate; build logs/files |
+| Runtime template metadata | [#60](https://github.com/actordock/actordock/issues/60) | CR fields + optional runtime-api template catalog RPCs |
 
 ## Release doc template
 

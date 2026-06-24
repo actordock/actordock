@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/actordock/actordock/internal/store"
-	"github.com/actordock/actordock/internal/substrate"
+	"github.com/actordock/actordock/internal/runtimeapi"
 )
 
 type metadataStore interface {
@@ -31,10 +31,10 @@ type actorDeleter interface {
 	DeleteSandbox(ctx context.Context, actorID string) error
 }
 
-// Purge deletes the substrate actor when present and removes Redis metadata.
+// Purge deletes the runtime actor when present and removes Redis metadata.
 // Missing actor or metadata is ignored (idempotent).
 func Purge(ctx context.Context, actors actorDeleter, st metadataStore, sandboxID string) error {
-	if err := actors.DeleteSandbox(ctx, sandboxID); err != nil && !errors.Is(err, substrate.ErrNotFound) {
+	if err := actors.DeleteSandbox(ctx, sandboxID); err != nil && !errors.Is(err, runtimeapi.ErrNotFound) {
 		return fmt.Errorf("delete actor: %w", err)
 	}
 	if err := st.Delete(ctx, sandboxID); err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -43,4 +43,4 @@ func Purge(ctx context.Context, actors actorDeleter, st metadataStore, sandboxID
 	return nil
 }
 
-var _ actorDeleter = (*substrate.Client)(nil)
+var _ actorDeleter = (*runtimeapi.Client)(nil)

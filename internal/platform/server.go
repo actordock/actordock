@@ -32,16 +32,16 @@ import (
 	"github.com/actordock/actordock/internal/logs"
 	"github.com/actordock/actordock/internal/metrics"
 	"github.com/actordock/actordock/internal/store"
-	"github.com/actordock/actordock/internal/substrate"
-	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/actordock/actordock/internal/runtimeapi"
+	"github.com/actordock/runtime/pkg/proto/runtimeapipb"
 	"github.com/google/uuid"
 )
 
 type sandboxClient interface {
 	CreateAndResumeSandbox(ctx context.Context, actorID, templateNamespace, templateName string) error
-	CreateSnapshot(ctx context.Context, actorID string) (substrate.SnapshotResult, error)
+	CreateSnapshot(ctx context.Context, actorID string) (runtimeapi.SnapshotResult, error)
 	DeleteSandbox(ctx context.Context, actorID string) error
-	GetActor(ctx context.Context, actorID string) (ateapipb.Actor_Status, error)
+	GetActor(ctx context.Context, actorID string) (runtimeapipb.Actor_Status, error)
 	GetActorBackend(ctx context.Context, actorID string, envdPort int) (string, error)
 	ResumeSandboxBackend(ctx context.Context, actorID string, envdPort int) (backend string, waitEnvd bool, err error)
 	SuspendSandbox(ctx context.Context, actorID string) error
@@ -429,7 +429,7 @@ func (s *Server) handleConnectSandbox(w http.ResponseWriter, r *http.Request) {
 	wasPaused := sb.Status == store.StatusPaused
 	if wasPaused {
 		if err := s.actors.ResumeSandbox(ctx, sb.ActorID); err != nil {
-			if errors.Is(err, substrate.ErrNotFound) {
+			if errors.Is(err, runtimeapi.ErrNotFound) {
 				writeAPIError(w, http.StatusNotFound, "sandbox not found")
 				return
 			}
@@ -502,7 +502,7 @@ func (s *Server) handlePauseSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.actors.SuspendSandbox(ctx, sb.ActorID); err != nil {
-		if errors.Is(err, substrate.ErrNotFound) {
+		if errors.Is(err, runtimeapi.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "sandbox not found")
 			return
 		}
@@ -564,7 +564,7 @@ func (s *Server) handleResumeSandbox(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.actors.ResumeSandbox(ctx, sb.ActorID); err != nil {
-		if errors.Is(err, substrate.ErrNotFound) {
+		if errors.Is(err, runtimeapi.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "sandbox not found")
 			return
 		}
@@ -620,7 +620,7 @@ func (s *Server) handleDeleteSandbox(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	if err := s.actors.DeleteSandbox(ctx, sandboxID); err != nil {
-		if errors.Is(err, substrate.ErrNotFound) {
+		if errors.Is(err, runtimeapi.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "sandbox not found")
 			return
 		}
@@ -883,7 +883,7 @@ func (s *Server) resolveSandbox(ctx context.Context, sandboxID string) (sandboxD
 
 func (s *Server) syncSandboxRecord(ctx context.Context, sb store.Sandbox) (sandboxDetailResponse, error) {
 	actorStatus, err := s.actors.GetActor(ctx, sb.ActorID)
-	if errors.Is(err, substrate.ErrNotFound) {
+	if errors.Is(err, runtimeapi.ErrNotFound) {
 		if delErr := s.store.Delete(ctx, sb.SandboxID); delErr != nil && !errors.Is(delErr, store.ErrNotFound) {
 			s.logger.Error("purge stale sandbox", "sandbox_id", sb.SandboxID, "err", delErr)
 		}
@@ -909,7 +909,7 @@ func (s *Server) syncSandboxRecord(ctx context.Context, sb store.Sandbox) (sandb
 		}
 	}
 
-	return buildSandboxDetail(s.cfg, sb, substrate.ActorStateE2B(actorStatus), s.templateAlias(ctx, sb.Template)), nil
+	return buildSandboxDetail(s.cfg, sb, runtimeapi.ActorStateE2B(actorStatus), s.templateAlias(ctx, sb.Template)), nil
 }
 
 func (s *Server) requireAPIKey(next http.Handler) http.Handler {
@@ -999,8 +999,8 @@ func resolveResumeOnTimeout(currentOnTimeout string, req resumeSandboxRequest) (
 	return store.OnTimeoutKill, nil
 }
 
-// Ensure substrate.Client satisfies sandboxClient.
-var _ sandboxClient = (*substrate.Client)(nil)
+// Ensure runtimeapi.Client satisfies sandboxClient.
+var _ sandboxClient = (*runtimeapi.Client)(nil)
 
 // Ensure store.Redis satisfies platformStore.
 var _ platformStore = (*store.Redis)(nil)

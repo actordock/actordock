@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/actordock/actordock/internal/store"
-	"github.com/actordock/actordock/internal/substrate"
+	"github.com/actordock/actordock/internal/runtimeapi"
 )
 
 type fakeActorDeleter struct {
@@ -68,7 +68,7 @@ func TestPurge(t *testing.T) {
 func TestPurgeActorMissing(t *testing.T) {
 	t.Parallel()
 
-	actors := &fakeActorDeleter{err: substrate.ErrNotFound}
+	actors := &fakeActorDeleter{err: runtimeapi.ErrNotFound}
 	st := &fakeMetadataStore{}
 	if err := Purge(context.Background(), actors, st, "sb-1"); err != nil {
 		t.Fatalf("Purge: %v", err)

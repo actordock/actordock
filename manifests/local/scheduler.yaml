@@ -35,7 +35,7 @@ spec:
               value: "info"
             - name: SCHEDULER_REDIS_ADDR
               value: "redis.actordock.svc:6379"
-            - name: SCHEDULER_ATEAPI_ADDR
-              value: "api.ate-system.svc:443"
+            - name: SCHEDULER_RUNTIME_API_ADDR
+              value: "api.actordock-system.svc:443"
             - name: SCHEDULER_POLL_INTERVAL
               value: "5s"

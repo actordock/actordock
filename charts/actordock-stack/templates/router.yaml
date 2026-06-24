@@ -25,8 +25,8 @@ spec:
           env:
             - name: ROUTER_LISTEN_ADDR
               value: ":8081"
-            - name: ACTORDOCK_ATEAPI_ADDR
-              value: {{ .Values.actordock.ateapiAddr | quote }}
+            - name: ACTORDOCK_RUNTIME_API_ADDR
+              value: {{ .Values.actordock.runtimeAPIAddr | quote }}
             - name: ACTORDOCK_DOMAIN
               value: {{ .Values.actordock.domain | quote }}
             - name: ACTORDOCK_ENVD_PORT

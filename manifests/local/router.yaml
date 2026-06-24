@@ -36,8 +36,8 @@ spec:
           env:
             - name: ROUTER_LISTEN_ADDR
               value: ":8081"
-            - name: ACTORDOCK_ATEAPI_ADDR
-              value: "api.ate-system.svc:443"
+            - name: ACTORDOCK_RUNTIME_API_ADDR
+              value: "api.actordock-system.svc:443"
             - name: ACTORDOCK_DOMAIN
               value: "localhost"
             - name: ACTORDOCK_ENVD_PORT

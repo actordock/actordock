@@ -24,8 +24,8 @@ spec:
               value: {{ .Values.scheduler.logLevel | quote }}
             - name: SCHEDULER_REDIS_ADDR
               value: {{ include "actordock-stack.redisAddr" . | quote }}
-            - name: SCHEDULER_ATEAPI_ADDR
-              value: {{ .Values.actordock.ateapiAddr | quote }}
+            - name: SCHEDULER_RUNTIME_API_ADDR
+              value: {{ .Values.actordock.runtimeAPIAddr | quote }}
             - name: SCHEDULER_POLL_INTERVAL
               value: {{ .Values.scheduler.pollInterval | quote }}
           {{- with .Values.scheduler.resources }}

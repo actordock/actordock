@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/internal/config"
-	v1alpha1 "github.com/agent-substrate/substrate/pkg/api/v1alpha1"
+	v1alpha1 "github.com/actordock/runtime/pkg/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

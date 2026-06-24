@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	connectrpc.com/connect v1.20.0
-	github.com/agent-substrate/substrate v0.0.0-20260618175834-9f8475493b6e
+	github.com/actordock/runtime v0.0.0
 	github.com/alicebob/miniredis/v2 v2.37.0
 	github.com/creack/pty v1.1.24
 	github.com/google/uuid v1.6.0
@@ -66,3 +66,5 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+replace github.com/actordock/runtime => ./runtime

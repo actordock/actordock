@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/internal/store"
-	"github.com/actordock/actordock/internal/substrate"
+	"github.com/actordock/actordock/internal/runtimeapi"
 )
 
 type fakeStore struct {
@@ -194,7 +194,7 @@ func TestExpireSandboxPauseActorMissing(t *testing.T) {
 		OnTimeout: store.OnTimeoutPause,
 		Status:    store.StatusRunning,
 	}
-	actors := &fakeActors{suspendErr: substrate.ErrNotFound}
+	actors := &fakeActors{suspendErr: runtimeapi.ErrNotFound}
 	expirer := NewExpirer(st, actors)
 
 	if err := expirer.ExpireSandbox(context.Background(), "sb-1"); err != nil {
@@ -260,7 +260,7 @@ func TestExpireSandboxActorMissing(t *testing.T) {
 		ExpiresAt: now.Add(-time.Minute),
 		OnTimeout: store.OnTimeoutKill,
 	}
-	actors := &fakeActors{err: substrate.ErrNotFound}
+	actors := &fakeActors{err: runtimeapi.ErrNotFound}
 	expirer := NewExpirer(st, actors)
 
 	if err := expirer.ExpireSandbox(context.Background(), "sb-1"); err != nil {

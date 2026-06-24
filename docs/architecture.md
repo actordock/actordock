@@ -10,29 +10,29 @@ Ships as a single install. Exposes an E2B-compatible API so existing SDKs work w
 
 ```
 E2B SDK
-  ├─ REST → Platform ──gRPC──→ ateapi ──→ atelet ──→ envd (Worker)
-  └─ HTTP → Router ──gRPC──→ ateapi (ResumeActor)
+  ├─ REST → Platform ──gRPC──→ runtime-api ──→ runtime-worker ──→ envd (Worker)
+  └─ HTTP → Router ──gRPC──→ runtime-api (ResumeActor)
                 │                    │
                 └──── proxy ─────────┘→ envd :49983
                 ↑
           Scheduler ↔ Redis
                 ↑
-         ActorTemplate CRD
+         ActorTemplate CRD (actordock.dev)
 ```
 
 | Layer | Component | Role |
 |-------|-----------|------|
-| Actordock | Platform | E2B REST → ateapi |
+| Actordock | Platform | E2B REST → runtime-api |
 | | Router | E2B ingress: parse `{id}.domain`, ResumeActor, proxy to Worker:49983 |
-| | Scheduler | TTL, autoPause → ateapi Suspend/Delete |
+| | Scheduler | TTL, autoPause → runtime-api Suspend/Delete |
 | | envd | Process + filesystem in sandbox |
 | | Redis | Sandbox metadata |
-| Substrate (runtime) | ateapi | Actor lifecycle, resume |
-| | atelet / ateom | gVisor workers |
-| | atenet | Internal actor mesh (not on E2B path) |
+| Runtime (`runtime/`) | runtime-api | Actor lifecycle, resume |
+| | runtime-worker / runtime-sandbox | gVisor workers |
+| | runtime-net | Internal actor mesh (not on E2B path) |
 | | rustfs | Snapshots |
 
-Actordock owns the sandbox API, E2B routing, lifecycle, and envd. [Agent Substrate](https://github.com/agent-substrate/substrate) provides workers and actor execution. No Substrate fork required.
+Actordock owns the sandbox API, E2B routing, lifecycle, and envd. The vendored `runtime/` tree provides workers and actor execution (derived from Actordock Runtime).
 
 ## Routing
 
@@ -40,10 +40,10 @@ E2B clients use one hop: **Actordock Router**.
 
 1. SDK sends HTTP to `{sandboxId}.{domain}:49983`
 2. Router parses sandbox/actor id
-3. Router calls ateapi `ResumeActor` if suspended
+3. Router calls runtime-api `ResumeActor` if suspended
 4. Router proxies to worker IP:49983 (envd)
 
-**atenet** ships with Substrate for its native DNS mesh (`{id}.actors.resources.substrate…`). E2B traffic does not go through atenet. Substrate is not modified.
+**runtime-net** provides the native DNS mesh (`{id}.actors.actordock.dev`). E2B traffic does not go through runtime-net.
 
 ## Flows
 
@@ -58,4 +58,4 @@ E2B clients use one hop: **Actordock Router**.
 helm install actordock ./charts/actordock-stack
 ```
 
-Existing Substrate cluster: `./hack/install-local.sh --skip-substrate`
+Runtime already installed: `./hack/install-local.sh --skip-runtime`

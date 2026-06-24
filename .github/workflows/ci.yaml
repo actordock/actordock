@@ -80,7 +80,7 @@ jobs:
           cache: npm
           cache-dependency-path: dashboard/web/package-lock.json
 
-      - name: Install Kind cluster + Substrate + Actordock
+      - name: Install Kind cluster + runtime + Actordock
         run: ./hack/install-local.sh
 
       - name: Setup Python

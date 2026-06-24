@@ -35,7 +35,7 @@ import (
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/envd"
 	"github.com/actordock/actordock/internal/store"
-	"github.com/actordock/actordock/internal/substrate"
+	"github.com/actordock/actordock/internal/runtimeapi"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -155,7 +155,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	// Proxies all envd traffic including Connect RPC (e.g. /process.Process/Connect).
 	backend, waitEnvd, err := s.actors.ResumeSandboxBackend(r.Context(), sandboxID, s.cfg.EnvdPort)
 	if err != nil {
-		if errors.Is(err, substrate.ErrNotFound) {
+		if errors.Is(err, runtimeapi.ErrNotFound) {
 			writeAPIError(w, http.StatusNotFound, "sandbox not found")
 			return
 		}
@@ -281,5 +281,5 @@ func h2cHandler(next http.Handler) http.Handler {
 // Ensure store.Redis satisfies sandboxPolicyReader.
 var _ sandboxPolicyReader = (*store.Redis)(nil)
 
-// Ensure substrate.Client satisfies sandboxBackendResolver.
-var _ sandboxBackendResolver = (*substrate.Client)(nil)
+// Ensure runtimeapi.Client satisfies sandboxBackendResolver.
+var _ sandboxBackendResolver = (*runtimeapi.Client)(nil)

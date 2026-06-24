@@ -25,7 +25,7 @@ import (
 	"github.com/actordock/actordock/internal/redis"
 	"github.com/actordock/actordock/internal/scheduler"
 	"github.com/actordock/actordock/internal/store"
-	"github.com/actordock/actordock/internal/substrate"
+	"github.com/actordock/actordock/internal/runtimeapi"
 )
 
 func main() {
@@ -42,7 +42,7 @@ func run(ctx context.Context) error {
 	}
 	logger := log.New(cfg.LogLevel)
 
-	ate, err := substrate.Dial(cfg.ATEAPIAddr)
+	ate, err := runtimeapi.Dial(cfg.RuntimeAPIAddr)
 	if err != nil {
 		return err
 	}

@@ -25,7 +25,7 @@ import (
 
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/store"
-	"github.com/actordock/actordock/internal/substrate"
+	"github.com/actordock/actordock/internal/runtimeapi"
 	"github.com/google/uuid"
 )
 
@@ -74,11 +74,11 @@ func (s *Server) handleCreateSandboxSnapshot(w http.ResponseWriter, r *http.Requ
 	}
 
 	result, err := s.actors.CreateSnapshot(ctx, sb.ActorID)
-	if errors.Is(err, substrate.ErrNotFound) {
+	if errors.Is(err, runtimeapi.ErrNotFound) {
 		writeAPIError(w, http.StatusNotFound, "sandbox not found")
 		return
 	}
-	if errors.Is(err, substrate.ErrInvalidState) {
+	if errors.Is(err, runtimeapi.ErrInvalidState) {
 		writeAPIError(w, http.StatusBadRequest, "sandbox must be running to create a snapshot")
 		return
 	}

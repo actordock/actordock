@@ -30,10 +30,10 @@ import (
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/envd"
 	"github.com/actordock/actordock/internal/store"
-	"github.com/actordock/actordock/internal/substrate"
+	"github.com/actordock/actordock/internal/runtimeapi"
 	processv1 "github.com/actordock/actordock/pkg/envd/process"
 	"github.com/actordock/actordock/pkg/envd/process/processv1connect"
-	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/actordock/runtime/pkg/proto/runtimeapipb"
 )
 
 type fakeActors struct {
@@ -52,9 +52,9 @@ type fakeActors struct {
 	createSnapshotErr     error
 	getErr                error
 	backendErr            error
-	snapshotResult        substrate.SnapshotResult
-	actorStatuses         map[string]ateapipb.Actor_Status
-	defaultStatus         ateapipb.Actor_Status
+	snapshotResult        runtimeapi.SnapshotResult
+	actorStatuses         map[string]runtimeapipb.Actor_Status
+	defaultStatus         runtimeapipb.Actor_Status
 }
 
 func (f *fakeActors) CreateAndResumeSandbox(_ context.Context, actorID, templateNamespace, templateName string) error {
@@ -79,13 +79,13 @@ func (f *fakeActors) ResumeSandbox(_ context.Context, actorID string) error {
 	return f.resumeErr
 }
 
-func (f *fakeActors) CreateSnapshot(_ context.Context, actorID string) (substrate.SnapshotResult, error) {
+func (f *fakeActors) CreateSnapshot(_ context.Context, actorID string) (runtimeapi.SnapshotResult, error) {
 	f.lastSnapshotActor = actorID
 	if f.createSnapshotErr != nil {
-		return substrate.SnapshotResult{}, f.createSnapshotErr
+		return runtimeapi.SnapshotResult{}, f.createSnapshotErr
 	}
 	if f.snapshotResult.SnapshotURI == "" {
-		return substrate.SnapshotResult{
+		return runtimeapi.SnapshotResult{
 			SnapshotURI:  "gs://bucket/actordock/" + actorID + "/snap",
 			SnapshotType: "SNAPSHOT_TYPE_EXTERNAL",
 		}, nil
@@ -93,19 +93,19 @@ func (f *fakeActors) CreateSnapshot(_ context.Context, actorID string) (substrat
 	return f.snapshotResult, nil
 }
 
-func (f *fakeActors) GetActor(_ context.Context, actorID string) (ateapipb.Actor_Status, error) {
+func (f *fakeActors) GetActor(_ context.Context, actorID string) (runtimeapipb.Actor_Status, error) {
 	if f.getErr != nil {
-		return ateapipb.Actor_STATUS_UNSPECIFIED, f.getErr
+		return runtimeapipb.Actor_STATUS_UNSPECIFIED, f.getErr
 	}
 	if f.actorStatuses != nil {
 		if status, ok := f.actorStatuses[actorID]; ok {
 			return status, nil
 		}
 	}
-	if f.defaultStatus != ateapipb.Actor_STATUS_UNSPECIFIED {
+	if f.defaultStatus != runtimeapipb.Actor_STATUS_UNSPECIFIED {
 		return f.defaultStatus, nil
 	}
-	return ateapipb.Actor_STATUS_RUNNING, nil
+	return runtimeapipb.Actor_STATUS_RUNNING, nil
 }
 
 func (f *fakeActors) GetActorBackend(_ context.Context, actorID string, _ int) (string, error) {
@@ -1294,7 +1294,7 @@ func TestDeleteSandbox(t *testing.T) {
 
 func TestDeleteSandboxNotFound(t *testing.T) {
 	t.Parallel()
-	actors := &fakeActors{deleteErr: substrate.ErrNotFound}
+	actors := &fakeActors{deleteErr: runtimeapi.ErrNotFound}
 	srv := NewServer(testConfig(), actors, newFakeStore(), slog.Default())
 
 	req := httptest.NewRequest(http.MethodDelete, "/sandboxes/missing", nil)
@@ -1343,7 +1343,7 @@ func TestGetSandbox(t *testing.T) {
 		ExpiresAt: expiresAt,
 		Status:    store.StatusRunning,
 	}
-	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
+	actors := &fakeActors{defaultStatus: runtimeapipb.Actor_STATUS_RUNNING}
 	srv := NewServer(testConfig(), actors, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
@@ -1385,8 +1385,8 @@ func TestGetSandboxPaused(t *testing.T) {
 		Status:     store.StatusPaused,
 	}
 	actors := &fakeActors{
-		actorStatuses: map[string]ateapipb.Actor_Status{
-			"sb-1": ateapipb.Actor_STATUS_SUSPENDED,
+		actorStatuses: map[string]runtimeapipb.Actor_Status{
+			"sb-1": runtimeapipb.Actor_STATUS_SUSPENDED,
 		},
 	}
 	srv := NewServer(testConfig(), actors, st, slog.Default())
@@ -1441,7 +1441,7 @@ func TestPauseSandbox(t *testing.T) {
 
 func TestPauseSandboxNotFound(t *testing.T) {
 	t.Parallel()
-	actors := &fakeActors{suspendErr: substrate.ErrNotFound}
+	actors := &fakeActors{suspendErr: runtimeapi.ErrNotFound}
 	srv := NewServer(testConfig(), actors, newFakeStore(), slog.Default())
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/missing/pause", nil)
@@ -1731,7 +1731,7 @@ func TestGetSandboxSyncsAfterAutoResume(t *testing.T) {
 		OnTimeout: store.OnTimeoutPause,
 		Status:    store.StatusPaused,
 	}
-	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
+	actors := &fakeActors{defaultStatus: runtimeapipb.Actor_STATUS_RUNNING}
 	srv := NewServer(testConfig(), actors, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 
@@ -1764,8 +1764,8 @@ func TestGetSandboxResuming(t *testing.T) {
 		Status:    store.StatusRunning,
 	}
 	actors := &fakeActors{
-		actorStatuses: map[string]ateapipb.Actor_Status{
-			"sb-1": ateapipb.Actor_STATUS_RESUMING,
+		actorStatuses: map[string]runtimeapipb.Actor_Status{
+			"sb-1": runtimeapipb.Actor_STATUS_RESUMING,
 		},
 	}
 	srv := NewServer(testConfig(), actors, st, slog.Default())
@@ -1802,7 +1802,7 @@ func TestGetSandboxEndAtAfterSetTimeout(t *testing.T) {
 		ExpiresAt: createdAt.Add(60 * time.Second),
 		Status:    store.StatusRunning,
 	}
-	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
+	actors := &fakeActors{defaultStatus: runtimeapipb.Actor_STATUS_RUNNING}
 	srv := NewServer(testConfig(), actors, st, slog.Default())
 	extendAt := createdAt.Add(30 * time.Second)
 	srv.nowFunc = func() time.Time { return extendAt }
@@ -1849,7 +1849,7 @@ func TestGetSandboxActorGone(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Template: "base", CreatedAt: time.Now()}
-	actors := &fakeActors{getErr: substrate.ErrNotFound}
+	actors := &fakeActors{getErr: runtimeapi.ErrNotFound}
 	srv := NewServer(testConfig(), actors, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodGet, "/sandboxes/sb-1", nil)
@@ -1942,7 +1942,7 @@ func TestPutSandboxNetworkRoundTrip(t *testing.T) {
 		ExpiresAt: expiresAt,
 		Status:    store.StatusRunning,
 	}
-	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{defaultStatus: runtimeapipb.Actor_STATUS_RUNNING}, st, slog.Default())
 
 	putBody := []byte(`{
 		"allowOut":["1.1.1.1"],
@@ -2003,7 +2003,7 @@ func TestPutSandboxNetworkClearsExistingRules(t *testing.T) {
 		},
 		AllowInternetAccess: boolPtr(false),
 	}
-	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{defaultStatus: runtimeapipb.Actor_STATUS_RUNNING}, st, slog.Default())
 
 	putReq := httptest.NewRequest(http.MethodPut, "/sandboxes/sb-1/network", bytes.NewReader([]byte(`{}`)))
 	putReq.Header.Set("Content-Type", "application/json")
@@ -2051,7 +2051,7 @@ func TestPutSandboxNetworkInvalidBody(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Status: store.StatusRunning}
-	srv := NewServer(testConfig(), &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}, st, slog.Default())
+	srv := NewServer(testConfig(), &fakeActors{defaultStatus: runtimeapipb.Actor_STATUS_RUNNING}, st, slog.Default())
 
 	cases := []struct {
 		name string
@@ -2087,7 +2087,7 @@ func TestCreateSandboxSnapshot(t *testing.T) {
 		Template:  "base",
 		Status:    store.StatusRunning,
 	}
-	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
+	actors := &fakeActors{defaultStatus: runtimeapipb.Actor_STATUS_RUNNING}
 	srv := NewServer(testConfig(), actors, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/snapshots", bytes.NewReader([]byte(`{}`)))
@@ -2168,7 +2168,7 @@ func TestCreateSandboxSnapshotInvalidState(t *testing.T) {
 	t.Parallel()
 	st := newFakeStore()
 	st.records["sb-1"] = store.Sandbox{SandboxID: "sb-1", ActorID: "sb-1", Status: store.StatusRunning}
-	actors := &fakeActors{createSnapshotErr: substrate.ErrInvalidState}
+	actors := &fakeActors{createSnapshotErr: runtimeapi.ErrInvalidState}
 	srv := NewServer(testConfig(), actors, st, slog.Default())
 
 	req := httptest.NewRequest(http.MethodPost, "/sandboxes/sb-1/snapshots", bytes.NewReader([]byte(`{}`)))

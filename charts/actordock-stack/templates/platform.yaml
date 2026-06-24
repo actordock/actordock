@@ -31,8 +31,8 @@ spec:
                 secretKeyRef:
                   name: {{ include "actordock-stack.apiKeySecretName" . }}
                   key: ACTORDOCK_API_KEY
-            - name: ACTORDOCK_ATEAPI_ADDR
-              value: {{ .Values.actordock.ateapiAddr | quote }}
+            - name: ACTORDOCK_RUNTIME_API_ADDR
+              value: {{ .Values.actordock.runtimeAPIAddr | quote }}
             - name: ACTORDOCK_DOMAIN
               value: {{ .Values.actordock.domain | quote }}
             - name: ACTORDOCK_TEMPLATE_NAMESPACE

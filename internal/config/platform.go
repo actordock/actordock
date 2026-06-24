@@ -24,7 +24,7 @@ import (
 type Platform struct {
 	Server
 	APIKey                string
-	ATEAPIAddr            string
+	RuntimeAPIAddr            string
 	RedisAddr             string
 	Domain                string
 	TemplateNamespace     string
@@ -44,7 +44,7 @@ func PlatformFromEnv() (Platform, error) {
 	cfg := Platform{
 		Server:            server,
 		APIKey:            envOrDefault("ACTORDOCK_API_KEY", "dev"),
-		ATEAPIAddr:        envOrDefault("ACTORDOCK_ATEAPI_ADDR", "api.ate-system.svc:443"),
+		RuntimeAPIAddr:        envOrDefault("ACTORDOCK_RUNTIME_API_ADDR", "api.actordock-system.svc:443"),
 		RedisAddr:         envOrDefault("ACTORDOCK_REDIS_ADDR", "redis.actordock.svc:6379"),
 		Domain:            envOrDefault("ACTORDOCK_DOMAIN", "localhost"),
 		TemplateNamespace: envOrDefault("ACTORDOCK_TEMPLATE_NAMESPACE", "actordock"),

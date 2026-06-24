@@ -23,7 +23,7 @@ import (
 
 	"github.com/actordock/actordock/internal/config"
 	"github.com/actordock/actordock/internal/store"
-	v1alpha1 "github.com/agent-substrate/substrate/pkg/api/v1alpha1"
+	v1alpha1 "github.com/actordock/runtime/pkg/api/v1alpha1"
 	"github.com/google/uuid"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"

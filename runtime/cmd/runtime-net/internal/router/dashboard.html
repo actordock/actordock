@@ -1,0 +1,458 @@
+<!--
+ Copyright 2026 Google LLC
+
+ Licensed under the Apache License, Version 2.0 (the "License");
+ you may not use this file except in compliance with the License.
+ You may obtain a copy of the License at
+
+     http://www.apache.org/licenses/LICENSE-2.0
+
+ Unless required by applicable law or agreed to in writing, software
+ distributed under the License is distributed on an "AS IS" BASIS,
+ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ See the License for the specific language governing permissions and
+ limitations under the License.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>runtime-net Router Status Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient-start: #0f172a;
+            --bg-gradient-end: #020617;
+            --card-bg: rgba(30, 41, 59, 0.4);
+            --card-border: rgba(255, 255, 255, 0.05);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-glow: rgba(56, 189, 248, 0.15);
+            --status-active: #10b981;
+            --badge-bg: rgba(56, 189, 248, 0.1);
+            --badge-text: #38bdf8;
+            --row-hover: rgba(255, 255, 255, 0.02);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, var(--bg-gradient-start), var(--bg-gradient-end));
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 2rem;
+            line-height: 1.5;
+            overflow-x: hidden;
+        }
+
+        .dashboard-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .pulse-indicator {
+            width: 12px;
+            height: 12px;
+            background-color: var(--status-active);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--status-active);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.5; }
+            100% { transform: scale(0.95); opacity: 1; }
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px var(--accent-glow);
+        }
+
+        .card-title {
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+
+        .metadata-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.75rem;
+            font-size: 0.95rem;
+        }
+
+        .metadata-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .label {
+            color: var(--text-secondary);
+        }
+
+        .value {
+            font-weight: 500;
+            word-break: break-all;
+            text-align: right;
+        }
+
+        .badge {
+            background: var(--badge-bg);
+            color: var(--badge-text);
+            padding: 0.15rem 0.5rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-family: monospace;
+        }
+
+        .log-section {
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .search-bar {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--card-border);
+            color: var(--text-primary);
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            width: 100%;
+            max-width: 300px;
+            outline: none;
+        }
+
+        .search-bar:focus {
+            border-color: var(--badge-text);
+        }
+
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.95rem;
+            text-align: left;
+        }
+
+        th, td {
+            padding: 0.85rem 1rem;
+            border-bottom: 1px solid var(--card-border);
+        }
+
+        th {
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: rgba(15, 23, 42, 0.4);
+        }
+
+        tbody tr {
+            transition: background-color 0.2s ease;
+        }
+
+        tbody tr:hover {
+            background-color: var(--row-hover);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-container">
+        <header>
+            <div class="brand">
+                <div class="pulse-indicator"></div>
+                <h1>runtime-net Router Status</h1>
+            </div>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <select id="refresh-interval" onchange="setRefresh()" class="search-bar" style="max-width: 140px;">
+                    <option value="0">Manual Refresh</option>
+                    <option value="5">Refresh: 5s</option>
+                    <option value="10" selected>Refresh: 10s</option>
+                    <option value="30">Refresh: 30s</option>
+                </select>
+                <span class="badge">Build: {{ .BuildTag }}</span>
+            </div>
+        </header>
+
+        <div class="dashboard-grid">
+            <div class="card">
+                <div class="card-title">Infrastructure details</div>
+                <div class="metadata-item">
+                    <span class="label">Router Service IP</span>
+                    <span class="value badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">{{ .RouterClusterIP }}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="label">Namespace Context</span>
+                    <span class="value">{{ .Namespace }}</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Component Network Allocation</div>
+                <div class="metadata-item">
+                    <span class="label">Workload Port (Http Envoy)</span>
+                    <span class="value">{{ .HttpPort }}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="label">xDS Interface Port</span>
+                    <span class="value">{{ .XdsPort }}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="label">External Processing Port</span>
+                    <span class="value">{{ .ExtprocPort }}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="label">HTTP Status Port</span>
+                    <span class="value">{{ .StatusPort }}</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">System Component Health Checks</div>
+
+                <div class="metadata-item">
+                    <span class="label">Envoy Health</span>
+                    {{ if .Health.Envoy.Healthy }}
+                    <span class="value badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">Healthy</span>
+                    {{ else }}
+                    <span class="value badge" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;">Degraded</span>
+                    {{ end }}
+                </div>
+                <div class="metadata-item" style="margin-top: -0.25rem; margin-bottom: 0.5rem; font-size: 0.8rem;">
+                    <span class="label">Message / Err:</span>
+                    <span class="value" style="color: var(--text-secondary);">{{ .Health.Envoy.Message }}</span>
+                </div>
+                <div class="metadata-item" style="font-size: 0.75rem; color: var(--text-secondary);">
+                    <span>Ok: {{ .Health.Envoy.SuccessCount }} | Err: {{ .Health.Envoy.FailureCount }}</span>
+                    <span>LKG: {{ if not .Health.Envoy.LastSuccess.IsZero }}{{ .Health.Envoy.LastSuccess.Format "15:04:05" }}{{ else }}N/A{{ end }}</span>
+                </div>
+
+                <div style="border-bottom: 1px solid var(--card-border); margin: 0.5rem 0;"></div>
+
+                <div class="metadata-item">
+                    <span class="label">Kubernetes API</span>
+                    {{ if .Health.K8sAPI.Healthy }}
+                    <span class="value badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">Healthy</span>
+                    {{ else }}
+                    <span class="value badge" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;">Degraded</span>
+                    {{ end }}
+                </div>
+                <div class="metadata-item" style="margin-top: -0.25rem; margin-bottom: 0.5rem; font-size: 0.8rem;">
+                    <span class="label">Message / Err:</span>
+                    <span class="value" style="color: var(--text-secondary);">{{ .Health.K8sAPI.Message }}</span>
+                </div>
+                <div class="metadata-item" style="font-size: 0.75rem; color: var(--text-secondary);">
+                    <span>Ok: {{ .Health.K8sAPI.SuccessCount }} | Err: {{ .Health.K8sAPI.FailureCount }}</span>
+                    <span>LKG: {{ if not .Health.K8sAPI.LastSuccess.IsZero }}{{ .Health.K8sAPI.LastSuccess.Format "15:04:05" }}{{ else }}N/A{{ end }}</span>
+                </div>
+
+                <div style="border-bottom: 1px solid var(--card-border); margin: 0.5rem 0;"></div>
+
+                <div class="metadata-item">
+                    <span class="label">ATE API gRPC</span>
+                    {{ if .Health.AteAPI.Healthy }}
+                    <span class="value badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">Healthy</span>
+                    {{ else }}
+                    <span class="value badge" style="background: rgba(239, 68, 68, 0.1); color: #ef4444;">Degraded</span>
+                    {{ end }}
+                </div>
+                <div class="metadata-item" style="margin-top: -0.25rem; margin-bottom: 0.5rem; font-size: 0.8rem;">
+                    <span class="label">Message / Err:</span>
+                    <span class="value" style="color: var(--text-secondary);">{{ .Health.AteAPI.Message }}</span>
+                </div>
+                <div class="metadata-item" style="font-size: 0.75rem; color: var(--text-secondary);">
+                    <span>Ok: {{ .Health.AteAPI.SuccessCount }} | Err: {{ .Health.AteAPI.FailureCount }}</span>
+                    <span>LKG: {{ if not .Health.AteAPI.LastSuccess.IsZero }}{{ .Health.AteAPI.LastSuccess.Format "15:04:05" }}{{ else }}N/A{{ end }}</span>
+                </div>
+            </div>
+
+            <div class="card" style="grid-column: 1 / -1;">
+                <div class="card-title">Global Arguments & Configuration</div>
+                <div class="metadata-item" style="flex-direction: column; align-items: flex-start; gap: 0.5rem;">
+                    <span class="label">CLI Arguments (os.Args)</span>
+                    <span class="value badge" style="font-family: monospace; text-align: left; width: 100%;">{{ .Args }}</span>
+                </div>
+                <div class="metadata-item" style="flex-direction: column; align-items: flex-start; gap: 0.5rem; margin-top: 0.5rem;">
+                    <span class="label">Command Flags</span>
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+                        {{ range $k, $v := .Flags }}
+                            <span class="badge">{{ $k }}={{ $v }}</span>
+                        {{ end }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="log-section" style="margin-bottom: 2rem;">
+            <div class="log-header">
+                <h2>Active Actor Templates</h2>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Namespace</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{ range .Templates }}
+                        <tr>
+                            <td style="font-weight: 600;">{{ .Name }}</td>
+                            <td>{{ .Namespace }}</td>
+                        </tr>
+                        {{ else }}
+                        <tr>
+                            <td colspan="2" class="empty-state">No ActorTemplates are currently being handled.</td>
+                        </tr>
+                        {{ end }}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="log-section">
+            <div class="log-header">
+                <h2>Recent 100 Processing Inquiries Served</h2>
+                <input type="text" id="query-filter" onkeyup="filterTable()" placeholder="Filter by path, host, client, target..." class="search-bar">
+            </div>
+
+            <div class="table-container">
+                <table id="queries-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Client / Authority</th>
+                            <th>Path / Route</th>
+                            <th>Method</th>
+                            <th>Matching Action Result</th>
+                            <th>Selected Target IP</th>
+                            <th>Latency</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{ range .Queries }}
+                        <tr>
+                            <td class="timestamp">{{ .Timestamp }}</td>
+                            <td>{{ .Client }}</td>
+                            <td style="font-family: monospace; font-weight: 500;">{{ .Path }}</td>
+                            <td><span class="badge">{{ .Method }}</span></td>
+                            <td>{{ .Action }}</td>
+                            <td><span class="badge" style="background: rgba(16, 185, 129, 0.1); color: #10b981;">{{ .Target }}</span></td>
+                            <td>{{ .Duration }}</td>
+                        </tr>
+                        {{ else }}
+                        <tr>
+                            <td colspan="7" class="empty-state">No queries have been processed yet.</td>
+                        </tr>
+                        {{ end }}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function filterTable() {
+            var input, filter, table, tr, td, i, j, txtValue;
+            input = document.getElementById("query-filter");
+            filter = input.value.toUpperCase();
+            table = document.getElementById("queries-table");
+            tr = table.getElementsByTagName("tr");
+
+            for (i = 1; i < tr.length; i++) {
+                tr[i].style.display = "none";
+                td = tr[i].getElementsByTagName("td");
+                for (j = 0; j < td.length; j++) {
+                    if (td[j]) {
+                        txtValue = td[j].textContent || td[j].innerText;
+                        if (txtValue.toUpperCase().indexOf(filter) > -1) {
+                            tr[i].style.display = "";
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        var refreshTimer;
+        function setRefresh() {
+            clearTimeout(refreshTimer);
+            var val = parseInt(document.getElementById("refresh-interval").value);
+            if (val > 0) {
+                refreshTimer = setTimeout(function() {
+                    window.location.reload();
+                }, val * 1000);
+            }
+        }
+        setRefresh();
+    </script>
+</body>
+</html>

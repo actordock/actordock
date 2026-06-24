@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	"github.com/actordock/actordock/internal/store"
-	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/actordock/runtime/pkg/proto/runtimeapipb"
 )
 
 func TestBuildSandboxLifecycle(t *testing.T) {
@@ -41,10 +41,10 @@ func TestBuildSandboxLifecycle(t *testing.T) {
 func TestStoreStatusFromActorPaused(t *testing.T) {
 	t.Parallel()
 
-	if got := storeStatusFromActor(ateapipb.Actor_STATUS_SUSPENDED); got != store.StatusPaused {
+	if got := storeStatusFromActor(runtimeapipb.Actor_STATUS_SUSPENDED); got != store.StatusPaused {
 		t.Fatalf("status = %q, want paused", got)
 	}
-	if got := storeStatusFromActor(ateapipb.Actor_STATUS_PAUSED); got != store.StatusPaused {
+	if got := storeStatusFromActor(runtimeapipb.Actor_STATUS_PAUSED); got != store.StatusPaused {
 		t.Fatalf("status = %q, want paused", got)
 	}
 }

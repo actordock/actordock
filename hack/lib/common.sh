@@ -34,46 +34,19 @@ require_cmd() {
   done
 }
 
-load_substrate_lock() {
-  local lock_file="$1"
-  [[ -f "${lock_file}" ]] || die "missing ${lock_file}"
-
-  SUBSTRATE_REPO=""
-  SUBSTRATE_COMMIT=""
-  while IFS= read -r line || [[ -n "${line}" ]]; do
-    line="${line%%#*}"
-    line="${line#"${line%%[![:space:]]*}"}"
-    [[ -z "${line}" ]] && continue
-    case "${line}" in
-      repository=*) SUBSTRATE_REPO="${line#repository=}" ;;
-      commit=*) SUBSTRATE_COMMIT="${line#commit=}" ;;
-    esac
-  done <"${lock_file}"
-
-  [[ -n "${SUBSTRATE_REPO}" && -n "${SUBSTRATE_COMMIT}" ]] \
-    || die "invalid ${lock_file}: need repository= and commit="
-}
-
-ensure_substrate_root() {
+ensure_runtime_root() {
   local root="$1"
-  if [[ -n "${SUBSTRATE_ROOT:-}" ]]; then
-    [[ -f "${SUBSTRATE_ROOT}/hack/install-ate-kind.sh" ]] \
-      || die "SUBSTRATE_ROOT does not look like Agent Substrate: ${SUBSTRATE_ROOT}"
-    printf '%s\n' "${SUBSTRATE_ROOT}"
+  if [[ -n "${RUNTIME_ROOT:-}" ]]; then
+    [[ -f "${RUNTIME_ROOT}/hack/install-runtime-kind.sh" ]] \
+      || die "RUNTIME_ROOT does not look like actordock runtime: ${RUNTIME_ROOT}"
+    printf '%s\n' "${RUNTIME_ROOT}"
     return
   fi
 
-  load_substrate_lock "${root}/substrate.lock"
-  local checkout_dir="${root}/.substrate"
-  if [[ ! -d "${checkout_dir}/.git" ]]; then
-    log_step "Cloning Substrate (${SUBSTRATE_COMMIT})"
-    git -c advice.detachedHead=false clone "${SUBSTRATE_REPO}" "${checkout_dir}"
-  fi
-
-  log_step "Checking out Substrate ${SUBSTRATE_COMMIT}"
-  git -C "${checkout_dir}" fetch origin --tags
-  git -C "${checkout_dir}" checkout --force "${SUBSTRATE_COMMIT}"
-  printf '%s\n' "${checkout_dir}"
+  local runtime_dir="${root}/runtime"
+  [[ -f "${runtime_dir}/hack/install-runtime-kind.sh" ]] \
+    || die "missing vendored runtime at ${runtime_dir}"
+  printf '%s\n' "${runtime_dir}"
 }
 
 ensure_ko() {
@@ -90,18 +63,18 @@ kubectl_ctx() {
   kubectl --context "kind-${KIND_CLUSTER_NAME}" "$@"
 }
 
-wait_substrate_control_plane() {
-  log_step "Waiting for Substrate control plane"
-  kubectl_ctx rollout status statefulset/valkey-cluster -n ate-system --timeout=300s
-  kubectl_ctx rollout status deployment/ate-api-server-deployment -n ate-system --timeout=300s
-  kubectl_ctx rollout status deployment/ate-controller -n ate-system --timeout=300s
-  kubectl_ctx rollout status deployment/atenet-router -n ate-system --timeout=300s
-  kubectl_ctx rollout status daemonset/atelet -n ate-system --timeout=300s
+wait_runtime_control_plane() {
+  log_step "Waiting for runtime control plane"
+  kubectl_ctx rollout status statefulset/valkey-cluster -n actordock-system --timeout=300s
+  kubectl_ctx rollout status deployment/runtime-api -n actordock-system --timeout=300s
+  kubectl_ctx rollout status deployment/runtime-controller -n actordock-system --timeout=300s
+  kubectl_ctx rollout status deployment/runtime-net-router -n actordock-system --timeout=300s
+  kubectl_ctx rollout status daemonset/runtime-worker -n actordock-system --timeout=300s
 }
 
 deploy_actordock_images() {
   local root="$1"
-  local substrate_root="$2"
+  local runtime_root="$2"
 
   ensure_ko
   export KO_DEFAULTPLATFORMS="linux/$(go env GOARCH)"
@@ -110,11 +83,10 @@ deploy_actordock_images() {
   kubectl_ctx apply -f "${root}/manifests/local/namespace.yaml"
 
   log_step "Deploying WorkerPool"
-  (cd "${substrate_root}" && ko resolve -f "${root}/manifests/substrate/workerpool.yaml") \
+  (cd "${runtime_root}" && ko resolve -f "${root}/manifests/runtime/workerpool.yaml") \
     | kubectl_ctx apply -f -
 
-  apply_actortemplate "${root}" base "${root}/manifests/substrate/actortemplate-base.yaml.tmpl"
-  apply_actortemplate "${root}" python "${root}/manifests/substrate/actortemplate-python.yaml.tmpl"
+  apply_actortemplate "${root}" base "${root}/manifests/runtime/actortemplate-base.yaml.tmpl"
 
   log_step "Building dashboard web assets"
   require_cmd npm
@@ -133,7 +105,6 @@ deploy_actordock_images() {
   kubectl_ctx rollout status deployment/dashboard -n actordock --timeout=180s
 
   wait_actortemplate_ready base
-  wait_actortemplate_ready python
 }
 
 apply_actortemplate() {
@@ -146,7 +117,7 @@ apply_actortemplate() {
   if kubectl_ctx get actortemplate "${name}" -n actordock >/dev/null 2>&1; then
     kubectl_ctx wait --for=delete actortemplate/"${name}" -n actordock --timeout=120s
   fi
-  sed "s|\${BUCKET_NAME}|${BUCKET_NAME:-ate-snapshots}|g" \
+  sed "s|\${BUCKET_NAME}|${BUCKET_NAME:-actordock-snapshots}|g" \
     "${manifest}" \
     | (cd "${root}" && ko resolve -f -) \
     | kubectl_ctx apply -f -

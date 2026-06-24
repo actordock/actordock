@@ -21,7 +21,7 @@ import (
 
 type Router struct {
 	Server
-	ATEAPIAddr string
+	RuntimeAPIAddr string
 	RedisAddr  string
 	Domain     string
 	EnvdPort   int
@@ -38,7 +38,7 @@ func RouterFromEnv() (Router, error) {
 	}
 	return Router{
 		Server:     server,
-		ATEAPIAddr: envOrDefault("ACTORDOCK_ATEAPI_ADDR", "api.ate-system.svc:443"),
+		RuntimeAPIAddr: envOrDefault("ACTORDOCK_RUNTIME_API_ADDR", "api.actordock-system.svc:443"),
 		RedisAddr:  envOrDefault("ACTORDOCK_REDIS_ADDR", "redis.actordock.svc:6379"),
 		Domain:     envOrDefault("ACTORDOCK_DOMAIN", "localhost"),
 		EnvdPort:   envdPort,

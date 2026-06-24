@@ -1,0 +1,112 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# 1. Create Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: runtime-worker
+  namespace: actordock-system
+---
+# 2. Define Permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: runtime-worker-role
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "watch", "list"]
+---
+# 3. Bind Identity to Permissions
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: runtime-worker-binding
+subjects:
+- kind: ServiceAccount
+  name: runtime-worker
+  namespace: actordock-system
+roleRef:
+  kind: ClusterRole
+  name: runtime-worker-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# 4. Create DaemonSet
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: runtime-worker
+  namespace: actordock-system
+  labels:
+    app: runtime-worker
+spec:
+  selector:
+    matchLabels:
+      app: runtime-worker
+  template:
+    metadata:
+      labels:
+        app: runtime-worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      serviceAccountName: runtime-worker
+      containers:
+      - name: runtime-worker
+        image: ko://github.com/actordock/runtime/cmd/runtime-worker
+        args:
+        - --gcp-auth-for-image-pulls=true
+        securityContext:
+          privileged: true
+        env:
+        - name: MY_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: OTEL_RESOURCE_ATTRIBUTES
+          value: k8s.namespace.name=$(POD_NAMESPACE),k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),service.instance.id=$(POD_UID)
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: http://opentelemetry-collector.gke-managed-otel.svc.cluster.local:4317
+        - name: RUNTIME_STORAGE_BACKEND
+          value: "gcs"
+        ports:
+        - name: grpc
+          containerPort: 8085
+          hostPort: 8085
+        - name: prometheus
+          containerPort: 9090
+          hostPort: 9090
+          protocol: TCP
+        volumeMounts:
+        - name: run-runtime-sandbox
+          mountPath: /var/lib/runtime-sandbox
+      volumes:
+      - name: run-runtime-sandbox
+        hostPath:
+          path: /var/lib/runtime-sandbox
+          type: DirectoryOrCreate

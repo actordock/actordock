@@ -73,10 +73,10 @@ vet:
 	$(GO) vet ./...
 
 fmt:
-	@gofmt -w .
+	@gofmt -w $$(git ls-files '*.go' 2>/dev/null | grep -v '^runtime/LICENSES/' || true)
 
 verify-fmt:
-	@files=$$(gofmt -l .); \
+	@files=$$(gofmt -l $$(git ls-files '*.go' 2>/dev/null | grep -v '^runtime/LICENSES/' || true)); \
 	if [ -n "$$files" ]; then \
 		echo "gofmt needed (run: make fmt):"; \
 		echo "$$files"; \

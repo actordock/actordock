@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/internal/store"
-	"github.com/agent-substrate/substrate/pkg/proto/ateapipb"
+	"github.com/actordock/runtime/pkg/proto/runtimeapipb"
 )
 
 func TestCreateVolume(t *testing.T) {
@@ -228,7 +228,7 @@ func TestCreateSandboxVolumeMountsRoundTrip(t *testing.T) {
 		t.Fatalf("PutVolume: %v", err)
 	}
 
-	actors := &fakeActors{defaultStatus: ateapipb.Actor_STATUS_RUNNING}
+	actors := &fakeActors{defaultStatus: runtimeapipb.Actor_STATUS_RUNNING}
 	srv := NewServer(testConfig(), actors, st, slog.Default())
 	srv.nowFunc = func() time.Time { return now }
 

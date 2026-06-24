@@ -20,21 +20,21 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT}/hack/lib/common.sh"
 
 export KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-actordock}"
-SKIP_SUBSTRATE=false
+SKIP_RUNTIME=false
 
 usage() {
   cat <<EOF
 Usage: $0 [options]
 
-One-command local dev stack: Kind cluster + pinned Substrate + Actordock + dashboard.
+One-command local dev stack: Kind cluster + vendored runtime + Actordock + dashboard.
 
 Options:
-  --skip-substrate   Skip Kind/Substrate install; deploy Actordock only
+  --skip-runtime     Skip Kind/runtime install; deploy Actordock only
   -h, --help         Show this help
 
 Environment:
-  SUBSTRATE_ROOT     Use a local Substrate checkout instead of cloning .substrate/
-  BUCKET_NAME        Snapshot bucket for ActorTemplate (default: ate-snapshots)
+  RUNTIME_ROOT       Override vendored runtime path (default: ./runtime)
+  BUCKET_NAME        Snapshot bucket for ActorTemplate (default: actordock-snapshots)
 
 Images push to Kind's local registry (localhost:5001); external KO_DOCKER_REPO is ignored.
 EOF
@@ -42,8 +42,8 @@ EOF
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --skip-substrate)
-      SKIP_SUBSTRATE=true
+    --skip-runtime|--skip-runtime)
+      SKIP_RUNTIME=true
       ;;
     -h|--help)
       usage
@@ -62,37 +62,37 @@ docker info >/dev/null 2>&1 || die "docker is not running"
 # Kind bundled registry (hack/create-kind-cluster.sh). Do not inherit setup-ko / ghcr.io.
 export KO_DOCKER_REPO=localhost:5001
 
-SUBSTRATE_ROOT="$(ensure_substrate_root "${ROOT}")"
+RUNTIME_ROOT="$(ensure_runtime_root "${ROOT}")"
 
-if [[ "${SKIP_SUBSTRATE}" == "false" ]]; then
-  log_step "Creating Kind cluster '${KIND_CLUSTER_NAME}' and installing Substrate"
+if [[ "${SKIP_RUNTIME}" == "false" ]]; then
+  log_step "Creating Kind cluster '${KIND_CLUSTER_NAME}' and installing runtime"
   export NO_DEV_ENV=true
   export KO_DEFAULTPLATFORMS="linux/$(go env GOARCH)"
-  export ATE_INSTALL_KIND=true
-  export BUCKET_NAME="${BUCKET_NAME:-ate-snapshots}"
+  export RUNTIME_INSTALL_KIND=true
+  export BUCKET_NAME="${BUCKET_NAME:-actordock-snapshots}"
   unset GCE_REGION CLUSTER_LOCATION NETWORK SUBNETWORK MEMORYSTORE_INSTANCE PROJECT_ID
 
-  (cd "${SUBSTRATE_ROOT}" && hack/create-kind-cluster.sh)
-  if ! (cd "${SUBSTRATE_ROOT}" && hack/install-ate-kind.sh --deploy-ate-system); then
-    log_step "Substrate install returned an error (often rollout timeout on cold start); continuing with longer waits"
+  (cd "${RUNTIME_ROOT}" && hack/create-kind-cluster.sh)
+  if ! (cd "${RUNTIME_ROOT}" && hack/install-runtime-kind.sh --deploy-runtime-system); then
+    log_step "Runtime install returned an error (often rollout timeout on cold start); continuing with longer waits"
   fi
-  wait_substrate_control_plane
+  wait_runtime_control_plane
 else
-  log_step "Skipping Substrate install (--skip-substrate)"
+  log_step "Skipping runtime install (--skip-runtime)"
   kubectl config use-context "kind-${KIND_CLUSTER_NAME}" >/dev/null 2>&1 \
-    || die "context kind-${KIND_CLUSTER_NAME} not found; run without --skip-substrate first"
-  wait_substrate_control_plane
+    || die "context kind-${KIND_CLUSTER_NAME} not found; run without --skip-runtime first"
+  wait_runtime_control_plane
 fi
 
-deploy_actordock_images "${ROOT}" "${SUBSTRATE_ROOT}"
+deploy_actordock_images "${ROOT}" "${RUNTIME_ROOT}"
 write_env_local "${ROOT}"
 
 log_step "Done"
 echo "Actordock namespace:"
 kubectl_ctx get ns actordock
 echo ""
-echo "Substrate control plane:"
-kubectl_ctx get pods -n ate-system
+echo "Runtime control plane:"
+kubectl_ctx get pods -n actordock-system
 echo ""
 echo "Actordock workloads:"
 kubectl_ctx get pods -n actordock

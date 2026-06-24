@@ -21,7 +21,7 @@ import (
 
 	"github.com/actordock/actordock/internal/sandbox"
 	"github.com/actordock/actordock/internal/store"
-	"github.com/actordock/actordock/internal/substrate"
+	"github.com/actordock/actordock/internal/runtimeapi"
 )
 
 type sandboxStore interface {
@@ -70,7 +70,7 @@ func (e *Expirer) ExpireSandbox(ctx context.Context, sandboxID string) error {
 			return nil
 		}
 		if err := e.actors.SuspendSandbox(ctx, sb.ActorID); err != nil {
-			if errors.Is(err, substrate.ErrNotFound) {
+			if errors.Is(err, runtimeapi.ErrNotFound) {
 				return sandbox.Purge(ctx, e.actors, e.store, sandboxID)
 			}
 			return fmt.Errorf("suspend sandbox: %w", err)
@@ -84,4 +84,4 @@ func (e *Expirer) ExpireSandbox(ctx context.Context, sandboxID string) error {
 }
 
 var _ sandboxStore = (*store.Redis)(nil)
-var _ actorLifecycle = (*substrate.Client)(nil)
+var _ actorLifecycle = (*runtimeapi.Client)(nil)

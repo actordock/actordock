@@ -27,7 +27,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/actordock/actordock/internal/envd"
-	"github.com/actordock/actordock/internal/substrate"
+	"github.com/actordock/actordock/internal/runtimeapi"
 	processv1 "github.com/actordock/actordock/pkg/envd/process"
 	"github.com/actordock/actordock/pkg/envd/process/processv1connect"
 	"golang.org/x/net/http2"
@@ -235,7 +235,7 @@ func TestProxyConnectResumesPausedSandbox(t *testing.T) {
 func TestProxyConnectSandboxNotFound(t *testing.T) {
 	t.Parallel()
 
-	router := NewServer(testConfig(), &fakeBackend{err: substrate.ErrNotFound}, nil, slog.Default())
+	router := NewServer(testConfig(), &fakeBackend{err: runtimeapi.ErrNotFound}, nil, slog.Default())
 	routerSrv := startH2CTestServer(t, router.Handler())
 
 	client := processv1connect.NewProcessClient(

@@ -1,0 +1,88 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+kind: Namespace
+apiVersion: v1
+metadata:
+  name: actordock-system
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: runtime-controller
+  namespace: actordock-system
+  labels:
+    apps: runtime-controller
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: runtime-controller
+subjects:
+- kind: ServiceAccount
+  name: runtime-controller
+  namespace: actordock-system
+roleRef:
+  kind: ClusterRole
+  name: runtime-controller
+  apiGroup: rbac.authorization.k8s.io
+
+---
+
+kind: Service
+apiVersion: v1
+metadata:
+  name: runtime-controller
+  namespace: actordock-system
+  labels:
+    app: runtime-controller
+spec:
+  selector:
+    app: runtime-controller
+  ports:
+  - name: metrics
+    port: 8080
+    targetPort: metrics
+    protocol: TCP
+
+---
+
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: runtime-controller
+  namespace: actordock-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: runtime-controller
+  template:
+    metadata:
+      labels:
+        app: runtime-controller
+    spec:
+      serviceAccountName: runtime-controller
+      containers:
+      - name: runtime-controller
+        image: ko://github.com/actordock/runtime/cmd/runtime-controller
+        ports:
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        - name: healthz
+          containerPort: 8081
+          protocol: TCP

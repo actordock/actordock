@@ -1,0 +1,59 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../runtime-api.yaml
+  - ../runtime-controller.yaml
+  - ./runtime-worker
+  - ../runtime-net-dns.yaml
+  - ../runtime-net-router.yaml
+  - ../valkey.yaml
+  - ../runtime-podcert.yaml
+  - rustfs.yaml
+  - ./otel-collector.yaml
+  - ./prometheus.yaml
+
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: runtime-api
+        namespace: actordock-system
+      spec:
+        template:
+          spec:
+            containers:
+            - name: runtime-api
+              env:
+              - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                value: http://opentelemetry-collector.otel-system.svc:4317
+  - patch: |-
+      apiVersion: apps/v1
+      kind: DaemonSet
+      metadata:
+        name: runtime-worker
+        namespace: actordock-system
+      spec:
+        template:
+          spec:
+            containers:
+            - name: runtime-worker
+              env:
+              - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                value: http://opentelemetry-collector.otel-system.svc:4317
+

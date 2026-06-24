@@ -24,7 +24,7 @@ metadata:
   name: platform-actortemplate-reader
   namespace: actordock
 rules:
-  - apiGroups: ["ate.dev"]
+  - apiGroups: ["actordock.dev"]
     resources: ["actortemplates"]
     verbs: ["get", "list", "watch"]
 ---
