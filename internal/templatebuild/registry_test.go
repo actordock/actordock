@@ -23,24 +23,24 @@ func TestRewriteLocalRegistry(t *testing.T) {
 		ref, replacement, want string
 	}{
 		{
-			ref:          "localhost:5001/envd@sha256:abc",
-			replacement:  "kind-registry:5000",
-			want:         "kind-registry:5000/envd@sha256:abc",
+			ref:         "localhost:5001/envd@sha256:abc",
+			replacement: "kind-registry:5000",
+			want:        "kind-registry:5000/envd@sha256:abc",
 		},
 		{
-			ref:          "127.0.0.1:5001/envd@sha256:abc",
-			replacement:  "kind-registry:5000",
-			want:         "kind-registry:5000/envd@sha256:abc",
+			ref:         "127.0.0.1:5001/envd@sha256:abc",
+			replacement: "kind-registry:5000",
+			want:        "kind-registry:5000/envd@sha256:abc",
 		},
 		{
-			ref:          "kind-registry:5000/envd@sha256:abc",
-			replacement:  "kind-registry:5000",
-			want:         "kind-registry:5000/envd@sha256:abc",
+			ref:         "kind-registry:5000/envd@sha256:abc",
+			replacement: "kind-registry:5000",
+			want:        "kind-registry:5000/envd@sha256:abc",
 		},
 		{
-			ref:          "localhost:5001/envd@sha256:abc",
-			replacement:  "",
-			want:         "localhost:5001/envd@sha256:abc",
+			ref:         "localhost:5001/envd@sha256:abc",
+			replacement: "",
+			want:        "localhost:5001/envd@sha256:abc",
 		},
 	}
 	for _, tc := range tests {
