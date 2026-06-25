@@ -20,7 +20,7 @@ from workflow import run_policy_workflow
 
 
 @pytest.mark.timeout(180)
-def test_workflow_retrieves_and_calls_actordock(demo_template_name: str) -> None:
-    answer = run_policy_workflow("PTO accrual for tenure?", 3, demo_template_name)
+def test_workflow_retrieves_and_calls_actordock() -> None:
+    answer = run_policy_workflow("PTO accrual for tenure?", 3)
     assert "18" in answer
     assert "PTO days" in answer

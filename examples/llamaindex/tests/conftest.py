@@ -15,16 +15,12 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
-import uuid
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from workflow import build_python_template  # noqa: E402
 
 REQUIRED_ENV = ("E2B_API_URL", "E2B_SANDBOX_URL", "E2B_DOMAIN", "E2B_API_KEY", "E2B_VALIDATE_API_KEY")
 
@@ -34,15 +30,3 @@ def _require_actordock_env() -> None:
     missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
     if missing:
         pytest.skip("missing Actordock env; run ./hack/verify-examples.sh")
-
-
-@pytest.fixture(scope="session")
-def demo_template_name() -> Iterator[str]:
-    name = f"llamaindex-e2e-{uuid.uuid4().hex[:8]}"
-    build_python_template(name)
-    yield name
-    subprocess.run(
-        ["kubectl", "delete", "actortemplate", name, "-n", "actordock", "--ignore-not-found"],
-        check=False,
-        capture_output=True,
-    )

@@ -17,11 +17,9 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 
-import httpx
-from e2b import Sandbox, Template
+from e2b import Sandbox
 from llama_index.core import Settings, SimpleDirectoryReader, VectorStoreIndex
 from llama_index.core.embeddings import MockEmbedding
 from llama_index.core.tools import FunctionTool
@@ -36,17 +34,7 @@ class PolicyQuery(StartEvent):
     tenure_years: int
 
 
-def build_python_template(name: str) -> str:
-    spec = Template().from_template("python").run_cmd("apk add --no-cache python3")
-    info = Template.build(spec, name, cpu_count=1, memory_mb=512)
-    api = os.environ["E2B_API_URL"].rstrip("/")
-    httpx.patch(
-        f"{api}/v2/templates/{info.template_id}",
-        headers={"X-API-KEY": os.environ["E2B_API_KEY"], "Content-Type": "application/json"},
-        json={"public": True},
-        timeout=60.0,
-    ).raise_for_status()
-    return name
+DEFAULT_SANDBOX_TEMPLATE = "python"
 
 
 def _actordock_tool(template_name: str) -> FunctionTool:
@@ -89,7 +77,11 @@ class PolicyWorkflow(Workflow):
         return StopEvent(result=f"{snippet.splitlines()[0][:80]}… → {days} PTO days")
 
 
-def run_policy_workflow(question: str, tenure_years: int, template_name: str) -> str:
+def run_policy_workflow(
+    question: str,
+    tenure_years: int,
+    template_name: str = DEFAULT_SANDBOX_TEMPLATE,
+) -> str:
     async def _run() -> str:
         return await PolicyWorkflow(template_name, timeout=180).run(
             question=question,

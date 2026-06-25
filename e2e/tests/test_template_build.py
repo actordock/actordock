@@ -47,7 +47,6 @@ def test_template_build_sdk_and_rest_apis() -> None:
         template = (
             Template()
             .from_template("python")
-            .run_cmd("apk add --no-cache python3 py3-pip")
             .run_cmd("pip install --no-cache-dir --break-system-packages httpx")
         )
 
@@ -137,6 +136,17 @@ def test_template_build_sdk_and_rest_apis() -> None:
             assert "missing" in base_out.stdout
         finally:
             base.kill()
+
+        official_python = Sandbox.create(template="python", secure=False, timeout=120)
+        try:
+            python_out = run_command(
+                official_python,
+                'python3 -c "import sys; print(sys.version_info.major)"',
+            )
+            assert python_out.exit_code == 0
+            assert python_out.stdout.strip() == "3"
+        finally:
+            official_python.kill()
 
         del_resp = httpx.request(
             "DELETE",

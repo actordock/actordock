@@ -16,26 +16,12 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 
 import httpx
 import pytest
 
-_EXAMPLE_ROOT = Path(__file__).resolve().parents[1]
-if str(_EXAMPLE_ROOT) not in sys.path:
-    sys.path.insert(0, str(_EXAMPLE_ROOT))
-
 from graph import run_alert_graph
-
-REQUIRED_ENV = ("E2B_API_URL", "E2B_SANDBOX_URL", "E2B_DOMAIN", "E2B_API_KEY", "E2B_VALIDATE_API_KEY")
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _require_actordock_env() -> None:
-    missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
-    if missing:
-        pytest.skip("missing Actordock env; run ./hack/verify-examples.sh")
 
 
 def _list_sandbox_ids() -> set[str]:

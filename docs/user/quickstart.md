@@ -241,7 +241,7 @@ cd e2e && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 ## Templates (v0.0.10+)
 
-Official templates `base` and `python` are pre-provisioned `ActorTemplate` CRs. User templates can be registered via `POST /templates` (metadata only) or built with the E2B v3 SDK:
+Official templates `base` and `python` are pre-provisioned `ActorTemplate` CRs. The `python` template ships with Python 3 preinstalled. User templates can be registered via `POST /templates` (metadata only) or built with the E2B v3 SDK:
 
 ```python
 import uuid
@@ -251,7 +251,6 @@ name = f"my-tools-{uuid.uuid4().hex[:8]}"
 template = (
     Template()
     .from_template("python")
-    .run_cmd("apk add --no-cache python3 py3-pip")
     .run_cmd("pip install --no-cache-dir httpx")
 )
 Template.build(template, name, cpu_count=2, memory_mb=512)

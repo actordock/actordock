@@ -12,9 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import annotations
-
-from workflow import run_policy_workflow
-
-if __name__ == "__main__":
-    print(run_policy_workflow("PTO accrual for tenure?", 3))
+FROM alpine:3.21
+RUN apk add --no-cache ca-certificates python3 py3-pip
+COPY --from=ko /ko-app/envd /ko-app/envd
+ENTRYPOINT ["/ko-app/envd"]

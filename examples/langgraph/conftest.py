@@ -14,7 +14,19 @@
 
 from __future__ import annotations
 
-from workflow import run_policy_workflow
+import os
+import sys
+from pathlib import Path
 
-if __name__ == "__main__":
-    print(run_policy_workflow("PTO accrual for tenure?", 3))
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+REQUIRED_ENV = ("E2B_API_URL", "E2B_SANDBOX_URL", "E2B_DOMAIN", "E2B_API_KEY", "E2B_VALIDATE_API_KEY")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _require_actordock_env() -> None:
+    missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
+    if missing:
+        pytest.skip("missing Actordock env; run ./hack/verify-examples.sh")

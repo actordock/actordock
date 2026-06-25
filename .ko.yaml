@@ -6,3 +6,12 @@ defaultPlatforms:
 
 baseImageOverrides:
   github.com/actordock/actordock/cmd/envd: alpine
+
+builds:
+  - id: github.com/actordock/actordock/cmd/envd-python
+    dir: ./cmd/envd
+    main: .
+    dockerfile: ./cmd/envd/Dockerfile.python
+    platforms:
+      - linux/amd64
+      - linux/arm64

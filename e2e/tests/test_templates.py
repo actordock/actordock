@@ -105,4 +105,19 @@ def test_template_exists_via_sdk() -> None:
     from e2b import Template
 
     assert Template.exists("base") is True
+    assert Template.exists("python") is True
     assert Template.exists("missing-alias-for-e2e") is False
+
+
+def test_official_python_template_has_python3() -> None:
+    from e2b import Sandbox
+
+    from support.commands import run_command
+
+    sbx = Sandbox.create(template="python", secure=False, timeout=120)
+    try:
+        out = run_command(sbx, 'python3 -c "import sys; print(sys.version_info.major)"')
+        assert out.exit_code == 0
+        assert out.stdout.strip() == "3"
+    finally:
+        sbx.kill()
