@@ -8,8 +8,14 @@ baseImageOverrides:
   github.com/actordock/actordock/cmd/envd: alpine
 
 builds:
-  - id: github.com/actordock/actordock/cmd/envd-python
+  - id: github.com/actordock/actordock/cmd/envd
     dir: ./cmd/envd
+    main: .
+    platforms:
+      - linux/amd64
+      - linux/arm64
+  - id: github.com/actordock/actordock/cmd/envd-python
+    dir: ./cmd/envd-python
     main: .
     dockerfile: ./cmd/envd/Dockerfile.python
     platforms:

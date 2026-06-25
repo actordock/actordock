@@ -14,5 +14,5 @@
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates python3 py3-pip
-COPY --from=ko /ko-app/envd /ko-app/envd
+COPY --from=ko /ko-app/envd-python /ko-app/envd
 ENTRYPOINT ["/ko-app/envd"]
