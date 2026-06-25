@@ -1,0 +1,6 @@
+e2b>=1.0.0
+langgraph>=0.2.0
+langchain-core>=0.3.0
+pytest>=8.0.0
+pytest-timeout>=2.3.0
+

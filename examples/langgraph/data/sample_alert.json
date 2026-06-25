@@ -1,0 +1,12 @@
+{
+  "incident_id": "INC-2026-1001",
+  "severity": "high",
+  "service": "checkout",
+  "source": "pagerduty",
+  "raw_logs": [
+    "container.cpu_throttle",
+    "downstream timeout",
+    "retry_exceeded"
+  ]
+}
+
