@@ -33,24 +33,34 @@ import (
 
 // KanikoImageBuilder runs Kaniko as a Kubernetes Job to build and push images.
 type KanikoImageBuilder struct {
-	Client        client.Client
-	Namespace     string
-	BuildDataDir  string
-	PVCName       string
-	KanikoImage   string
-	Insecure      bool
-	JobTTLSeconds int32
+	Client                   client.Client
+	Namespace                string
+	BuildDataDir             string
+	PVCName                  string
+	KanikoImage              string
+	BuildRegistry            string
+	Insecure                 bool
+	JobTTLSeconds            int32
+	JobActiveDeadlineSeconds int32
+	JobWaitTimeout           time.Duration
 }
 
 func NewKanikoImageBuilder(cfg config.TemplateBuilder, c client.Client) *KanikoImageBuilder {
+	waitTimeout := 5 * time.Minute
+	if cfg.KanikoJobActiveDeadlineSeconds > 0 {
+		waitTimeout = time.Duration(cfg.KanikoJobActiveDeadlineSeconds)*time.Second + 30*time.Second
+	}
 	return &KanikoImageBuilder{
-		Client:        c,
-		Namespace:     cfg.TemplateNamespace,
-		BuildDataDir:  cfg.BuildDataDir,
-		PVCName:       cfg.BuildPVCName,
-		KanikoImage:   cfg.KanikoImage,
-		Insecure:      cfg.BuildRegistryInsecure,
-		JobTTLSeconds: 600,
+		Client:                   c,
+		Namespace:                cfg.TemplateNamespace,
+		BuildDataDir:             cfg.BuildDataDir,
+		PVCName:                  cfg.BuildPVCName,
+		KanikoImage:              cfg.KanikoImage,
+		BuildRegistry:            cfg.BuildRegistry,
+		Insecure:                 cfg.BuildRegistryInsecure,
+		JobTTLSeconds:            600,
+		JobActiveDeadlineSeconds: cfg.KanikoJobActiveDeadlineSeconds,
+		JobWaitTimeout:           waitTimeout,
 	}
 }
 
@@ -73,6 +83,38 @@ func (k *KanikoImageBuilder) Build(ctx context.Context, req BuildRequest) (strin
 	jobName := kanikoJobName(req.BuildID)
 	volumeName := "build-context"
 	ttl := k.JobTTLSeconds
+	backoffLimit := int32(0)
+	jobSpec := batchv1.JobSpec{
+		BackoffLimit:            &backoffLimit,
+		TTLSecondsAfterFinished: &ttl,
+		Template: corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{
+				RestartPolicy: corev1.RestartPolicyNever,
+				Containers: []corev1.Container{{
+					Name:  "kaniko",
+					Image: k.KanikoImage,
+					Args:  kanikoArgs(req.Destination, k.BuildRegistry, k.Insecure),
+					VolumeMounts: []corev1.VolumeMount{{
+						Name:      volumeName,
+						MountPath: "/workspace",
+						SubPath:   subPath,
+					}},
+				}},
+				Volumes: []corev1.Volume{{
+					Name: volumeName,
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+							ClaimName: k.PVCName,
+						},
+					},
+				}},
+			},
+		},
+	}
+	if k.JobActiveDeadlineSeconds > 0 {
+		activeDeadline := int64(k.JobActiveDeadlineSeconds)
+		jobSpec.ActiveDeadlineSeconds = &activeDeadline
+	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      jobName,
@@ -81,32 +123,7 @@ func (k *KanikoImageBuilder) Build(ctx context.Context, req BuildRequest) (strin
 				"app.kubernetes.io/component": "template-builder",
 			},
 		},
-		Spec: batchv1.JobSpec{
-			TTLSecondsAfterFinished: &ttl,
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
-					Containers: []corev1.Container{{
-						Name:  "kaniko",
-						Image: k.KanikoImage,
-						Args:  kanikoArgs(req.Destination, k.Insecure),
-						VolumeMounts: []corev1.VolumeMount{{
-							Name:      volumeName,
-							MountPath: "/workspace",
-							SubPath:   subPath,
-						}},
-					}},
-					Volumes: []corev1.Volume{{
-						Name: volumeName,
-						VolumeSource: corev1.VolumeSource{
-							PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-								ClaimName: k.PVCName,
-							},
-						},
-					}},
-				},
-			},
-		},
+		Spec: jobSpec,
 	}
 
 	if err := k.Client.Create(ctx, job); err != nil {
@@ -114,7 +131,7 @@ func (k *KanikoImageBuilder) Build(ctx context.Context, req BuildRequest) (strin
 	}
 	defer func() { _ = k.Client.Delete(ctx, job, client.PropagationPolicy(metav1.DeletePropagationBackground)) }()
 
-	if err := wait.PollUntilContextTimeout(ctx, 3*time.Second, 30*time.Minute, true, func(ctx context.Context) (bool, error) {
+	if err := wait.PollUntilContextTimeout(ctx, 3*time.Second, k.JobWaitTimeout, true, func(ctx context.Context) (bool, error) {
 		var current batchv1.Job
 		if err := k.Client.Get(ctx, client.ObjectKeyFromObject(job), &current); err != nil {
 			return false, err
@@ -132,7 +149,7 @@ func (k *KanikoImageBuilder) Build(ctx context.Context, req BuildRequest) (strin
 		return "", fmt.Errorf("wait for kaniko job: %w", err)
 	}
 
-	ref, err := name.ParseReference(req.Destination)
+	ref, err := name.ParseReference(req.Destination, parseRefOptions(k.Insecure)...)
 	if err != nil {
 		return "", fmt.Errorf("parse destination: %w", err)
 	}
@@ -164,7 +181,7 @@ func kanikoJobName(buildID string) string {
 	return strings.TrimRight(name, "-")
 }
 
-func kanikoArgs(destination string, insecure bool) []string {
+func kanikoArgs(destination, buildRegistry string, insecure bool) []string {
 	args := []string{
 		"--dockerfile=/workspace/Dockerfile",
 		"--context=dir:///workspace",
@@ -172,6 +189,9 @@ func kanikoArgs(destination string, insecure bool) []string {
 	}
 	if insecure {
 		args = append(args, "--insecure", "--skip-tls-verify")
+		if host := strings.TrimSpace(buildRegistry); host != "" {
+			args = append(args, "--insecure-registry="+host)
+		}
 	}
 	return args
 }
@@ -181,4 +201,11 @@ func remoteOptions(insecure bool) []remote.Option {
 		return nil
 	}
 	return []remote.Option{remote.WithTransport(insecureTransport())}
+}
+
+func parseRefOptions(insecure bool) []name.Option {
+	if !insecure {
+		return nil
+	}
+	return []name.Option{name.Insecure}
 }

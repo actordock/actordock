@@ -137,6 +137,7 @@ func (w *Worker) process(ctx context.Context, job store.TemplateBuildJob, build 
 	if fromImage == "" {
 		fromImage = baseEnvd.Image
 	}
+	fromImage = RewriteLocalRegistry(fromImage, w.cfg.LocalhostRegistryReplacement)
 
 	dockerfile, err := SynthesizeDockerfile(fromImage, spec.Steps)
 	if err != nil {
@@ -172,9 +173,10 @@ func (w *Worker) process(ctx context.Context, job store.TemplateBuildJob, build 
 	if err != nil {
 		return "", err
 	}
+	runtimeImage := w.runtimeImageRef(pinnedImage)
 
 	w.appendLog(ctx, job.TemplateID, job.BuildID, "info", "creating ActorTemplate", "build")
-	if err := w.templates.Replace(ctx, job.TemplateID, pinnedImage, baseAT, baseEnvd); err != nil {
+	if err := w.templates.Replace(ctx, job.TemplateID, runtimeImage, baseAT, baseEnvd); err != nil {
 		return "", err
 	}
 
@@ -184,10 +186,17 @@ func (w *Worker) process(ctx context.Context, job store.TemplateBuildJob, build 
 	}
 
 	w.appendLog(ctx, job.TemplateID, job.BuildID, "info", "syncing template tags", "build")
-	if err := w.syncBuildTags(ctx, job.TemplateID, job.BuildID, build, pinnedImage, baseAT, baseEnvd); err != nil {
+	if err := w.syncBuildTags(ctx, job.TemplateID, job.BuildID, build, runtimeImage, baseAT, baseEnvd); err != nil {
 		return "", err
 	}
-	return pinnedImage, nil
+	return runtimeImage, nil
+}
+
+func (w *Worker) runtimeImageRef(pinned string) string {
+	if w.cfg.LocalRegistryHost == "" {
+		return pinned
+	}
+	return RewriteRegistryPrefix(pinned, w.cfg.BuildRegistry, w.cfg.LocalRegistryHost)
 }
 
 func (w *Worker) markStatus(ctx context.Context, build *store.TemplateBuild, status store.TemplateBuildStatus, message string) error {

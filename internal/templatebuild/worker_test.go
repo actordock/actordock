@@ -135,12 +135,14 @@ func TestWorkerProcessBuild(t *testing.T) {
 
 	dir := t.TempDir()
 	cfg := config.TemplateBuilder{
-		TemplateNamespace:     "actordock",
-		DefaultBaseTemplate:   "base",
-		BuildRegistry:         "kind-registry:5000",
-		BuildDataDir:          dir,
-		TemplateBuildFilesDir: dir + "/files",
-		BuildWorkDir:          dir + "/work",
+		TemplateNamespace:            "actordock",
+		DefaultBaseTemplate:          "base",
+		BuildRegistry:                "kind-registry:5000",
+		LocalhostRegistryReplacement: "kind-registry:5000",
+		LocalRegistryHost:            "localhost:5001",
+		BuildDataDir:                 dir,
+		TemplateBuildFilesDir:        dir + "/files",
+		BuildWorkDir:                 dir + "/work",
 	}
 	worker := NewWorker(cfg, mem, k8s, &stubImageBuilder{
 		pinned: "kind-registry:5000/actordock/templates/custom-app@sha256:deadbeef",
@@ -157,15 +159,15 @@ func TestWorkerProcessBuild(t *testing.T) {
 	if mem.builds.Status != store.TemplateBuildStatusReady {
 		t.Fatalf("status = %q", mem.builds.Status)
 	}
-	if mem.builds.PinnedImage == "" {
-		t.Fatalf("pinned image not set")
+	if mem.builds.PinnedImage != "localhost:5001/actordock/templates/custom-app@sha256:deadbeef" {
+		t.Fatalf("pinned image = %q", mem.builds.PinnedImage)
 	}
 
 	var created v1alpha1.ActorTemplate
 	if err := k8s.Get(context.Background(), types.NamespacedName{Namespace: "actordock", Name: "custom-app"}, &created); err != nil {
 		t.Fatalf("get created actortemplate: %v", err)
 	}
-	if created.Spec.Containers[0].Image != "kind-registry:5000/actordock/templates/custom-app@sha256:deadbeef" {
+	if created.Spec.Containers[0].Image != "localhost:5001/actordock/templates/custom-app@sha256:deadbeef" {
 		t.Fatalf("image = %q", created.Spec.Containers[0].Image)
 	}
 
@@ -173,7 +175,7 @@ func TestWorkerProcessBuild(t *testing.T) {
 	if err := k8s.Get(context.Background(), types.NamespacedName{Namespace: "actordock", Name: "custom-app--prod"}, &tagged); err != nil {
 		t.Fatalf("get tagged actortemplate: %v", err)
 	}
-	if tagged.Spec.Containers[0].Image != "kind-registry:5000/actordock/templates/custom-app@sha256:deadbeef" {
+	if tagged.Spec.Containers[0].Image != "localhost:5001/actordock/templates/custom-app@sha256:deadbeef" {
 		t.Fatalf("tagged image = %q", tagged.Spec.Containers[0].Image)
 	}
 }
