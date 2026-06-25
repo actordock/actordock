@@ -21,7 +21,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from graph import run_alert_graph
+from alert_graph import run_alert_graph
 
 
 def _list_sandbox_ids() -> set[str]:

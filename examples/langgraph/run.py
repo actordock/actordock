@@ -22,7 +22,7 @@ examples_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(examples_root))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from graph import run_alert_graph_from_file
+from alert_graph import run_alert_graph_from_file
 from support.python_template import SANDBOX_TEMPLATE_ENV, ensure_python_template, sandbox_template_name
 
 
