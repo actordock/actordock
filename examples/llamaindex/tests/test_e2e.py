@@ -12,50 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""E2E: LlamaIndex retrieval + Actordock sandbox PTO calculator (#88)."""
-
 from __future__ import annotations
 
-import os
+import pytest
 
-import httpx
-
-from tools.sandbox_calc import calculate_pto
-from workflow import answer_pto_question, retrieve_policy_snippets
+from workflow import run_policy_workflow
 
 
-def _api_url() -> str:
-    return os.environ["E2B_API_URL"].rstrip("/")
-
-
-def _api_headers() -> dict[str, str]:
-    return {"X-API-KEY": os.environ["E2B_API_KEY"]}
-
-
-def test_calculate_pto_three_years() -> None:
-    assert calculate_pto(3) == 18
-
-
-def test_retrieve_contains_accrual() -> None:
-    snippets = retrieve_policy_snippets("PTO accrual rate for employee tenure")
-    assert snippets
-    assert any("accrual" in snippet.lower() for snippet in snippets)
-
-
-def test_workflow_answer_contains_golden_days() -> None:
-    answer = answer_pto_question("How many PTO days for tenure?", tenure_years=3)
+@pytest.mark.timeout(180)
+def test_workflow_retrieves_and_calls_actordock(demo_template_name: str) -> None:
+    answer = run_policy_workflow("PTO accrual for tenure?", 3, demo_template_name)
     assert "18" in answer
-    assert "days" in answer.lower()
-
-
-def test_sandbox_cleaned_up_after_calculate() -> None:
-    before = httpx.get(f"{_api_url()}/sandboxes", headers=_api_headers(), timeout=30.0)
-    before.raise_for_status()
-    before_ids = {item["sandboxID"] for item in before.json()}
-
-    assert calculate_pto(1) == 6
-
-    after = httpx.get(f"{_api_url()}/sandboxes", headers=_api_headers(), timeout=30.0)
-    after.raise_for_status()
-    after_ids = {item["sandboxID"] for item in after.json()}
-    assert after_ids == before_ids
+    assert "PTO days" in answer

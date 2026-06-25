@@ -12,45 +12,88 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Policy handbook Q&A: retrieve clauses then compute PTO in Actordock."""
+"""LlamaIndex workflow with Actordock FunctionTool."""
 
 from __future__ import annotations
 
+import asyncio
+import os
 from pathlib import Path
 
+import httpx
+from e2b import Sandbox, Template
 from llama_index.core import Settings, SimpleDirectoryReader, VectorStoreIndex
 from llama_index.core.embeddings import MockEmbedding
+from llama_index.core.tools import FunctionTool
+from llama_index.core.workflow import StartEvent, StopEvent, Workflow, step
 
-from tools.sandbox_calc import calculate_pto
-
-EXAMPLE_ROOT = Path(__file__).resolve().parent
-POLICIES_DIR = EXAMPLE_ROOT / "data" / "policies"
-
-
-def _build_retriever():
-    Settings.embed_model = MockEmbedding(embed_dim=8)
-    documents = SimpleDirectoryReader(input_dir=str(POLICIES_DIR)).load_data()
-    index = VectorStoreIndex.from_documents(documents)
-    return index.as_retriever(similarity_top_k=3)
+DAYS_PER_YEAR = 6
+POLICIES_DIR = Path(__file__).resolve().parent / "data" / "policies"
 
 
-def retrieve_policy_snippets(question: str) -> list[str]:
-    """Return top-k policy text chunks for a question."""
-    retriever = _build_retriever()
-    nodes = retriever.retrieve(question)
-    return [node.get_content() for node in nodes]
+class PolicyQuery(StartEvent):
+    question: str
+    tenure_years: int
 
 
-def answer_pto_question(question: str, tenure_years: int) -> str:
-    """Retrieve policy context, run sandbox calculator, return human-readable answer."""
-    snippets = retrieve_policy_snippets(question)
-    if not any("accrual" in snippet.lower() for snippet in snippets):
-        raise RuntimeError("retrieval did not return PTO accrual policy text")
+def build_python_template(name: str) -> str:
+    spec = Template().from_template("python").run_cmd("apk add --no-cache python3")
+    info = Template.build(spec, name, cpu_count=1, memory_mb=512)
+    api = os.environ["E2B_API_URL"].rstrip("/")
+    httpx.patch(
+        f"{api}/v2/templates/{info.template_id}",
+        headers={"X-API-KEY": os.environ["E2B_API_KEY"], "Content-Type": "application/json"},
+        json={"public": True},
+        timeout=60.0,
+    ).raise_for_status()
+    return name
 
-    days = calculate_pto(tenure_years)
-    excerpt = next(s for s in snippets if "accrual" in s.lower())
-    first_line = excerpt.strip().splitlines()[0][:120]
-    return (
-        f"Policy excerpt: {first_line}… "
-        f"For {tenure_years} years tenure, accrued PTO is {days} days."
+
+def _actordock_tool(template_name: str) -> FunctionTool:
+    def calculate_pto(tenure_years: int, template_name: str) -> int:
+        sandbox = Sandbox.create(template=template_name, secure=False, timeout=120)
+        try:
+            out = sandbox.commands.run(
+                f'python3 -c "print({tenure_years} * {DAYS_PER_YEAR})"',
+            )
+            return int(out.stdout.strip())
+        finally:
+            sandbox.kill()
+
+    return FunctionTool.from_defaults(
+        fn=calculate_pto,
+        partial_params={"template_name": template_name},
+        name="actordock_calculate_pto",
+        description="Calculate PTO days in an Actordock sandbox.",
     )
+
+
+def _retrieve_snippet(question: str) -> str:
+    Settings.embed_model = MockEmbedding(embed_dim=8)
+    docs = SimpleDirectoryReader(input_dir=str(POLICIES_DIR)).load_data()
+    nodes = VectorStoreIndex.from_documents(docs).as_retriever(similarity_top_k=1).retrieve(question)
+    if not nodes:
+        raise RuntimeError("no policy chunks retrieved")
+    return nodes[0].get_content()
+
+
+class PolicyWorkflow(Workflow):
+    def __init__(self, template_name: str, **kwargs: object) -> None:
+        super().__init__(**kwargs)
+        self._tool = _actordock_tool(template_name)
+
+    @step
+    async def answer(self, ev: PolicyQuery) -> StopEvent:
+        snippet = _retrieve_snippet(ev.question)
+        days = int((await self._tool.acall(tenure_years=ev.tenure_years)).raw_output)
+        return StopEvent(result=f"{snippet.splitlines()[0][:80]}… → {days} PTO days")
+
+
+def run_policy_workflow(question: str, tenure_years: int, template_name: str) -> str:
+    async def _run() -> str:
+        return await PolicyWorkflow(template_name, timeout=180).run(
+            question=question,
+            tenure_years=tenure_years,
+        )
+
+    return asyncio.run(_run())

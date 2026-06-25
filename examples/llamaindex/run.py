@@ -12,26 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""CLI demo: policy RAG + Actordock sandbox PTO calculator."""
-
 from __future__ import annotations
 
-import argparse
+import uuid
 
-from workflow import answer_pto_question
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="PTO policy Q&A with LlamaIndex + Actordock")
-    parser.add_argument(
-        "--question",
-        default="How does PTO accrual work for tenure?",
-        help="Natural language question for retrieval",
-    )
-    parser.add_argument("--tenure-years", type=int, default=3, help="Years of tenure to calculate")
-    args = parser.parse_args()
-    print(answer_pto_question(args.question, args.tenure_years))
-
+from workflow import build_python_template, run_policy_workflow
 
 if __name__ == "__main__":
-    main()
+    name = f"llamaindex-demo-{uuid.uuid4().hex[:8]}"
+    build_python_template(name)
+    print(run_policy_workflow("PTO accrual for tenure?", 3, name))
