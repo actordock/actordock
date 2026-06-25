@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/banner.png" alt="Actordock — Self-hosted sandbox platform for AI agents on Kubernetes" width="100%">
+</p>
+
 # actordock
 
 **Hundreds of agent sandboxes. A handful of Pods.** Actordock multiplexes agent sandboxes behind an E2B-compatible API—gVisor isolation, sub-second suspend/resume, RAM and filesystem snapshots on idle, 30×+ session oversubscription on warm Workers. Point the E2B SDK at your cluster; no code changes.
