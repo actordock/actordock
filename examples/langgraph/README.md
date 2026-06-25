@@ -14,7 +14,8 @@ This minimal example runs a tiny stateful LangGraph workflow with conditional or
 4. The chosen summarize node writes `incident-summary.txt` and returns the final summary.
 
 The goal is a small, deterministic end-to-end flow that demonstrates:
-- `Sandbox.create(template="python")`
+- `Template.build` from official `base` to add Python 3
+- `Sandbox.create(template=...)`
 - `sandbox.files.write` / `sandbox.files.read`
 - `sandbox.commands.run`
 - `sandbox.kill()` in each node for cleanup
@@ -39,10 +40,10 @@ You can pass a custom payload file:
 python run.py path/to/alert.json
 ```
 
-Set `LANGGRAPH_SANDBOX_TEMPLATE` to use another template name:
+`run.py` builds a Python-enabled template from `base` on first run. Set `ACTORDOCK_SANDBOX_TEMPLATE` to reuse an existing template name:
 
 ```bash
-LANGGRAPH_SANDBOX_TEMPLATE=python python run.py
+ACTORDOCK_SANDBOX_TEMPLATE=my-py-template python run.py
 ```
 
 ## E2E

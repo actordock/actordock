@@ -20,7 +20,11 @@ from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+examples_root = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(examples_root))
+sys.path.insert(0, str(examples_root / "llamaindex"))
+
+from support.python_template import ensure_python_template
 
 REQUIRED_ENV = ("E2B_API_URL", "E2B_SANDBOX_URL", "E2B_DOMAIN", "E2B_API_KEY", "E2B_VALIDATE_API_KEY")
 
@@ -30,3 +34,8 @@ def _require_actordock_env() -> None:
     missing = [name for name in REQUIRED_ENV if not os.environ.get(name)]
     if missing:
         pytest.skip("missing Actordock env; run ./hack/verify-examples.sh")
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _sandbox_template() -> None:
+    ensure_python_template()

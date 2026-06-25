@@ -25,6 +25,8 @@ from llama_index.core.embeddings import MockEmbedding
 from llama_index.core.tools import FunctionTool
 from llama_index.core.workflow import StartEvent, StopEvent, Workflow, step
 
+from support.python_template import SANDBOX_TEMPLATE_ENV, sandbox_template_name
+
 DAYS_PER_YEAR = 6
 POLICIES_DIR = Path(__file__).resolve().parent / "data" / "policies"
 
@@ -34,7 +36,13 @@ class PolicyQuery(StartEvent):
     tenure_years: int
 
 
-DEFAULT_SANDBOX_TEMPLATE = "python"
+def _default_sandbox_template() -> str:
+    try:
+        return sandbox_template_name()
+    except KeyError as err:
+        raise RuntimeError(
+            f"missing {SANDBOX_TEMPLATE_ENV}; run ./hack/verify-examples.sh or set the env var"
+        ) from err
 
 
 def _actordock_tool(template_name: str) -> FunctionTool:
@@ -80,8 +88,10 @@ class PolicyWorkflow(Workflow):
 def run_policy_workflow(
     question: str,
     tenure_years: int,
-    template_name: str = DEFAULT_SANDBOX_TEMPLATE,
+    template_name: str | None = None,
 ) -> str:
+    if template_name is None:
+        template_name = _default_sandbox_template()
     async def _run() -> str:
         return await PolicyWorkflow(template_name, timeout=180).run(
             question=question,

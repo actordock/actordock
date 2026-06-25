@@ -40,7 +40,7 @@ func sampleTemplateBuild(templateID, buildID string, status TemplateBuildStatus)
 		EnvdVersion:  "0.1.0",
 		CreatedAt:    now,
 		UpdatedAt:    now,
-		FromTemplate: "python",
+		FromTemplate: "base",
 	}
 }
 

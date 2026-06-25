@@ -38,7 +38,7 @@ func TestWritableCatalogMapsUserTemplateToActorName(t *testing.T) {
 	tmpl, err := catalog.Create(ctx, CreateTemplateInput{
 		TemplateID: "myapp",
 		Alias:      "myapp",
-		Dockerfile: "FROM actordock/python",
+		Dockerfile: "FROM actordock/base",
 	})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -105,7 +105,7 @@ func TestCreateSandboxUserTemplateUsesActorTemplateName(t *testing.T) {
 	st := newFakeStore()
 	srv := NewServer(cfg, actors, st, slog.Default())
 
-	body := []byte(`{"alias":"myapp","dockerfile":"FROM actordock/python"}`)
+	body := []byte(`{"alias":"myapp","dockerfile":"FROM actordock/base"}`)
 	req := httptest.NewRequest(http.MethodPost, "/templates", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-KEY", "dev")

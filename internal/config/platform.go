@@ -57,7 +57,7 @@ func PlatformFromEnv() (Platform, error) {
 		VolumeRoot:            envOrDefault("ACTORDOCK_VOLUME_ROOT", "/var/lib/actordock/volumes"),
 		TemplateBuildFilesDir: envOrDefault("ACTORDOCK_TEMPLATE_BUILD_FILES_DIR", "/var/lib/actordock/template-build/files"),
 		PlatformPublicURL:     envOrDefault("ACTORDOCK_PLATFORM_PUBLIC_URL", ""),
-		OfficialBaseTemplates: parseCSV(envOrDefault("ACTORDOCK_OFFICIAL_BASE_TEMPLATES", "base,python")),
+		OfficialBaseTemplates: parseCSV(envOrDefault("ACTORDOCK_OFFICIAL_BASE_TEMPLATES", "base")),
 	}
 	defaultTimeout, err := envIntOrDefault("ACTORDOCK_DEFAULT_SANDBOX_TIMEOUT", 300)
 	if err != nil {

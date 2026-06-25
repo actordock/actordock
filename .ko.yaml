@@ -14,10 +14,3 @@ builds:
     platforms:
       - linux/amd64
       - linux/arm64
-  - id: github.com/actordock/actordock/cmd/envd-python
-    dir: ./cmd/envd-python
-    main: .
-    dockerfile: ./cmd/envd/Dockerfile.python
-    platforms:
-      - linux/amd64
-      - linux/arm64

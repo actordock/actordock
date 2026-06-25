@@ -1,6 +1,6 @@
 # LlamaIndex + Actordock
 
-1. `Template.build` from `python` base
+1. `Template.build` from official `base` to add Python 3
 2. `PolicyWorkflow` retrieves policy text, then `FunctionTool.acall()` runs Python in Actordock
 
 ```bash

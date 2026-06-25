@@ -2515,7 +2515,7 @@ func testConfig() config.Platform {
 		ClientID:              "actordock",
 		DefaultSandboxTimeout: 300,
 		VolumeRoot:            "/var/lib/actordock/volumes",
-		OfficialBaseTemplates: []string{"base", "python"},
+		OfficialBaseTemplates: []string{"base"},
 	}
 }
 

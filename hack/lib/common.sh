@@ -87,7 +87,6 @@ deploy_actordock_images() {
     | kubectl_ctx apply -f -
 
   apply_actortemplate "${root}" base "${root}/manifests/runtime/actortemplate-base.yaml.tmpl"
-  apply_actortemplate "${root}" python "${root}/manifests/runtime/actortemplate-python.yaml.tmpl"
 
   log_step "Building dashboard web assets"
   require_cmd npm
@@ -107,7 +106,6 @@ deploy_actordock_images() {
   kubectl_ctx rollout status deployment/dashboard -n actordock --timeout=180s
 
   wait_actortemplate_ready base
-  wait_actortemplate_ready python
 }
 
 apply_actortemplate() {

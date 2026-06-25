@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Literal
 from typing import TypedDict
@@ -23,11 +24,21 @@ from typing import TypedDict
 from e2b import Sandbox
 from langgraph.graph import END, START, StateGraph
 
+from support.python_template import SANDBOX_TEMPLATE_ENV, sandbox_template_name
+
 RAW_ALERT_PATH = "/tmp/raw_alert.json"
 NORMALIZED_ALERT_PATH = "/tmp/normalized_alert.json"
 METRICS_PATH = "/tmp/metrics.json"
 SUMMARY_PATH = "/tmp/incident-summary.txt"
-DEFAULT_SANDBOX_TEMPLATE = "python"
+
+
+def _default_sandbox_template() -> str:
+    try:
+        return sandbox_template_name()
+    except KeyError as err:
+        raise RuntimeError(
+            f"missing {SANDBOX_TEMPLATE_ENV}; run ./hack/verify-examples.sh or set the env var"
+        ) from err
 
 
 class AlertState(TypedDict, total=False):
@@ -180,7 +191,9 @@ def _severity_from_metrics(metrics: str) -> str:
         return "low"
 
 
-def build_graph(template_name: str = DEFAULT_SANDBOX_TEMPLATE):
+def build_graph(template_name: str | None = None):
+    if template_name is None:
+        template_name = _default_sandbox_template()
     graph = StateGraph(AlertState)
     graph.add_node("parse", parse_node(template_name))
     graph.add_node("analyze", analyze_node(template_name))
@@ -201,9 +214,9 @@ def build_graph(template_name: str = DEFAULT_SANDBOX_TEMPLATE):
     return graph.compile()
 
 
-def run_alert_graph(raw_alert: str, *, template_name: str = DEFAULT_SANDBOX_TEMPLATE) -> AlertState:
+def run_alert_graph(raw_alert: str, *, template_name: str | None = None) -> AlertState:
     return build_graph(template_name=template_name).invoke({"raw_alert": raw_alert})
 
 
-def run_alert_graph_from_file(path: str, *, template_name: str = DEFAULT_SANDBOX_TEMPLATE) -> AlertState:
+def run_alert_graph_from_file(path: str, *, template_name: str | None = None) -> AlertState:
     return run_alert_graph(Path(path).read_text(), template_name=template_name)

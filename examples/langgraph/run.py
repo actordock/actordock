@@ -18,7 +18,12 @@ import os
 import sys
 from pathlib import Path
 
+examples_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(examples_root))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from graph import run_alert_graph_from_file
+from support.python_template import SANDBOX_TEMPLATE_ENV, ensure_python_template, sandbox_template_name
 
 
 def _sample_path() -> Path:
@@ -27,7 +32,9 @@ def _sample_path() -> Path:
 
 def main() -> None:
     path = sys.argv[1] if len(sys.argv) > 1 else str(_sample_path())
-    template_name = os.environ.get("LANGGRAPH_SANDBOX_TEMPLATE", "python")
+    if not os.environ.get(SANDBOX_TEMPLATE_ENV):
+        ensure_python_template()
+    template_name = os.environ.get(SANDBOX_TEMPLATE_ENV) or sandbox_template_name()
     result = run_alert_graph_from_file(path, template_name=template_name)
     print(result["summary"])
 
