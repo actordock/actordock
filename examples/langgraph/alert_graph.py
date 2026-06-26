@@ -219,14 +219,22 @@ def build_graph(template_name: str | None = None, sandboxes: list[Sandbox] | Non
     return graph.compile()
 
 
-def run_alert_graph(raw_alert: str, *, template_name: str | None = None) -> AlertState:
-    sandboxes: list[Sandbox] = []
+def run_alert_graph(
+    raw_alert: str,
+    *,
+    template_name: str | None = None,
+    sandboxes: list[Sandbox] | None = None,
+) -> AlertState:
+    owned_sandboxes = sandboxes is None
+    if owned_sandboxes:
+        sandboxes = []
     try:
         return build_graph(template_name=template_name, sandboxes=sandboxes).invoke(
             {"raw_alert": raw_alert}
         )
     finally:
-        _kill_sandboxes(sandboxes)
+        if owned_sandboxes:
+            _kill_sandboxes(sandboxes)
 
 
 def run_alert_graph_from_file(path: str, *, template_name: str | None = None) -> AlertState:

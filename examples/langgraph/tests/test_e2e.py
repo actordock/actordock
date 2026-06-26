@@ -21,7 +21,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from alert_graph import run_alert_graph
+from e2b import Sandbox
+
+from alert_graph import _kill_sandboxes, run_alert_graph
 
 
 def _list_sandbox_ids() -> set[str]:
@@ -76,30 +78,27 @@ def _expected_metrics() -> str:
     )
 
 
-@pytest.mark.timeout(180)
+@pytest.mark.timeout(360)
 def test_langgraph_pipeline_round_trip_and_cleanup() -> None:
     before = _list_sandbox_ids()
-    result = run_alert_graph(_alert_payload(severity="high"))
+    sandboxes: list[Sandbox] = []
+    try:
+        high = run_alert_graph(_alert_payload(severity="high"), sandboxes=sandboxes)
 
-    assert "severity" in result
-    assert '"severity": "high"' in result["summary"]
-    assert '"orchestration_path": "high_severity"' in result["summary"]
-    assert result["summary"]
-    assert _expected_normalized() in result["normalized"]
-    assert _expected_metrics() in result["metrics"]
+        assert "severity" in high
+        assert '"severity": "high"' in high["summary"]
+        assert '"orchestration_path": "high_severity"' in high["summary"]
+        assert high["summary"]
+        assert _expected_normalized() in high["normalized"]
+        assert _expected_metrics() in high["metrics"]
 
-    after = _list_sandbox_ids()
-    assert not (after - before), "langgraph pipeline left sandbox IDs behind"
+        low = run_alert_graph(_alert_payload(severity="low"), sandboxes=sandboxes)
 
-
-@pytest.mark.timeout(180)
-def test_langgraph_standard_path_for_low_severity() -> None:
-    before = _list_sandbox_ids()
-    result = run_alert_graph(_alert_payload(severity="low"))
-
-    assert '"severity": "low"' in result["summary"]
-    assert '"orchestration_path": "standard"' in result["summary"]
-    assert result["summary"]
+        assert '"severity": "low"' in low["summary"]
+        assert '"orchestration_path": "standard"' in low["summary"]
+        assert low["summary"]
+    finally:
+        _kill_sandboxes(sandboxes)
 
     after = _list_sandbox_ids()
     assert not (after - before), "langgraph pipeline left sandbox IDs behind"
