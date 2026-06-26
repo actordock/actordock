@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Literal
 from typing import TypedDict
 
+from e2b import Sandbox
 from langgraph.graph import END, START, StateGraph
 
 from support.python_template import (
@@ -123,58 +124,58 @@ PY
     )
 
 
-def parse_node(template_name: str):
+def _kill_sandboxes(sandboxes: list[Sandbox]) -> None:
+    for sandbox in sandboxes:
+        try:
+            sandbox.kill()
+        except Exception:
+            pass
+
+
+def parse_node(template_name: str, sandboxes: list[Sandbox]):
     def _node(state: AlertState) -> AlertState:
         sandbox = create_sandbox(template_name)
-        try:
-            sandbox.files.write(RAW_ALERT_PATH, state["raw_alert"])
-            sandbox.commands.run(_normalize_alert_command())
-            normalized = sandbox.files.read(NORMALIZED_ALERT_PATH)
-            return {"normalized": normalized}
-        finally:
-            sandbox.kill()
+        sandboxes.append(sandbox)
+        sandbox.files.write(RAW_ALERT_PATH, state["raw_alert"])
+        sandbox.commands.run(_normalize_alert_command())
+        normalized = sandbox.files.read(NORMALIZED_ALERT_PATH)
+        return {"normalized": normalized}
 
     return _node
 
 
-def analyze_node(template_name: str):
+def analyze_node(template_name: str, sandboxes: list[Sandbox]):
     def _node(state: AlertState) -> AlertState:
         sandbox = create_sandbox(template_name)
-        try:
-            sandbox.files.write(NORMALIZED_ALERT_PATH, state["normalized"])
-            sandbox.commands.run(_analyze_normalized_command())
-            metrics = sandbox.files.read(METRICS_PATH)
-            return {"metrics": metrics, "severity": _severity_from_metrics(metrics)}
-        finally:
-            sandbox.kill()
+        sandboxes.append(sandbox)
+        sandbox.files.write(NORMALIZED_ALERT_PATH, state["normalized"])
+        sandbox.commands.run(_analyze_normalized_command())
+        metrics = sandbox.files.read(METRICS_PATH)
+        return {"metrics": metrics, "severity": _severity_from_metrics(metrics)}
 
     return _node
 
 
-def summarize_node(template_name: str):
+def summarize_node(template_name: str, sandboxes: list[Sandbox]):
     def _node(state: AlertState) -> AlertState:
         sandbox = create_sandbox(template_name)
-        try:
-            sandbox.files.write(METRICS_PATH, state["metrics"])
-            sandbox.commands.run(_build_summary_command(path_label="standard"))
-            summary = sandbox.files.read(SUMMARY_PATH)
-            return {"summary": summary}
-        finally:
-            sandbox.kill()
+        sandboxes.append(sandbox)
+        sandbox.files.write(METRICS_PATH, state["metrics"])
+        sandbox.commands.run(_build_summary_command(path_label="standard"))
+        summary = sandbox.files.read(SUMMARY_PATH)
+        return {"summary": summary}
 
     return _node
 
 
-def summarize_high_severity_node(template_name: str):
+def summarize_high_severity_node(template_name: str, sandboxes: list[Sandbox]):
     def _node(state: AlertState) -> AlertState:
         sandbox = create_sandbox(template_name)
-        try:
-            sandbox.files.write(METRICS_PATH, state["metrics"])
-            sandbox.commands.run(_build_summary_command(path_label="high"))
-            summary = sandbox.files.read(SUMMARY_PATH)
-            return {"summary": summary}
-        finally:
-            sandbox.kill()
+        sandboxes.append(sandbox)
+        sandbox.files.write(METRICS_PATH, state["metrics"])
+        sandbox.commands.run(_build_summary_command(path_label="high"))
+        summary = sandbox.files.read(SUMMARY_PATH)
+        return {"summary": summary}
 
     return _node
 
@@ -193,14 +194,16 @@ def _severity_from_metrics(metrics: str) -> str:
         return "low"
 
 
-def build_graph(template_name: str | None = None):
+def build_graph(template_name: str | None = None, sandboxes: list[Sandbox] | None = None):
     if template_name is None:
         template_name = _default_sandbox_template()
+    if sandboxes is None:
+        sandboxes = []
     graph = StateGraph(AlertState)
-    graph.add_node("parse", parse_node(template_name))
-    graph.add_node("analyze", analyze_node(template_name))
-    graph.add_node("summarize", summarize_node(template_name))
-    graph.add_node("summarize_high_severity", summarize_high_severity_node(template_name))
+    graph.add_node("parse", parse_node(template_name, sandboxes))
+    graph.add_node("analyze", analyze_node(template_name, sandboxes))
+    graph.add_node("summarize", summarize_node(template_name, sandboxes))
+    graph.add_node("summarize_high_severity", summarize_high_severity_node(template_name, sandboxes))
     graph.add_edge(START, "parse")
     graph.add_edge("parse", "analyze")
     graph.add_conditional_edges(
@@ -217,7 +220,13 @@ def build_graph(template_name: str | None = None):
 
 
 def run_alert_graph(raw_alert: str, *, template_name: str | None = None) -> AlertState:
-    return build_graph(template_name=template_name).invoke({"raw_alert": raw_alert})
+    sandboxes: list[Sandbox] = []
+    try:
+        return build_graph(template_name=template_name, sandboxes=sandboxes).invoke(
+            {"raw_alert": raw_alert}
+        )
+    finally:
+        _kill_sandboxes(sandboxes)
 
 
 def run_alert_graph_from_file(path: str, *, template_name: str | None = None) -> AlertState:

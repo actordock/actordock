@@ -18,7 +18,7 @@ The goal is a small, deterministic end-to-end flow that demonstrates:
 - `Sandbox.create(template=...)`
 - `sandbox.files.write` / `sandbox.files.read`
 - `sandbox.commands.run`
-- `sandbox.kill()` in each node for cleanup
+- batch `sandbox.kill()` after the graph run for cleanup
 
 ## Setup
 
