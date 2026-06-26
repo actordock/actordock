@@ -107,7 +107,7 @@ runtime:
     commit: 9f8475493b6eeab9ecda837e114078a3dd0a4e41
   workerPool:
     name: actordock
-    replicas: 2
+    replicas: 8
     # Set to your built runtime-sandbox image (ko://.../cmd/runtime-sandbox).
     sandboxImage: ghcr.io/actordock/runtime-sandbox:latest
   actorTemplate:

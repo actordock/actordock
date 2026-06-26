@@ -20,5 +20,5 @@ metadata:
   labels:
     workload: actordock
 spec:
-  replicas: 4
+  replicas: 8
   sandboxImage: ko://github.com/actordock/runtime/cmd/runtime-sandbox
