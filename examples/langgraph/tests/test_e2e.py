@@ -23,7 +23,7 @@ import pytest
 
 from e2b import Sandbox
 
-from alert_graph import _kill_sandboxes, run_alert_graph
+from alert_graph import _kill_sandboxes, _pause_sandboxes, run_alert_graph
 
 
 def _list_sandbox_ids() -> set[str]:
@@ -91,6 +91,8 @@ def test_langgraph_pipeline_round_trip_and_cleanup() -> None:
         assert high["summary"]
         assert _expected_normalized() in high["normalized"]
         assert _expected_metrics() in high["metrics"]
+
+        _pause_sandboxes(sandboxes)
 
         low = run_alert_graph(_alert_payload(severity="low"), sandboxes=sandboxes)
 

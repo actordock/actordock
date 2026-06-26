@@ -124,6 +124,14 @@ PY
     )
 
 
+def _pause_sandboxes(sandboxes: list[Sandbox]) -> None:
+    for sandbox in sandboxes:
+        try:
+            sandbox.pause()
+        except Exception:
+            pass
+
+
 def _kill_sandboxes(sandboxes: list[Sandbox]) -> None:
     for sandbox in sandboxes:
         try:
