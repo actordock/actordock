@@ -16,11 +16,12 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
-from typing import Literal
-from typing import TypedDict
+from typing import Any, Literal, TypedDict
 
-from e2b import Sandbox
+from e2b import Sandbox, SandboxState
+from e2b.exceptions import TimeoutException
 from langgraph.graph import END, START, StateGraph
 
 from support.python_template import (
@@ -33,6 +34,9 @@ RAW_ALERT_PATH = "/tmp/raw_alert.json"
 NORMALIZED_ALERT_PATH = "/tmp/normalized_alert.json"
 METRICS_PATH = "/tmp/metrics.json"
 SUMMARY_PATH = "/tmp/incident-summary.txt"
+
+DEFAULT_MAX_ATTEMPTS = 15
+DEFAULT_RETRY_DELAY_SEC = 0.5
 
 
 def _default_sandbox_template() -> str:
@@ -124,12 +128,73 @@ PY
     )
 
 
-def _pause_sandboxes(sandboxes: list[Sandbox]) -> None:
-    for sandbox in sandboxes:
+def _write_file(sandbox: Sandbox, path: str, content: str, **kwargs: Any) -> Any:
+    last_err: Exception | None = None
+    for attempt in range(DEFAULT_MAX_ATTEMPTS):
+        try:
+            return sandbox.files.write(path, content, **kwargs)
+        except (TimeoutException, OSError) as err:
+            last_err = err
+            if attempt + 1 >= DEFAULT_MAX_ATTEMPTS:
+                raise
+            time.sleep(DEFAULT_RETRY_DELAY_SEC)
+    assert last_err is not None
+    raise last_err
+
+
+def _read_file(sandbox: Sandbox, path: str, **kwargs: Any) -> str:
+    last_err: Exception | None = None
+    for attempt in range(DEFAULT_MAX_ATTEMPTS):
+        try:
+            return sandbox.files.read(path, **kwargs)
+        except (TimeoutException, OSError) as err:
+            last_err = err
+            if attempt + 1 >= DEFAULT_MAX_ATTEMPTS:
+                raise
+            time.sleep(DEFAULT_RETRY_DELAY_SEC)
+    assert last_err is not None
+    raise last_err
+
+
+def _run_command(sandbox: Sandbox, cmd: str, **kwargs: Any) -> Any:
+    last_err: Exception | None = None
+    for attempt in range(DEFAULT_MAX_ATTEMPTS):
+        try:
+            return sandbox.commands.run(cmd, **kwargs)
+        except TimeoutException as err:
+            last_err = err
+            if attempt + 1 >= DEFAULT_MAX_ATTEMPTS:
+                raise
+            time.sleep(DEFAULT_RETRY_DELAY_SEC)
+    assert last_err is not None
+    raise last_err
+
+
+def _pause_sandbox(sandbox: Sandbox) -> None:
+    last_err: Exception | None = None
+    for attempt in range(DEFAULT_MAX_ATTEMPTS):
         try:
             sandbox.pause()
-        except Exception:
-            pass
+            break
+        except Exception as err:
+            last_err = err
+            if attempt + 1 >= DEFAULT_MAX_ATTEMPTS:
+                raise
+            time.sleep(DEFAULT_RETRY_DELAY_SEC)
+    else:
+        assert last_err is not None
+        raise last_err
+
+    for _ in range(DEFAULT_MAX_ATTEMPTS):
+        if sandbox.get_info().state == SandboxState.PAUSED:
+            return
+        time.sleep(DEFAULT_RETRY_DELAY_SEC)
+    raise RuntimeError(f"sandbox {sandbox.sandbox_id} did not reach paused state")
+
+
+def _pause_sandboxes(sandboxes: list[Sandbox]) -> None:
+    for sandbox in sandboxes:
+        _pause_sandbox(sandbox)
 
 
 def _kill_sandboxes(sandboxes: list[Sandbox]) -> None:
@@ -144,9 +209,9 @@ def parse_node(template_name: str, sandboxes: list[Sandbox]):
     def _node(state: AlertState) -> AlertState:
         sandbox = create_sandbox(template_name)
         sandboxes.append(sandbox)
-        sandbox.files.write(RAW_ALERT_PATH, state["raw_alert"])
-        sandbox.commands.run(_normalize_alert_command())
-        normalized = sandbox.files.read(NORMALIZED_ALERT_PATH)
+        _write_file(sandbox, RAW_ALERT_PATH, state["raw_alert"])
+        _run_command(sandbox, _normalize_alert_command())
+        normalized = _read_file(sandbox, NORMALIZED_ALERT_PATH)
         return {"normalized": normalized}
 
     return _node
@@ -156,9 +221,9 @@ def analyze_node(template_name: str, sandboxes: list[Sandbox]):
     def _node(state: AlertState) -> AlertState:
         sandbox = create_sandbox(template_name)
         sandboxes.append(sandbox)
-        sandbox.files.write(NORMALIZED_ALERT_PATH, state["normalized"])
-        sandbox.commands.run(_analyze_normalized_command())
-        metrics = sandbox.files.read(METRICS_PATH)
+        _write_file(sandbox, NORMALIZED_ALERT_PATH, state["normalized"])
+        _run_command(sandbox, _analyze_normalized_command())
+        metrics = _read_file(sandbox, METRICS_PATH)
         return {"metrics": metrics, "severity": _severity_from_metrics(metrics)}
 
     return _node
@@ -168,9 +233,9 @@ def summarize_node(template_name: str, sandboxes: list[Sandbox]):
     def _node(state: AlertState) -> AlertState:
         sandbox = create_sandbox(template_name)
         sandboxes.append(sandbox)
-        sandbox.files.write(METRICS_PATH, state["metrics"])
-        sandbox.commands.run(_build_summary_command(path_label="standard"))
-        summary = sandbox.files.read(SUMMARY_PATH)
+        _write_file(sandbox, METRICS_PATH, state["metrics"])
+        _run_command(sandbox, _build_summary_command(path_label="standard"))
+        summary = _read_file(sandbox, SUMMARY_PATH)
         return {"summary": summary}
 
     return _node
@@ -180,9 +245,9 @@ def summarize_high_severity_node(template_name: str, sandboxes: list[Sandbox]):
     def _node(state: AlertState) -> AlertState:
         sandbox = create_sandbox(template_name)
         sandboxes.append(sandbox)
-        sandbox.files.write(METRICS_PATH, state["metrics"])
-        sandbox.commands.run(_build_summary_command(path_label="high"))
-        summary = sandbox.files.read(SUMMARY_PATH)
+        _write_file(sandbox, METRICS_PATH, state["metrics"])
+        _run_command(sandbox, _build_summary_command(path_label="high"))
+        summary = _read_file(sandbox, SUMMARY_PATH)
         return {"summary": summary}
 
     return _node
