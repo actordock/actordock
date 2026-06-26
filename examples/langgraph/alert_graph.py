@@ -20,10 +20,13 @@ from pathlib import Path
 from typing import Literal
 from typing import TypedDict
 
-from e2b import Sandbox
 from langgraph.graph import END, START, StateGraph
 
-from support.python_template import SANDBOX_TEMPLATE_ENV, sandbox_template_name
+from support.python_template import (
+    SANDBOX_TEMPLATE_ENV,
+    create_sandbox,
+    sandbox_template_name,
+)
 
 RAW_ALERT_PATH = "/tmp/raw_alert.json"
 NORMALIZED_ALERT_PATH = "/tmp/normalized_alert.json"
@@ -122,7 +125,7 @@ PY
 
 def parse_node(template_name: str):
     def _node(state: AlertState) -> AlertState:
-        sandbox = Sandbox.create(template=template_name, secure=False)
+        sandbox = create_sandbox(template_name)
         try:
             sandbox.files.write(RAW_ALERT_PATH, state["raw_alert"])
             sandbox.commands.run(_normalize_alert_command())
@@ -136,7 +139,7 @@ def parse_node(template_name: str):
 
 def analyze_node(template_name: str):
     def _node(state: AlertState) -> AlertState:
-        sandbox = Sandbox.create(template=template_name, secure=False)
+        sandbox = create_sandbox(template_name)
         try:
             sandbox.files.write(NORMALIZED_ALERT_PATH, state["normalized"])
             sandbox.commands.run(_analyze_normalized_command())
@@ -150,7 +153,7 @@ def analyze_node(template_name: str):
 
 def summarize_node(template_name: str):
     def _node(state: AlertState) -> AlertState:
-        sandbox = Sandbox.create(template=template_name, secure=False)
+        sandbox = create_sandbox(template_name)
         try:
             sandbox.files.write(METRICS_PATH, state["metrics"])
             sandbox.commands.run(_build_summary_command(path_label="standard"))
@@ -164,7 +167,7 @@ def summarize_node(template_name: str):
 
 def summarize_high_severity_node(template_name: str):
     def _node(state: AlertState) -> AlertState:
-        sandbox = Sandbox.create(template=template_name, secure=False)
+        sandbox = create_sandbox(template_name)
         try:
             sandbox.files.write(METRICS_PATH, state["metrics"])
             sandbox.commands.run(_build_summary_command(path_label="high"))

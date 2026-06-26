@@ -19,13 +19,16 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from e2b import Sandbox
 from llama_index.core import Settings, SimpleDirectoryReader, VectorStoreIndex
 from llama_index.core.embeddings import MockEmbedding
 from llama_index.core.tools import FunctionTool
 from llama_index.core.workflow import StartEvent, StopEvent, Workflow, step
 
-from support.python_template import SANDBOX_TEMPLATE_ENV, sandbox_template_name
+from support.python_template import (
+    SANDBOX_TEMPLATE_ENV,
+    create_sandbox,
+    sandbox_template_name,
+)
 
 DAYS_PER_YEAR = 6
 POLICIES_DIR = Path(__file__).resolve().parent / "data" / "policies"
@@ -47,7 +50,7 @@ def _default_sandbox_template() -> str:
 
 def _actordock_tool(template_name: str) -> FunctionTool:
     def calculate_pto(tenure_years: int, template_name: str) -> int:
-        sandbox = Sandbox.create(template=template_name, secure=False, timeout=120)
+        sandbox = create_sandbox(template_name)
         try:
             out = sandbox.commands.run(
                 f'python3 -c "print({tenure_years} * {DAYS_PER_YEAR})"',

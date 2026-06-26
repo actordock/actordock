@@ -19,9 +19,10 @@ from __future__ import annotations
 import os
 import uuid
 
-from e2b import Template
+from e2b import Sandbox, Template
 
 SANDBOX_TEMPLATE_ENV = "ACTORDOCK_SANDBOX_TEMPLATE"
+SANDBOX_TIMEOUT_SEC = 120
 
 PYTHON_APK_CMD = "apk add --no-cache python3 py3-pip"
 
@@ -54,3 +55,12 @@ def ensure_python_template(
     template_name = build_python_template(name, cpu_count=cpu_count, memory_mb=memory_mb)
     os.environ[SANDBOX_TEMPLATE_ENV] = template_name
     return template_name
+
+
+def create_sandbox(template_name: str) -> Sandbox:
+    """Create a sandbox with shared example defaults."""
+    return Sandbox.create(
+        template=template_name,
+        secure=False,
+        timeout=SANDBOX_TIMEOUT_SEC,
+    )
