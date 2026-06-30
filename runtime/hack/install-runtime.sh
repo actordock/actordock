@@ -44,6 +44,22 @@ function log_step() {
   echo -e "${COLOR_CYAN}[step]: ${step_name}${COLOR_RESET}"
 }
 
+rollout_timeout() {
+  if [[ "${RUNTIME_INSTALL_KIND:-false}" == "true" ]]; then
+    echo "600s"
+  else
+    echo "120s"
+  fi
+}
+
+wait_valkey_cluster_ready() {
+  local timeout
+  timeout="$(rollout_timeout)"
+  log_step "Waiting for Valkey cluster (${timeout})"
+  run_kubectl rollout status statefulset/valkey-cluster -n actordock-system --timeout="${timeout}"
+  run_kubectl wait --for=condition=complete job/valkey-cluster-init -n actordock-system --timeout="${timeout}"
+}
+
 # --- Helper Functions ---
 function usage() {
   echo "Usage: $0 [options]"
@@ -239,11 +255,13 @@ deploy_runtime_system() {
   echo "${manifests}" | run_kubectl apply -f -
 
   log_step "Waiting for runtime system components to be ready..."
-  run_kubectl rollout status deployment/runtime-api -n actordock-system --timeout=120s
-  run_kubectl rollout status deployment/runtime-controller -n actordock-system --timeout=120s
-  run_kubectl rollout status deployment/runtime-net-router -n actordock-system --timeout=120s
-  run_kubectl rollout status statefulset/valkey-cluster -n actordock-system --timeout=120s
-  run_kubectl rollout status daemonset/runtime-worker -n actordock-system --timeout=120s
+  local timeout
+  timeout="$(rollout_timeout)"
+  wait_valkey_cluster_ready
+  run_kubectl rollout status deployment/runtime-controller -n actordock-system --timeout="${timeout}"
+  run_kubectl rollout status deployment/runtime-net-router -n actordock-system --timeout="${timeout}"
+  run_kubectl rollout status daemonset/runtime-worker -n actordock-system --timeout="${timeout}"
+  run_kubectl rollout status deployment/runtime-api -n actordock-system --timeout="${timeout}"
 }
 
 # Ensure secrets and configmaps required by runtime-api

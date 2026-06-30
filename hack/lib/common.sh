@@ -63,13 +63,21 @@ kubectl_ctx() {
   kubectl --context "kind-${KIND_CLUSTER_NAME}" "$@"
 }
 
+wait_valkey_cluster_ready() {
+  local timeout="${1:-600s}"
+  log_step "Waiting for Valkey cluster (${timeout})"
+  kubectl_ctx rollout status statefulset/valkey-cluster -n actordock-system --timeout="${timeout}"
+  kubectl_ctx wait --for=condition=complete job/valkey-cluster-init -n actordock-system --timeout="${timeout}"
+}
+
 wait_runtime_control_plane() {
-  log_step "Waiting for runtime control plane"
-  kubectl_ctx rollout status statefulset/valkey-cluster -n actordock-system --timeout=300s
-  kubectl_ctx rollout status deployment/runtime-api -n actordock-system --timeout=300s
-  kubectl_ctx rollout status deployment/runtime-controller -n actordock-system --timeout=300s
-  kubectl_ctx rollout status deployment/runtime-net-router -n actordock-system --timeout=300s
-  kubectl_ctx rollout status daemonset/runtime-worker -n actordock-system --timeout=300s
+  local timeout="${1:-600s}"
+  log_step "Waiting for runtime control plane (${timeout})"
+  wait_valkey_cluster_ready "${timeout}"
+  kubectl_ctx rollout status deployment/runtime-controller -n actordock-system --timeout="${timeout}"
+  kubectl_ctx rollout status deployment/runtime-net-router -n actordock-system --timeout="${timeout}"
+  kubectl_ctx rollout status daemonset/runtime-worker -n actordock-system --timeout="${timeout}"
+  kubectl_ctx rollout status deployment/runtime-api -n actordock-system --timeout="${timeout}"
 }
 
 deploy_actordock_images() {

@@ -134,6 +134,11 @@ func main() {
 	workerDaemonPodInformerFactory.Start(stopCh)
 	crdInformerFactory.Start(stopCh)
 
+	go serverboot.StartMetricsServer(ctx, serverboot.MetricsServerOptions{
+		Addr:         *metricsListenAddr,
+		EnableReadyz: true,
+	})
+
 	workerPodInformerFactory.WaitForCacheSync(stopCh)
 	workerDaemonPodInformerFactory.WaitForCacheSync(stopCh)
 	crdInformerFactory.WaitForCacheSync(stopCh)
@@ -157,11 +162,6 @@ func main() {
 	reflection.Register(mux)
 	runtimeapipb.RegisterControlServer(mux, sm)
 	runtimeapipb.RegisterSessionIdentityServer(mux, sessionIdentitySrv)
-
-	go serverboot.StartMetricsServer(ctx, serverboot.MetricsServerOptions{
-		Addr:         *metricsListenAddr,
-		EnableReadyz: true,
-	})
 
 	if err := mux.Serve(lis); err != nil {
 		serverboot.Fatal(ctx, "Failed to serve", err)
