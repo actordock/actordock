@@ -61,13 +61,13 @@ func DebugConsoleDump(ctx context.Context, vsockPath, cmd string) string {
 	// The kata debug console is an INTERACTIVE shell on a PTY (console.rs spawns
 	// /bin/bash|/bin/sh), so it ECHOES the command line back before running it. We
 	// must not let the echo trip the end sentinel: write the sentinel split by ''
-	// (which the shell strips) so the echoed command contains "__ATE''_END__" (no
-	// match) while the shell's OUTPUT is "__ATE_END__" (match). Read until the
+	// (which the shell strips) so the echoed command contains "__ADK''_END__" (no
+	// match) while the shell's OUTPUT is "__ADK_END__" (match). Read until the
 	// output sentinel (or EOF/deadline).
-	if _, err := fmt.Fprintf(conn, "{ %s ; } 2>&1; echo __ATE''_END__\n", cmd); err != nil {
+	if _, err := fmt.Fprintf(conn, "{ %s ; } 2>&1; echo __ADK''_END__\n", cmd); err != nil {
 		return "debug-console write: " + err.Error()
 	}
-	const sentinel = "__ATE_END__"
+	const sentinel = "__ADK_END__"
 	var out strings.Builder
 	for {
 		line, err := br.ReadString('\n')

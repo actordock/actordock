@@ -122,7 +122,7 @@ func main() {
 
 	var gcsClient *storage.Client
 	var s3Client *s3.Client
-	storageBackend := os.Getenv("ATE_STORAGE_BACKEND")
+	storageBackend := os.Getenv("RUNTIME_STORAGE_BACKEND")
 	switch storageBackend {
 	case "s3":
 		slog.InfoContext(ctx, "Using S3 storage backend")
