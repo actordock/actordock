@@ -42,14 +42,14 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WorkerHerderClient interface {
-	// Run tells runtime-worker to create a new containerized workload from scratch on a
+	// Run tells runtime-worker to create a new containerized workload from scratch on an
 	// runtime-sandbox.
 	Run(ctx context.Context, in *RunRequest, opts ...grpc.CallOption) (*RunResponse, error)
-	// Checkpoint tells runtime-worker to save the current state of the workload on a
-	// runtime-sandbox to object storage, and then reset the runtime-sandbox to a blank state
+	// Checkpoint tells runtime-worker to save the current state of the workload on an
+	// runtime-sandbox to object storage, and then completely the runtime-sandbox to a blank state
 	// (back to "available" state.)
 	Checkpoint(ctx context.Context, in *CheckpointRequest, opts ...grpc.CallOption) (*CheckpointResponse, error)
-	// Restore restores a workload from checkpoint onto a runtime-sandbox.
+	// Restore restores a workload from checkpoint onto an runtime-sandbox.
 	Restore(ctx context.Context, in *RestoreRequest, opts ...grpc.CallOption) (*RestoreResponse, error)
 }
 
@@ -95,14 +95,14 @@ func (c *workerHerderClient) Restore(ctx context.Context, in *RestoreRequest, op
 // All implementations must embed UnimplementedWorkerHerderServer
 // for forward compatibility.
 type WorkerHerderServer interface {
-	// Run tells runtime-worker to create a new containerized workload from scratch on a
+	// Run tells runtime-worker to create a new containerized workload from scratch on an
 	// runtime-sandbox.
 	Run(context.Context, *RunRequest) (*RunResponse, error)
-	// Checkpoint tells runtime-worker to save the current state of the workload on a
-	// runtime-sandbox to object storage, and then reset the runtime-sandbox to a blank state
+	// Checkpoint tells runtime-worker to save the current state of the workload on an
+	// runtime-sandbox to object storage, and then completely the runtime-sandbox to a blank state
 	// (back to "available" state.)
 	Checkpoint(context.Context, *CheckpointRequest) (*CheckpointResponse, error)
-	// Restore restores a workload from checkpoint onto a runtime-sandbox.
+	// Restore restores a workload from checkpoint onto an runtime-sandbox.
 	Restore(context.Context, *RestoreRequest) (*RestoreResponse, error)
 	mustEmbedUnimplementedWorkerHerderServer()
 }

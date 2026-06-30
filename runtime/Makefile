@@ -44,6 +44,9 @@ build-images:
 	$(KO) build \
 	    ./cmd/runtime-api \
 	    ./cmd/runtime-worker \
+	    ./cmd/runtime-sandbox \
+	    ./cmd/runtime-sandbox-microvm \
+	    ./cmd/runtime-controller \
 	    ./cmd/runtime-podcert \
 	    ./cmd/runtime-net
 

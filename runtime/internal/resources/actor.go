@@ -23,8 +23,8 @@ const (
 	// ActorIDRegexPattern is the regular expression pattern for matching valid actor IDs.
 	ActorIDRegexPattern = `[a-z0-9]([-a-z0-9]*[a-z0-9])?`
 	// ActorDNSSuffix is suffix to the DNS name for direct access to Actor
-	// "<actor id>.actors.actordock.dev."
-	ActorDNSSuffix = "actors.actordock.dev"
+	// "<actor id>.actors.resources.runtime.actordock.dev."
+	ActorDNSSuffix = "actors.resources.runtime.actordock.dev"
 )
 
 var actorIDRegex = regexp.MustCompile("^" + ActorIDRegexPattern + "$")

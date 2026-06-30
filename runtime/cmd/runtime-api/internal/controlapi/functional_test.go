@@ -26,9 +26,10 @@ import (
 	"time"
 
 	"github.com/actordock/runtime/cmd/runtime-api/internal/store/runtimeredis"
+	"github.com/actordock/runtime/cmd/runtime-api/internal/workercache"
+	"github.com/actordock/runtime/internal/runtimeinterceptors"
 	"github.com/actordock/runtime/internal/envtestbins"
 	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
-	"github.com/actordock/runtime/internal/runtimeinterceptors"
 	runtimev1alpha1 "github.com/actordock/runtime/pkg/api/v1alpha1"
 	"github.com/actordock/runtime/pkg/client/clientset/versioned"
 	"github.com/actordock/runtime/pkg/client/informers/externalversions"
@@ -57,7 +58,7 @@ import (
 var (
 	testEnv    *envtest.Environment
 	cfg        *rest.Config
-	fakeWorker = &FakeWorkerServer{}
+	fakeWorkerHerder = &FakeWorkerHerderServer{}
 )
 
 func TestMain(m *testing.M) {
@@ -88,8 +89,8 @@ func TestMain(m *testing.M) {
 		log.Fatalf("create actordock-system namespace: %v", err)
 	}
 
-	// Create shared Worker Pod
-	workerSidecarPod := &corev1.Pod{
+	// Create shared runtime-worker Pod
+	workerDaemonPod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "runtime-worker-shared",
 			Namespace: "actordock-system",
@@ -104,35 +105,35 @@ func TestMain(m *testing.M) {
 			},
 		},
 	}
-	createdWorkerPod, err := k8sClient.CoreV1().Pods("actordock-system").Create(context.Background(), workerSidecarPod, metav1.CreateOptions{})
+	createdWorkerDaemon, err := k8sClient.CoreV1().Pods("actordock-system").Create(context.Background(), workerDaemonPod, metav1.CreateOptions{})
 	if err != nil && !apierrors.IsAlreadyExists(err) {
 		log.Fatalf("create runtime-worker pod: %v", err)
 	}
 	if err == nil {
-		createdWorkerPod.Status.PodIPs = []corev1.PodIP{{IP: "127.0.0.1"}}
-		createdWorkerPod.Status.Phase = corev1.PodRunning
-		_, err = k8sClient.CoreV1().Pods("actordock-system").UpdateStatus(context.Background(), createdWorkerPod, metav1.UpdateOptions{})
+		createdWorkerDaemon.Status.PodIPs = []corev1.PodIP{{IP: "127.0.0.1"}}
+		createdWorkerDaemon.Status.Phase = corev1.PodRunning
+		_, err = k8sClient.CoreV1().Pods("actordock-system").UpdateStatus(context.Background(), createdWorkerDaemon, metav1.UpdateOptions{})
 		if err != nil {
 			log.Fatalf("update runtime-worker pod status: %v", err)
 		}
 	}
 
-	// Start Fake Worker Server on port 8085
-	workerGrpcServer := grpc.NewServer()
-	runtimeworkerpb.RegisterWorkerHerderServer(workerGrpcServer, fakeWorker)
-	workerLis, err := net.Listen("tcp", "127.0.0.1:8085")
+	// Start Fake runtime-worker Server on port 8085
+	workerDaemonGrpcServer := grpc.NewServer()
+	runtimeworkerpb.RegisterWorkerHerderServer(workerDaemonGrpcServer, fakeWorkerHerder)
+	workerDaemonLis, err := net.Listen("tcp", "127.0.0.1:8085")
 	if err != nil {
 		log.Fatalf("listen on 127.0.0.1:8085: %v", err)
 	}
 	go func() {
-		if err := workerGrpcServer.Serve(workerLis); err != nil {
+		if err := workerDaemonGrpcServer.Serve(workerDaemonLis); err != nil {
 			fmt.Printf("runtime-worker grpc server exited: %v\n", err)
 		}
 	}()
 
 	code := m.Run()
 
-	workerGrpcServer.Stop()
+	workerDaemonGrpcServer.Stop()
 
 	err = testEnv.Stop()
 	if err != nil {
@@ -142,8 +143,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// FakeWorkerServer implements runtimeworkerpb.WorkersServer
-type FakeWorkerServer struct {
+// FakeWorkerHerderServer implements runtimeworkerpb.WorkersServer
+type FakeWorkerHerderServer struct {
 	runtimeworkerpb.UnimplementedWorkerHerderServer
 
 	Lock sync.Mutex
@@ -161,7 +162,7 @@ type FakeWorkerServer struct {
 	RestoreDelay   time.Duration
 }
 
-func (f *FakeWorkerServer) Reset() {
+func (f *FakeWorkerHerderServer) Reset() {
 	f.Lock.Lock()
 	defer f.Lock.Unlock()
 
@@ -178,7 +179,7 @@ func (f *FakeWorkerServer) Reset() {
 	f.RestoreDelay = 0
 }
 
-func (f *FakeWorkerServer) Run(ctx context.Context, req *runtimeworkerpb.RunRequest) (*runtimeworkerpb.RunResponse, error) {
+func (f *FakeWorkerHerderServer) Run(ctx context.Context, req *runtimeworkerpb.RunRequest) (*runtimeworkerpb.RunResponse, error) {
 	f.Lock.Lock()
 	defer f.Lock.Unlock()
 
@@ -191,7 +192,7 @@ func (f *FakeWorkerServer) Run(ctx context.Context, req *runtimeworkerpb.RunRequ
 	return &runtimeworkerpb.RunResponse{}, nil
 }
 
-func (f *FakeWorkerServer) Checkpoint(ctx context.Context, req *runtimeworkerpb.CheckpointRequest) (*runtimeworkerpb.CheckpointResponse, error) {
+func (f *FakeWorkerHerderServer) Checkpoint(ctx context.Context, req *runtimeworkerpb.CheckpointRequest) (*runtimeworkerpb.CheckpointResponse, error) {
 	f.Lock.Lock()
 	defer f.Lock.Unlock()
 
@@ -201,7 +202,7 @@ func (f *FakeWorkerServer) Checkpoint(ctx context.Context, req *runtimeworkerpb.
 	return &runtimeworkerpb.CheckpointResponse{}, nil
 }
 
-func (f *FakeWorkerServer) Restore(ctx context.Context, req *runtimeworkerpb.RestoreRequest) (*runtimeworkerpb.RestoreResponse, error) {
+func (f *FakeWorkerHerderServer) Restore(ctx context.Context, req *runtimeworkerpb.RestoreRequest) (*runtimeworkerpb.RestoreResponse, error) {
 	f.Lock.Lock()
 	defer f.Lock.Unlock()
 
@@ -216,7 +217,7 @@ func (f *FakeWorkerServer) Restore(ctx context.Context, req *runtimeworkerpb.Res
 	return &runtimeworkerpb.RestoreResponse{}, nil
 }
 
-func (f *FakeWorkerServer) lastRestoreRequest() *runtimeworkerpb.RestoreRequest {
+func (f *FakeWorkerHerderServer) lastRestoreRequest() *runtimeworkerpb.RestoreRequest {
 	f.Lock.Lock()
 	defer f.Lock.Unlock()
 
@@ -231,9 +232,9 @@ type testContext struct {
 	service             *Service
 	client              runtimeapipb.ControlClient
 	k8sClient           kubernetes.Interface
-	runtimeAPIClient    versioned.Interface
+	runtimeClient     versioned.Interface
 	persistence         *runtimeredis.Persistence
-	fakeWorker          *FakeWorkerServer
+	fakeWorkerHerder          *FakeWorkerHerderServer
 	cleanup             func()
 	actorTemplateLister listersv1alpha1.ActorTemplateLister
 	workerPoolLister    listersv1alpha1.WorkerPoolLister
@@ -261,7 +262,7 @@ func setupTest(t *testing.T, ns string) *testContext {
 		t.Fatalf("failed to create k8s clientset: %v", err)
 	}
 
-	runtimeAPIClient, err := versioned.NewForConfig(cfg)
+	runtimeClient, err := versioned.NewForConfig(cfg)
 	if err != nil {
 		mr.Close()
 		t.Fatalf("failed to create runtime clientset: %v", err)
@@ -269,9 +270,9 @@ func setupTest(t *testing.T, ns string) *testContext {
 
 	// 3. Initialize Informers
 	workerFactory, workerInformer := WorkerPodInformer(k8sClient)
-	workerPodSidecarFactory, workerPodSidecarInformer := RuntimeWorkerPodInformer(k8sClient)
+	workerDaemonFactory, workerDaemonInformer := WorkerDaemonInformer(k8sClient)
 
-	runtimeInformerFactory := externalversions.NewSharedInformerFactory(runtimeAPIClient, 0)
+	runtimeInformerFactory := externalversions.NewSharedInformerFactory(runtimeClient, 0)
 	actorTemplateLister := runtimeInformerFactory.Api().V1alpha1().ActorTemplates().Lister()
 	workerPoolLister := runtimeInformerFactory.Api().V1alpha1().WorkerPools().Lister()
 	sandboxConfigLister := runtimeInformerFactory.Api().V1alpha1().SandboxConfigs().Lister()
@@ -282,18 +283,25 @@ func setupTest(t *testing.T, ns string) *testContext {
 	syncer.Start(ctx)
 
 	workerFactory.Start(ctx.Done())
-	workerPodSidecarFactory.Start(ctx.Done())
+	workerDaemonFactory.Start(ctx.Done())
 	runtimeInformerFactory.Start(ctx.Done())
 
 	workerFactory.WaitForCacheSync(ctx.Done())
-	workerPodSidecarFactory.WaitForCacheSync(ctx.Done())
+	workerDaemonFactory.WaitForCacheSync(ctx.Done())
 	runtimeInformerFactory.WaitForCacheSync(ctx.Done())
 
 	// 4. Initialize Service
-	dialer := NewWorkerDialer(workerInformer.GetIndexer(), workerPodSidecarInformer.GetIndexer())
-	service := NewService(persistence, actorTemplateLister, workerPoolLister, sandboxConfigLister, dialer, k8sClient)
+	wc := workercache.New(persistence, 5*time.Minute)
+	if err := wc.Start(ctx); err != nil {
+		cancel()
+		mr.Close()
+		t.Fatalf("failed to start worker cache: %v", err)
+	}
 
-	// 5. Start REAL gRPC Server for runtime API
+	dialer := NewWorkerDialer(workerInformer.GetIndexer(), workerDaemonInformer.GetIndexer())
+	service := NewService(persistence, wc, actorTemplateLister, workerPoolLister, sandboxConfigLister, dialer, k8sClient)
+
+	// 5. Start REAL gRPC Server for runtime-api
 	grpcServer := grpc.NewServer(grpc.UnaryInterceptor(runtimeinterceptors.ServerUnaryInterceptor))
 	runtimeapipb.RegisterControlServer(grpcServer, service)
 
@@ -321,7 +329,7 @@ func setupTest(t *testing.T, ns string) *testContext {
 	client := runtimeapipb.NewControlClient(conn)
 
 	// Call Reset on global mock
-	fakeWorker.Reset()
+	fakeWorkerHerder.Reset()
 
 	// Create namespace
 	_, err = k8sClient.CoreV1().Namespaces().Create(context.Background(), &corev1.Namespace{
@@ -347,9 +355,9 @@ func setupTest(t *testing.T, ns string) *testContext {
 		service:             service,
 		client:              client,
 		k8sClient:           k8sClient,
-		runtimeAPIClient:    runtimeAPIClient,
+		runtimeClient:     runtimeClient,
 		persistence:         persistence,
-		fakeWorker:          fakeWorker,
+		fakeWorkerHerder:          fakeWorkerHerder,
 		cleanup:             cleanup,
 		actorTemplateLister: actorTemplateLister,
 		workerPoolLister:    workerPoolLister,
@@ -407,7 +415,7 @@ func createTemplateWithContainers(t *testing.T, tc *testContext, ns string, cont
 			},
 		},
 	}
-	createdTemplate, err := tc.runtimeAPIClient.ApiV1alpha1().ActorTemplates(ns).Create(context.Background(), actorTemplate, metav1.CreateOptions{})
+	createdTemplate, err := tc.runtimeClient.ApiV1alpha1().ActorTemplates(ns).Create(context.Background(), actorTemplate, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("failed to create actor template: %v", err)
 	}
@@ -416,7 +424,7 @@ func createTemplateWithContainers(t *testing.T, tc *testContext, ns string, cont
 		GoldenSnapshot: "gs://my-bucket/my-folder",
 	}
 
-	_, err = tc.runtimeAPIClient.ApiV1alpha1().ActorTemplates(ns).UpdateStatus(context.Background(), createdTemplate, metav1.UpdateOptions{})
+	_, err = tc.runtimeClient.ApiV1alpha1().ActorTemplates(ns).UpdateStatus(context.Background(), createdTemplate, metav1.UpdateOptions{})
 	if err != nil {
 		t.Fatalf("failed to update status: %v", err)
 	}
@@ -456,7 +464,7 @@ func ensureDefaultGvisorSandboxConfig(t *testing.T, tc *testContext) {
 			},
 		},
 	}
-	if _, err := tc.runtimeAPIClient.ApiV1alpha1().SandboxConfigs().Create(context.Background(), sc, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
+	if _, err := tc.runtimeClient.ApiV1alpha1().SandboxConfigs().Create(context.Background(), sc, metav1.CreateOptions{}); err != nil && !apierrors.IsAlreadyExists(err) {
 		t.Fatalf("failed to create default SandboxConfig: %v", err)
 	}
 	if err := wait.PollUntilContextTimeout(context.Background(), 100*time.Millisecond, 5*time.Second, true, func(ctx context.Context) (bool, error) {
@@ -476,11 +484,11 @@ func createWorkerPool(t *testing.T, tc *testContext, ns string, name string, lab
 			Labels:    labels,
 		},
 		Spec: runtimev1alpha1.WorkerPoolSpec{
-			Replicas:     1,
+			Replicas:   1,
 			SandboxImage: "runtime-sandbox@sha256:abc",
 		},
 	}
-	_, err := tc.runtimeAPIClient.ApiV1alpha1().WorkerPools(ns).Create(context.Background(), wp, metav1.CreateOptions{})
+	_, err := tc.runtimeClient.ApiV1alpha1().WorkerPools(ns).Create(context.Background(), wp, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("failed to create WorkerPool: %v", err)
 	}
@@ -513,7 +521,7 @@ func createTemplateWithSelector(t *testing.T, tc *testContext, ns string, name s
 			WorkerSelector: selector,
 		},
 	}
-	_, err := tc.runtimeAPIClient.ApiV1alpha1().ActorTemplates(ns).Create(context.Background(), actorTemplate, metav1.CreateOptions{})
+	_, err := tc.runtimeClient.ApiV1alpha1().ActorTemplates(ns).Create(context.Background(), actorTemplate, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("failed to create actor template: %v", err)
 	}
@@ -902,12 +910,12 @@ func TestListWorkers(t *testing.T) {
 // TestResumeActor tests the full workflow of resuming a suspended actor.
 // Workflow:
 // 1. Creates a mock ActorTemplate.
-// 2. Creates a mock Worker Pod in 'actordock-system' namespace on 'node1'.
+// 2. Creates a mock runtime-worker Pod in 'actordock-system' namespace on 'node1'.
 // 3. Creates a mock worker Pod in the test namespace on 'node1'.
 // 4. Waits for the WorkerPoolSyncer to mirror the worker to Redis.
 // 5. Creates an actor (starts as SUSPENDED).
 // 6. Calls ResumeActor RPC.
-// 7. Verifies that the fake Worker received the Restore call.
+// 7. Verifies that the fake runtime-worker received the Restore call.
 // 8. Verifies that the actor status is updated to RUNNING.
 func TestResumeActor(t *testing.T) {
 	ns := namespaceForTest("ns-resume")
@@ -935,7 +943,7 @@ func TestResumeActor(t *testing.T) {
 		t.Fatalf("ResumeActor failed: %v", err)
 	}
 
-	if !tc.fakeWorker.RestoreCalled {
+	if !tc.fakeWorkerHerder.RestoreCalled {
 		t.Errorf("expected Restore to be called")
 	}
 
@@ -951,9 +959,9 @@ func TestResumeActor(t *testing.T) {
 			ActorTemplateNamespace: ns,
 			ActorTemplateName:      "tmpl1",
 			Status:                 runtimeapipb.Actor_STATUS_RUNNING,
-			SandboxPodNamespace:    ns,
-			SandboxPodName:         "worker-1",
-			SandboxPodIp:           "127.0.0.1",
+			SandboxPodNamespace:      ns,
+			SandboxPodName:           "worker-1",
+			SandboxPodIp:             "127.0.0.1",
 			WorkerPoolName:         "pool1",
 		},
 	}
@@ -1050,7 +1058,7 @@ func TestResumeActorResolvesValueFromEnv(t *testing.T) {
 		t.Fatalf("ResumeActor failed: %v", err)
 	}
 
-	restoreReq := tc.fakeWorker.lastRestoreRequest()
+	restoreReq := tc.fakeWorkerHerder.lastRestoreRequest()
 	if restoreReq == nil {
 		t.Fatalf("expected Restore to be called")
 	}
@@ -1131,7 +1139,7 @@ func TestResumeActor_NoEligiblePool(t *testing.T) {
 	_, err = tc.client.ResumeActor(context.Background(), &runtimeapipb.ResumeActorRequest{
 		ActorId: createResp.GetActor().GetActorId(),
 	})
-	assertGrpcError(t, err, codes.FailedPrecondition, "no worker pool matches the template and actor selectors")
+	assertGrpcError(t, err, codes.FailedPrecondition, "no worker pool matches the template's sandboxClass and the template/actor selectors")
 }
 
 // TestResumeActor_MultiPoolSelector exercises the AND-of-two-selectors path
@@ -1230,12 +1238,12 @@ func TestResumeActor_RequiresBothSelectorsToMatch(t *testing.T) {
 // TestResumeActor_Reentrancy tests the failure recovery and re-entrancy of ResumeActor.
 // Workflow:
 // 1. Creates a mock ActorTemplate.
-// 2. Creates a mock Worker Pod and a mock Worker Pod.
+// 2. Creates a mock runtime-worker Pod and a mock Worker Pod.
 // 3. Waits for the WorkerPoolSyncer to mirror the worker to store.
 // 4. Creates an actor in SUSPENDED state.
-// 5. Configures fake Worker to FAIL on Restore.
+// 5. Configures fake runtime-worker to FAIL on Restore.
 // 6. Calls ResumeActor and verifies it fails, but actor status becomes RESUMING.
-// 7. Configures fake Worker to SUCCEED on Restore.
+// 7. Configures fake runtime-worker to SUCCEED on Restore.
 // 8. Calls ResumeActor again and verifies it succeeds and actor status becomes RUNNING.
 func TestResumeActor_Reentrancy(t *testing.T) {
 	ns := namespaceForTest("ns-resume-reentrancy")
@@ -1257,8 +1265,8 @@ func TestResumeActor_Reentrancy(t *testing.T) {
 	}
 	id := "id1"
 
-	// STEP 1: Make Worker FAIL on Restore!
-	tc.fakeWorker.FailRestore = fmt.Errorf("mock runtime-worker failure")
+	// STEP 1: Make runtime-worker FAIL on Restore!
+	tc.fakeWorkerHerder.FailRestore = fmt.Errorf("mock runtime-worker failure")
 
 	_, err = tc.client.ResumeActor(context.Background(), &runtimeapipb.ResumeActorRequest{
 		ActorId: id,
@@ -1276,9 +1284,9 @@ func TestResumeActor_Reentrancy(t *testing.T) {
 		t.Errorf("expected status RESUMING, got %v", actor.GetStatus())
 	}
 
-	// STEP 2: Make Worker SUCCEED!
-	tc.fakeWorker.FailRestore = nil
-	tc.fakeWorker.RestoreCalled = false // reset for verification
+	// STEP 2: Make runtime-worker SUCCEED!
+	tc.fakeWorkerHerder.FailRestore = nil
+	tc.fakeWorkerHerder.RestoreCalled = false // reset for verification
 
 	_, err = tc.client.ResumeActor(context.Background(), &runtimeapipb.ResumeActorRequest{
 		ActorId: id,
@@ -1287,7 +1295,7 @@ func TestResumeActor_Reentrancy(t *testing.T) {
 		t.Fatalf("ResumeActor failed on retry: %v", err)
 	}
 
-	if !tc.fakeWorker.RestoreCalled {
+	if !tc.fakeWorkerHerder.RestoreCalled {
 		t.Errorf("expected Restore to be called on retry")
 	}
 
@@ -1304,13 +1312,13 @@ func TestResumeActor_Reentrancy(t *testing.T) {
 // TestSuspendActor tests the full workflow of suspending a running actor.
 // Workflow:
 // 1. Creates a mock ActorTemplate.
-// 2. Creates a mock Worker Pod on 'node1'.
+// 2. Creates a mock runtime-worker Pod on 'node1'.
 // 3. Creates a mock worker Pod on 'node1'.
 // 4. Waits for the WorkerPoolSyncer to mirror the worker to Redis.
 // 5. Creates an actor.
 // 6. Calls ResumeActor to transition it to RUNNING.
 // 7. Calls SuspendActor RPC.
-// 8. Verifies that the fake Worker received the Suspend call.
+// 8. Verifies that the fake runtime-worker received the Suspend call.
 func TestSuspendActor(t *testing.T) {
 	ns := namespaceForTest("ns-suspend")
 	tc := setupTest(t, ns)
@@ -1346,7 +1354,7 @@ func TestSuspendActor(t *testing.T) {
 		t.Fatalf("SuspendActor failed: %v", err)
 	}
 
-	if !tc.fakeWorker.CheckpointCalled {
+	if !tc.fakeWorkerHerder.CheckpointCalled {
 		t.Errorf("expected runtime-worker Checkpoint to be called")
 	}
 
@@ -1388,13 +1396,13 @@ func TestSuspendActor(t *testing.T) {
 // TestPauseActor tests the full workflow of pausing a running actor.
 // Workflow:
 // 1. Creates a mock ActorTemplate.
-// 2. Creates a mock Worker Pod on 'node1'.
+// 2. Creates a mock runtime-worker Pod on 'node1'.
 // 3. Creates a mock worker Pod on 'node1'.
 // 4. Waits for the WorkerPoolSyncer to mirror the worker to Redis.
 // 5. Creates an actor.
 // 6. Calls ResumeActor to transition it to RUNNING.
 // 7. Calls PauseActor RPC.
-// 8. Verifies that the fake Worker received the Pause call.
+// 8. Verifies that the fake runtime-worker received the Pause call.
 func TestPauseActor(t *testing.T) {
 	ns := namespaceForTest("ns-pause")
 	tc := setupTest(t, ns)
@@ -1430,7 +1438,7 @@ func TestPauseActor(t *testing.T) {
 		t.Fatalf("PauseActor failed: %v", err)
 	}
 
-	if !tc.fakeWorker.CheckpointCalled {
+	if !tc.fakeWorkerHerder.CheckpointCalled {
 		t.Errorf("expected runtime-worker Checkpoint to be called")
 	}
 
@@ -1573,12 +1581,12 @@ func TestResumeActor_ReleasesStaleWorkerWhenPoolBecomesIneligible(t *testing.T) 
 		t.Fatalf("CreateActor failed: %v", err)
 	}
 
-	tc.fakeWorker.FailRun = fmt.Errorf("mock runtime-worker failure")
+	tc.fakeWorkerHerder.FailRun = fmt.Errorf("mock runtime-worker failure")
 	_, err = tc.client.ResumeActor(context.Background(), &runtimeapipb.ResumeActorRequest{ActorId: id})
 	if err == nil {
 		t.Fatalf("expected first ResumeActor (onto worker-a) to fail")
 	}
-	tc.fakeWorker.FailRun = nil
+	tc.fakeWorkerHerder.FailRun = nil
 
 	if _, err := tc.client.UpdateActor(context.Background(), &runtimeapipb.UpdateActorRequest{
 		ActorId:        id,
@@ -1886,8 +1894,8 @@ func TestResumeActor_LockConflict(t *testing.T) {
 	}
 	id := "id1"
 
-	// Set a delay on the fake Worker to hold the lock
-	tc.fakeWorker.RestoreDelay = 1 * time.Second
+	// Set a delay on the fake runtime-worker to hold the lock
+	tc.fakeWorkerHerder.RestoreDelay = 1 * time.Second
 
 	// Launch Request A in a goroutine
 	errChan := make(chan error, 1)
@@ -1933,8 +1941,8 @@ func TestResumeActor_DanglingWorker(t *testing.T) {
 	}
 	id := "id1"
 
-	// 2. Configure fake Worker to FAIL on Restore!
-	tc.fakeWorker.FailRestore = fmt.Errorf("mock runtime-worker failure")
+	// 2. Configure fake runtime-worker to FAIL on Restore!
+	tc.fakeWorkerHerder.FailRestore = fmt.Errorf("mock runtime-worker failure")
 
 	// 3. Call ResumeActor -> Expect failure
 	_, err = tc.client.ResumeActor(context.Background(), &runtimeapipb.ResumeActorRequest{
@@ -1964,9 +1972,9 @@ func TestResumeActor_DanglingWorker(t *testing.T) {
 	// 6. Create Worker Pod B
 	createWorkerPod(t, tc, ns, "worker-b", "node1", "pool1")
 
-	// 7. Configure fake Worker to SUCCEED on Restore
-	tc.fakeWorker.FailRestore = nil
-	tc.fakeWorker.RestoreCalled = false // reset
+	// 7. Configure fake runtime-worker to SUCCEED on Restore
+	tc.fakeWorkerHerder.FailRestore = nil
+	tc.fakeWorkerHerder.RestoreCalled = false // reset
 
 	// 8. Call ResumeActor again -> Expect success and picking Worker B!
 	_, err = tc.client.ResumeActor(context.Background(), &runtimeapipb.ResumeActorRequest{
@@ -1976,7 +1984,7 @@ func TestResumeActor_DanglingWorker(t *testing.T) {
 		t.Fatalf("ResumeActor failed on retry: %v", err)
 	}
 
-	if !tc.fakeWorker.RestoreCalled {
+	if !tc.fakeWorkerHerder.RestoreCalled {
 		t.Errorf("expected Restore to be called on retry")
 	}
 

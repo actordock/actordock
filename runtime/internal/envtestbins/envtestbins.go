@@ -69,7 +69,7 @@ func BinaryAssetsDir() (string, error) {
 // the resource being guarded — the kubebuilder binary cache — is itself
 // user-global (shared even across repo checkouts).
 func lockEnvtestSetup() (func(), error) {
-	lockPath := filepath.Join(os.TempDir(), "actordock-setup-envtest.lock")
+	lockPath := filepath.Join(os.TempDir(), "runtime-setup-envtest.lock")
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("opening envtest setup lock %s: %w", lockPath, err)
@@ -90,9 +90,13 @@ func repoRoot() (string, error) {
 		return "", fmt.Errorf("finding repo root for envtest setup: %w", err)
 	}
 	root := strings.TrimSpace(string(out))
+	if _, err := os.Stat(filepath.Join(root, "hack", "run-tool.sh")); err == nil {
+		return root, nil
+	}
+	// actordock monorepo: runtime is a submodule directory under the git root.
 	runtimeRoot := filepath.Join(root, "runtime")
 	if _, err := os.Stat(filepath.Join(runtimeRoot, "hack", "run-tool.sh")); err == nil {
 		return runtimeRoot, nil
 	}
-	return root, nil
+	return "", fmt.Errorf("hack/run-tool.sh not found under %q or %q", root, runtimeRoot)
 }

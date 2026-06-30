@@ -57,7 +57,7 @@ func main() {
 
 	runtimeAPIConn, err := grpc.NewClient(*runtimeAPIConnSpec, grpc.WithTransportCredentials(clientCreds))
 	if err != nil {
-		setupLog.Error(err, "Error creating grpc connection to runtime API")
+		setupLog.Error(err, "Error creating grpc connection to runtime-api")
 		os.Exit(1)
 	}
 
@@ -80,8 +80,8 @@ func main() {
 	}
 
 	if err = (&controllers.ActorTemplateReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
 		RuntimeAPIClient: runtimeAPIClient,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ActorTemplate")

@@ -51,7 +51,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Control is the primary RPC interface for the Actordock runtime control plane.
+// Control is the primary RPC interface for Actordock runtime.
 type ControlClient interface {
 	// Get an Actor.
 	GetActor(ctx context.Context, in *GetActorRequest, opts ...grpc.CallOption) (*GetActorResponse, error)
@@ -71,7 +71,7 @@ type ControlClient interface {
 	ListWorkers(ctx context.Context, in *ListWorkersRequest, opts ...grpc.CallOption) (*ListWorkersResponse, error)
 	// List all actors currently reflected in redis.
 	ListActors(ctx context.Context, in *ListActorsRequest, opts ...grpc.CallOption) (*ListActorsResponse, error)
-	// Debugging: drop all data from the runtime database.
+	// Debugging: drop all data from the actor database.
 	DebugClear(ctx context.Context, in *DebugClearRequest, opts ...grpc.CallOption) (*DebugClearResponse, error)
 }
 
@@ -187,7 +187,7 @@ func (c *controlClient) DebugClear(ctx context.Context, in *DebugClearRequest, o
 // All implementations must embed UnimplementedControlServer
 // for forward compatibility.
 //
-// Control is the primary RPC interface for the Actordock runtime control plane.
+// Control is the primary RPC interface for Actordock runtime.
 type ControlServer interface {
 	// Get an Actor.
 	GetActor(context.Context, *GetActorRequest) (*GetActorResponse, error)
@@ -207,7 +207,7 @@ type ControlServer interface {
 	ListWorkers(context.Context, *ListWorkersRequest) (*ListWorkersResponse, error)
 	// List all actors currently reflected in redis.
 	ListActors(context.Context, *ListActorsRequest) (*ListActorsResponse, error)
-	// Debugging: drop all data from the runtime database.
+	// Debugging: drop all data from the actor database.
 	DebugClear(context.Context, *DebugClearRequest) (*DebugClearResponse, error)
 	mustEmbedUnimplementedControlServer()
 }
@@ -511,9 +511,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// SessionIdentity allows actor workloads to exchange their
+// SessionIdentity allows runtime workloads to exchange their
 // infrastructure-level credentials (k8s service account token, etc.) for a
-// session-level credential.  A given actor session might migrate
+// actor session-level credential.  A given actor session might migrate
 // between many different physical workers over the course of its lifecycle,
 // whereas the session credential's identity will be stable for the life of the
 // session.
@@ -570,9 +570,9 @@ func (c *sessionIdentityClient) MintCert(ctx context.Context, in *MintCertReques
 // All implementations must embed UnimplementedSessionIdentityServer
 // for forward compatibility.
 //
-// SessionIdentity allows actor workloads to exchange their
+// SessionIdentity allows runtime workloads to exchange their
 // infrastructure-level credentials (k8s service account token, etc.) for a
-// session-level credential.  A given actor session might migrate
+// actor session-level credential.  A given actor session might migrate
 // between many different physical workers over the course of its lifecycle,
 // whereas the session credential's identity will be stable for the life of the
 // session.

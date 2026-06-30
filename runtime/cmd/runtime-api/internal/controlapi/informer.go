@@ -25,29 +25,29 @@ import (
 )
 
 const (
-	workerNamespace    = "actordock-system"
+	systemNamespace    = "actordock-system"
 	byNamespaceAndName = "by-namespace-and-name"
 	byWorkerPool       = "by-worker-pool"
 	byNode             = "by-node"
 	workerPodLabel     = "actordock.dev/worker-pool"
 )
 
-// RuntimeWorkerPodInformer creates a SharedInformerFactory and SharedIndexInformer for runtime-worker pods.
-func RuntimeWorkerPodInformer(kc kubernetes.Interface) (informers.SharedInformerFactory, cache.SharedIndexInformer) {
+// WorkerDaemonInformer creates a SharedInformerFactory and SharedIndexInformer for runtime-worker pods.
+func WorkerDaemonInformer(kc kubernetes.Interface) (informers.SharedInformerFactory, cache.SharedIndexInformer) {
 	factory := informers.NewSharedInformerFactoryWithOptions(kc, 0,
-		informers.WithNamespace(workerNamespace),
+		informers.WithNamespace(systemNamespace),
 		informers.WithTweakListOptions(func(options *metav1.ListOptions) {
 			options.LabelSelector = `app in (runtime-worker)`
 		}),
 	)
-	workerPodSidecarInformer := factory.Core().V1().Pods().Informer()
-	workerPodSidecarInformer.AddIndexers(cache.Indexers{
+	workerDaemonInformer := factory.Core().V1().Pods().Informer()
+	workerDaemonInformer.AddIndexers(cache.Indexers{
 		byNode: func(obj any) ([]string, error) {
 			pod := obj.(*corev1.Pod)
 			return []string{pod.Spec.NodeName}, nil
 		},
 	})
-	return factory, workerPodSidecarInformer
+	return factory, workerDaemonInformer
 }
 
 // WorkerPodInformer creates a SharedInformerFactory and SharedIndexInformer for Worker pods.

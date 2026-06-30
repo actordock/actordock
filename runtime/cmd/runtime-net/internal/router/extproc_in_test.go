@@ -144,25 +144,25 @@ func TestParseActorID(t *testing.T) {
 	}{
 		{
 			name:    "valid host without port",
-			host:    "my-actor.actors.actordock.dev",
+			host:    "my-actor.actors.resources.runtime.actordock.dev",
 			wantID:  "my-actor",
 			wantErr: false,
 		},
 		{
 			name:    "valid host with port",
-			host:    "my-actor.actors.actordock.dev:8443",
+			host:    "my-actor.actors.resources.runtime.actordock.dev:8443",
 			wantID:  "my-actor",
 			wantErr: false,
 		},
 		{
 			name:    "valid host with trailing dot",
-			host:    "my-actor.actors.actordock.dev.",
+			host:    "my-actor.actors.resources.runtime.actordock.dev.",
 			wantID:  "my-actor",
 			wantErr: false,
 		},
 		{
 			name:    "valid host with trailing dot and port",
-			host:    "my-actor.actors.actordock.dev.:8080",
+			host:    "my-actor.actors.resources.runtime.actordock.dev.:8080",
 			wantID:  "my-actor",
 			wantErr: false,
 		},
@@ -174,7 +174,7 @@ func TestParseActorID(t *testing.T) {
 		},
 		{
 			name:    "invalid host port format",
-			host:    "my-actor.actors.actordock.dev:invalid:port",
+			host:    "my-actor.actors.resources.runtime.actordock.dev:invalid:port",
 			wantID:  "",
 			wantErr: true,
 		},

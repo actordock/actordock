@@ -21,7 +21,7 @@ package actordock.runtimeapi;
 option go_package = "github.com/actordock/runtime/pkg/proto/runtimeapipb";
 
 
-// Control is the primary RPC interface for the Actordock runtime control plane.
+// Control is the primary RPC interface for Actordock runtime.
 service Control {
   // Get an Actor.
   rpc GetActor(GetActorRequest) returns (GetActorResponse) {}
@@ -50,7 +50,7 @@ service Control {
   // List all actors currently reflected in redis.
   rpc ListActors(ListActorsRequest) returns (ListActorsResponse) {}
 
-  // Debugging: drop all data from the runtime database.
+  // Debugging: drop all data from the actor database.
   rpc DebugClear(DebugClearRequest) returns (DebugClearResponse) {}
 }
 
@@ -250,9 +250,9 @@ message DebugClearRequest {}
 
 message DebugClearResponse {}
 
-// SessionIdentity allows actor workloads to exchange their
+// SessionIdentity allows runtime workloads to exchange their
 // infrastructure-level credentials (k8s service account token, etc.) for a
-// session-level credential.  A given actor session might migrate
+// actor session-level credential.  A given actor session might migrate
 // between many different physical workers over the course of its lifecycle,
 // whereas the session credential's identity will be stable for the life of the
 // session.

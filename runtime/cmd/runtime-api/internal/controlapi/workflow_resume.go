@@ -24,12 +24,14 @@ import (
 	"time"
 
 	"github.com/actordock/runtime/cmd/runtime-api/internal/store"
+	"github.com/actordock/runtime/cmd/runtime-api/internal/workercache"
 	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
 	runtimev1alpha1 "github.com/actordock/runtime/pkg/api/v1alpha1"
 	listersv1alpha1 "github.com/actordock/runtime/pkg/client/listers/api/v1alpha1"
 	"github.com/actordock/runtime/pkg/proto/runtimeapipb"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -80,7 +82,7 @@ func (s *LoadActorForResumeStep) Execute(ctx context.Context, input *ResumeInput
 
 func (s *LoadActorForResumeStep) RetryBackoff() *wait.Backoff { return nil }
 
-func eligibleWorkerPools(pools []*runtimev1alpha1.WorkerPool, templateSelector *metav1.LabelSelector, actorSelector *runtimeapipb.Selector) (map[types.NamespacedName]struct{}, error) {
+func eligibleWorkerPools(pools []*runtimev1alpha1.WorkerPool, templateClass runtimev1alpha1.SandboxClass, templateSelector *metav1.LabelSelector, actorSelector *runtimeapipb.Selector) (map[types.NamespacedName]struct{}, error) {
 	templateSel := labels.Everything()
 	if templateSelector != nil {
 		sel, err := metav1.LabelSelectorAsSelector(templateSelector)
@@ -94,6 +96,13 @@ func eligibleWorkerPools(pools []*runtimev1alpha1.WorkerPool, templateSelector *
 
 	eligible := make(map[types.NamespacedName]struct{})
 	for _, pool := range pools {
+		// Snapshots are not portable across sandbox classes, so the pool's class
+		// must match the template's. This is a hard gate AND'd with the label
+		// selectors below. Both classes are populated by the CRD default (gvisor),
+		// so we compare them directly.
+		if pool.Spec.SandboxClass != templateClass {
+			continue
+		}
 		set := labels.Set(pool.GetLabels())
 		if templateSel.Matches(set) && actorSel.Matches(set) {
 			eligible[types.NamespacedName{Namespace: pool.GetNamespace(), Name: pool.GetName()}] = struct{}{}
@@ -104,6 +113,7 @@ func eligibleWorkerPools(pools []*runtimev1alpha1.WorkerPool, templateSelector *
 
 type AssignWorkerStep struct {
 	store            store.Interface
+	workerCache      *workercache.Cache
 	workerPoolLister listersv1alpha1.WorkerPoolLister
 }
 
@@ -117,15 +127,15 @@ func (s *AssignWorkerStep) Execute(ctx context.Context, input *ResumeInput, stat
 	if err != nil {
 		return fmt.Errorf("while listing worker pools: %w", err)
 	}
-	eligible, err := eligibleWorkerPools(pools, state.ActorTemplate.Spec.WorkerSelector, state.Actor.GetWorkerSelector())
+	eligible, err := eligibleWorkerPools(pools, state.ActorTemplate.Spec.SandboxClass, state.ActorTemplate.Spec.WorkerSelector, state.Actor.GetWorkerSelector())
 	if err != nil {
 		return fmt.Errorf("while computing eligible worker pools: %w", err)
 	}
 	if len(eligible) == 0 {
-		return status.Errorf(codes.FailedPrecondition, "no worker pool matches the template and actor selectors")
+		return status.Errorf(codes.FailedPrecondition, "no worker pool matches the template's sandboxClass and the template/actor selectors")
 	}
 
-	workers, err := s.store.ListWorkers(ctx)
+	workers, err := s.workerCache.Workers()
 	if err != nil {
 		return fmt.Errorf("while listing workers: %w", err)
 	}
@@ -145,10 +155,13 @@ func (s *AssignWorkerStep) Execute(ctx context.Context, input *ResumeInput, stat
 			assignedWorker = worker
 			break
 		}
-		worker.ActorId = ""
-		worker.ActorNamespace = ""
-		worker.ActorTemplate = ""
-		if err := s.store.UpdateWorker(ctx, worker, worker.Version); err != nil {
+		// Workers() returns pointers directly from the cache so we need to clone before
+		// mutating so that the cache is not corrupted if UpdateWorker fails.
+		release := proto.Clone(worker).(*runtimeapipb.Worker)
+		release.ActorId = ""
+		release.ActorNamespace = ""
+		release.ActorTemplate = ""
+		if err := s.store.UpdateWorker(ctx, release, release.Version); err != nil {
 			return fmt.Errorf("while releasing stale worker assignment: %w", err)
 		}
 	}
@@ -164,6 +177,9 @@ func (s *AssignWorkerStep) Execute(ctx context.Context, input *ResumeInput, stat
 		slog.InfoContext(ctx, "Picked worker", slog.Any("worker", pickedWorker.String()))
 	}
 
+	// Workers() returns pointers directly from the cache so we need to clone before
+	// mutating so that the cache is not corrupted if UpdateWorker fails.
+	assignedWorker = proto.Clone(assignedWorker).(*runtimeapipb.Worker)
 	assignedWorker.ActorId = input.ActorID
 	assignedWorker.ActorNamespace = state.Actor.GetActorTemplateNamespace()
 	assignedWorker.ActorTemplate = state.Actor.GetActorTemplateName()
@@ -230,13 +246,13 @@ func (s *CallWorkerRestoreStep) IsComplete(ctx context.Context, input *ResumeInp
 	return state.Actor.GetStatus() == runtimeapipb.Actor_STATUS_RUNNING, nil
 }
 func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput, state *ResumeState) error {
-	workerConn, err := s.dialer.DialForWorker(state.Actor.GetSandboxPodNamespace(), state.Actor.GetSandboxPodName())
+	workerDaemonConn, err := s.dialer.DialForWorker(state.Actor.GetSandboxPodNamespace(), state.Actor.GetSandboxPodName())
 	if err != nil {
 		return err
 	}
-	client := runtimeworkerpb.NewWorkerHerderClient(workerConn)
+	client := runtimeworkerpb.NewWorkerHerderClient(workerDaemonConn)
 
-	workloadSpec, err := workloadSpecFromActorTemplate(ctx, s.kubeClient, s.secretCache, state.ActorTemplate)
+	workloadSpec, err := workloadSpecFromActorTemplateWithEnv(ctx, s.kubeClient, s.secretCache, state.ActorTemplate)
 	if err != nil {
 		return err
 	}
@@ -245,7 +261,7 @@ func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput,
 		slog.InfoContext(ctx, "Actor has snapshot; Restoring from snapshot")
 
 		req := &runtimeworkerpb.RestoreRequest{
-			TargetSandboxPodUid:    state.Actor.GetSandboxPodUid(),
+			TargetSandboxPodUid:         state.Actor.GetSandboxPodUid(),
 			ActorTemplateNamespace: state.Actor.GetActorTemplateNamespace(),
 			ActorTemplateName:      state.Actor.GetActorTemplateName(),
 			ActorId:                state.Actor.GetActorId(),
@@ -259,6 +275,7 @@ func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput,
 					SnapshotPrefix: state.Actor.GetLatestSnapshotInfo().GetLocal().SnapshotPrefix,
 				},
 			}
+			req.Scope = toRuntimeWorkerSnapshotScope(state.ActorTemplate.Spec.SnapshotsConfig.OnPause)
 		case runtimeapipb.SnapshotType_SNAPSHOT_TYPE_EXTERNAL:
 			req.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_EXTERNAL
 			req.Config = &runtimeworkerpb.RestoreRequest_ExternalConfig{
@@ -266,6 +283,7 @@ func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput,
 					SnapshotUriPrefix: state.Actor.GetLatestSnapshotInfo().GetExternal().SnapshotUriPrefix,
 				},
 			}
+			req.Scope = toRuntimeWorkerSnapshotScope(state.ActorTemplate.Spec.SnapshotsConfig.OnCommit)
 		default:
 			return fmt.Errorf("unsupported snapshot type: %v", state.Actor.GetLatestSnapshotInfo().GetType())
 		}
@@ -281,7 +299,7 @@ func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput,
 		snapshot := state.ActorTemplate.Status.GoldenSnapshot
 
 		req := &runtimeworkerpb.RestoreRequest{
-			TargetSandboxPodUid:    state.Actor.GetSandboxPodUid(),
+			TargetSandboxPodUid:         state.Actor.GetSandboxPodUid(),
 			ActorTemplateNamespace: state.Actor.GetActorTemplateNamespace(),
 			ActorTemplateName:      state.Actor.GetActorTemplateName(),
 			ActorId:                state.Actor.GetActorId(),
@@ -292,6 +310,7 @@ func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput,
 					SnapshotUriPrefix: snapshot,
 				},
 			},
+			Scope: toRuntimeWorkerSnapshotScope(state.ActorTemplate.Spec.SnapshotsConfig.OnCommit),
 		}
 		_, err = client.Restore(ctx, req)
 		if err != nil {
@@ -310,7 +329,7 @@ func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput,
 		}
 
 		req := &runtimeworkerpb.RunRequest{
-			TargetSandboxPodUid:    state.Actor.GetSandboxPodUid(),
+			TargetSandboxPodUid:         state.Actor.GetSandboxPodUid(),
 			ActorTemplateNamespace: state.Actor.GetActorTemplateNamespace(),
 			ActorTemplateName:      state.Actor.GetActorTemplateName(),
 			ActorId:                state.Actor.GetActorId(),

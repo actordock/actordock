@@ -28,6 +28,7 @@ import (
 	"github.com/actordock/runtime/cmd/runtime-api/internal/credbundle"
 	"github.com/actordock/runtime/cmd/runtime-api/internal/sessionidentity"
 	"github.com/actordock/runtime/cmd/runtime-api/internal/store/runtimeredis"
+	"github.com/actordock/runtime/cmd/runtime-api/internal/workercache"
 	"github.com/actordock/runtime/internal/runtimeinterceptors"
 	"github.com/actordock/runtime/internal/serverboot"
 	"github.com/actordock/runtime/internal/version"
@@ -99,7 +100,7 @@ func main() {
 		serverboot.Fatal(ctx, "Failed to set up Redis/Valkey", err)
 	}
 
-	clientset, runtimeCRClient, err := newKubeClients()
+	clientset, runtimeCRDClient, err := newKubeClients()
 	if err != nil {
 		serverboot.Fatal(ctx, "Failed to create Kubernetes clients", err)
 	}
@@ -111,13 +112,18 @@ func main() {
 
 	redisPersistence := runtimeredis.NewPersistence(redisClient)
 
-	runtimeCRFactory := externalversions.NewSharedInformerFactory(runtimeCRClient, 0)
-	actorTemplateLister := runtimeCRFactory.Api().V1alpha1().ActorTemplates().Lister()
-	workerPoolLister := runtimeCRFactory.Api().V1alpha1().WorkerPools().Lister()
-	sandboxConfigLister := runtimeCRFactory.Api().V1alpha1().SandboxConfigs().Lister()
+	workerCache := workercache.New(redisPersistence, 5*time.Minute)
+	if err := workerCache.Start(ctx); err != nil {
+		serverboot.Fatal(ctx, "Failed to seed worker cache", err)
+	}
+
+	crdInformerFactory := externalversions.NewSharedInformerFactory(runtimeCRDClient, 0)
+	actorTemplateLister := crdInformerFactory.Api().V1alpha1().ActorTemplates().Lister()
+	workerPoolLister := crdInformerFactory.Api().V1alpha1().WorkerPools().Lister()
+	sandboxConfigLister := crdInformerFactory.Api().V1alpha1().SandboxConfigs().Lister()
 
 	workerPodInformerFactory, workerPodInformer := controlapi.WorkerPodInformer(clientset)
-	workerPodSidecarInformerFactory, workerPodSidecarInformer := controlapi.RuntimeWorkerPodInformer(clientset)
+	workerDaemonPodInformerFactory, workerDaemonPodInformer := controlapi.WorkerDaemonInformer(clientset)
 
 	syncer := controlapi.NewWorkerPoolSyncer(redisPersistence, workerPodInformer)
 	syncer.Start(ctx)
@@ -125,15 +131,15 @@ func main() {
 	stopCh := make(chan struct{})
 	defer close(stopCh)
 	workerPodInformerFactory.Start(stopCh)
-	workerPodSidecarInformerFactory.Start(stopCh)
-	runtimeCRFactory.Start(stopCh)
+	workerDaemonPodInformerFactory.Start(stopCh)
+	crdInformerFactory.Start(stopCh)
 
 	workerPodInformerFactory.WaitForCacheSync(stopCh)
-	workerPodSidecarInformerFactory.WaitForCacheSync(stopCh)
-	runtimeCRFactory.WaitForCacheSync(stopCh)
+	workerDaemonPodInformerFactory.WaitForCacheSync(stopCh)
+	crdInformerFactory.WaitForCacheSync(stopCh)
 
-	dialer := controlapi.NewWorkerDialer(workerPodInformer.GetIndexer(), workerPodSidecarInformer.GetIndexer())
-	sm := controlapi.NewService(redisPersistence, actorTemplateLister, workerPoolLister, sandboxConfigLister, dialer, clientset)
+	dialer := controlapi.NewWorkerDialer(workerPodInformer.GetIndexer(), workerDaemonPodInformer.GetIndexer())
+	sm := controlapi.NewService(redisPersistence, workerCache, actorTemplateLister, workerPoolLister, sandboxConfigLister, dialer, clientset)
 
 	sessionIdentitySrv := sessionidentity.New(*clientJWTIssuer, *clientJWTAudience, *sessionIDJWTPoolFile, *sessionIDCAPoolFile, *workerpoolCACerts)
 
@@ -171,11 +177,11 @@ func loadFlagsFromEnv() {
 		flag *string
 		env  string
 	}{
-		{redisClusterAddress, "RUNTIME_API_REDIS_ADDRESS"},
-		{clientJWTIssuer, "RUNTIME_API_K8SJWT_ISSUER"},
-		{redisUseIAMAuth, "RUNTIME_API_REDIS_USE_IAM_AUTH"},
-		{redisTLSServerName, "RUNTIME_API_REDIS_TLS_SERVER_NAME"},
-		{redisClientCert, "RUNTIME_API_REDIS_CLIENT_CERT"},
+		{redisClusterAddress, "ATE_API_REDIS_ADDRESS"},
+		{clientJWTIssuer, "ATE_API_K8SJWT_ISSUER"},
+		{redisUseIAMAuth, "ATE_API_REDIS_USE_IAM_AUTH"},
+		{redisTLSServerName, "ATE_API_REDIS_TLS_SERVER_NAME"},
+		{redisClientCert, "ATE_API_REDIS_CLIENT_CERT"},
 	}
 	for _, o := range overrides {
 		if *o.flag == "@env" {
@@ -286,8 +292,8 @@ func pingRedisWithRetries(ctx context.Context, client *redis.ClusterClient) erro
 	return fmt.Errorf("ping Redis/Valkey after 30 retries: %w", pingErr)
 }
 
-// newKubeClients builds the standard Kubernetes clientset and the runtime
-// (runtime CRD) clientset from in-cluster config.
+// newKubeClients builds the standard Kubernetes clientset and the runtime CRD
+// clientset from in-cluster config.
 func newKubeClients() (*kubernetes.Clientset, versioned.Interface, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
@@ -297,11 +303,11 @@ func newKubeClients() (*kubernetes.Clientset, versioned.Interface, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("create clientset: %w", err)
 	}
-	runtimeCRClient, err := versioned.NewForConfig(config)
+	runtimeCRDClient, err := versioned.NewForConfig(config)
 	if err != nil {
-		return nil, nil, fmt.Errorf("create runtime clientset: %w", err)
+		return nil, nil, fmt.Errorf("create runtime CRD clientset: %w", err)
 	}
-	return clientset, runtimeCRClient, nil
+	return clientset, runtimeCRDClient, nil
 }
 
 // buildServerCreds loads the workerpool CA pool (if configured) and

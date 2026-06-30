@@ -16,6 +16,7 @@ package controlapi
 
 import (
 	"github.com/actordock/runtime/cmd/runtime-api/internal/store"
+	"github.com/actordock/runtime/cmd/runtime-api/internal/workercache"
 	listersv1alpha1 "github.com/actordock/runtime/pkg/client/listers/api/v1alpha1"
 	"github.com/actordock/runtime/pkg/proto/runtimeapipb"
 	"k8s.io/client-go/kubernetes"
@@ -36,6 +37,7 @@ var _ runtimeapipb.ControlServer = (*Service)(nil)
 // NewService creates a service.
 func NewService(
 	persistence store.Interface,
+	workerCache *workercache.Cache,
 	actorTemplateLister listersv1alpha1.ActorTemplateLister,
 	workerPoolLister listersv1alpha1.WorkerPoolLister,
 	sandboxConfigLister listersv1alpha1.SandboxConfigLister,
@@ -47,7 +49,7 @@ func NewService(
 		actorTemplateLister: actorTemplateLister,
 		workerPoolLister:    workerPoolLister,
 		dialer:              dialer,
-		actorWorkflow:       NewActorWorkflow(persistence, dialer, actorTemplateLister, workerPoolLister, sandboxConfigLister, kubeClient),
+		actorWorkflow:       NewActorWorkflow(persistence, workerCache, dialer, actorTemplateLister, workerPoolLister, sandboxConfigLister, kubeClient),
 	}
 
 	return s

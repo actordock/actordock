@@ -18,6 +18,7 @@ require (
 	github.com/hashicorp/go-reap v0.0.0-20260220095743-4e27870b4f51
 	github.com/klauspost/compress v1.18.5
 	github.com/opencontainers/runtime-spec v1.3.0
+	github.com/pelletier/go-toml/v2 v2.4.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/spf13/cobra v1.10.2

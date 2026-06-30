@@ -20,7 +20,7 @@ import (
 )
 
 func TestValidateActorRef(t *testing.T) {
-	const okNS, okTmpl, okID = "runtime-demo", "counter", "counter-1"
+	const okNS, okTmpl, okID = "actordock-demo", "counter", "counter-1"
 
 	tests := []struct {
 		name         string
@@ -33,7 +33,7 @@ func TestValidateActorRef(t *testing.T) {
 		// Label vs subdomain distinction: template names are DNS-1123
 		// subdomains (dots allowed); namespaces and actor IDs are labels.
 		{"dotted template valid (subdomain)", okNS, "probe.v1", okID, false},
-		{"dotted namespace invalid (label)", "bad.demo", okTmpl, okID, true},
+		{"dotted namespace invalid (label)", "actordock.demo", okTmpl, okID, true},
 		{"dotted id invalid (label)", okNS, okTmpl, "probe.alpha", true},
 
 		{"id traversal", okNS, okTmpl, "..", true},

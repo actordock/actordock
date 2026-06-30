@@ -56,12 +56,12 @@ func TestExtProcHeadersEvaluation(t *testing.T) {
 			name:           "invalid host returns 404 identifying the host",
 			authority:      "invalid-host.com",
 			expectErr:      true,
-			expectedErrStr: `invalid host "invalid-host.com": invalid actor_id: must end with actors.actordock.dev, got "invalid-host.com"`,
+			expectedErrStr: `invalid host "invalid-host.com": invalid actor_id: must end with actors.resources.runtime.actordock.dev, got "invalid-host.com"`,
 			expectedStatus: envoy_type.StatusCode_NotFound,
 		},
 		{
 			name:           "non-gRPC resume error collapses to 500 without leaking detail",
-			authority:      testUUID + ".actors.actordock.dev",
+			authority:      testUUID + ".actors.resources.runtime.actordock.dev",
 			resumeErr:      errors.New("resume failed with sensitive detail"),
 			expectErr:      true,
 			expectedErrStr: `error resuming actor "123e4567-e89b-12d3-a456-426614174000"`,
@@ -69,7 +69,7 @@ func TestExtProcHeadersEvaluation(t *testing.T) {
 		},
 		{
 			name:           "FailedPrecondition maps to 503 with preserved desc",
-			authority:      testUUID + ".actors.actordock.dev",
+			authority:      testUUID + ".actors.resources.runtime.actordock.dev",
 			resumeErr:      status.Error(codes.FailedPrecondition, "no free workers available"),
 			expectErr:      true,
 			expectedErrStr: `actor "123e4567-e89b-12d3-a456-426614174000" unavailable: no free workers available`,
@@ -77,7 +77,7 @@ func TestExtProcHeadersEvaluation(t *testing.T) {
 		},
 		{
 			name:           "NotFound maps to 404",
-			authority:      testUUID + ".actors.actordock.dev",
+			authority:      testUUID + ".actors.resources.runtime.actordock.dev",
 			resumeErr:      status.Error(codes.NotFound, "actor missing"),
 			expectErr:      true,
 			expectedErrStr: `actor "123e4567-e89b-12d3-a456-426614174000" not found`,
@@ -85,7 +85,7 @@ func TestExtProcHeadersEvaluation(t *testing.T) {
 		},
 		{
 			name:           "Unavailable maps to 503",
-			authority:      testUUID + ".actors.actordock.dev",
+			authority:      testUUID + ".actors.resources.runtime.actordock.dev",
 			resumeErr:      status.Error(codes.Unavailable, "control-plane down"),
 			expectErr:      true,
 			expectedErrStr: `actor "123e4567-e89b-12d3-a456-426614174000" unavailable`,
@@ -93,7 +93,7 @@ func TestExtProcHeadersEvaluation(t *testing.T) {
 		},
 		{
 			name:           "DeadlineExceeded maps to 504",
-			authority:      testUUID + ".actors.actordock.dev",
+			authority:      testUUID + ".actors.resources.runtime.actordock.dev",
 			resumeErr:      status.Error(codes.DeadlineExceeded, "deadline"),
 			expectErr:      true,
 			expectedErrStr: `actor "123e4567-e89b-12d3-a456-426614174000" request timed out`,
@@ -101,7 +101,7 @@ func TestExtProcHeadersEvaluation(t *testing.T) {
 		},
 		{
 			name:      "Bad Actor IP from resume returns 500 without leaking IP",
-			authority: testUUID + ".actors.actordock.dev",
+			authority: testUUID + ".actors.resources.runtime.actordock.dev",
 			resumeResp: &runtimeapipb.ResumeActorResponse{
 				Actor: &runtimeapipb.Actor{
 					SandboxPodIp: "invalid-ip",
@@ -113,7 +113,7 @@ func TestExtProcHeadersEvaluation(t *testing.T) {
 		},
 		{
 			name:      "Successful resume",
-			authority: testUUID + ".actors.actordock.dev",
+			authority: testUUID + ".actors.resources.runtime.actordock.dev",
 			resumeResp: &runtimeapipb.ResumeActorResponse{
 				Actor: &runtimeapipb.Actor{
 					SandboxPodIp: "10.0.0.52",

@@ -98,7 +98,7 @@ type CallWorkerSuspendStep struct {
 
 func (s *CallWorkerSuspendStep) Name() string { return "CallWorkerSuspend" }
 func (s *CallWorkerSuspendStep) IsComplete(ctx context.Context, input *SuspendInput, state *SuspendState) (bool, error) {
-	// If we are already SUSPENDED, we've already called Worker
+	// If we are already SUSPENDED, we've already called runtime-worker
 	return state.Actor.GetStatus() == runtimeapipb.Actor_STATUS_SUSPENDED, nil
 }
 func (s *CallWorkerSuspendStep) Execute(ctx context.Context, input *SuspendInput, state *SuspendState) error {
@@ -106,7 +106,7 @@ func (s *CallWorkerSuspendStep) Execute(ctx context.Context, input *SuspendInput
 		return fmt.Errorf("actor is in SUSPENDING state but has no active worker")
 	}
 
-	workerConn, err := s.dialer.DialForWorker(state.Actor.GetSandboxPodNamespace(), state.Actor.GetSandboxPodName())
+	workerDaemonConn, err := s.dialer.DialForWorker(state.Actor.GetSandboxPodNamespace(), state.Actor.GetSandboxPodName())
 	if err != nil {
 		if errors.Is(err, ErrWorkerPodNotFound) {
 			slog.Warn("Skipping suspend for dangling worker pod", "namespace", state.Actor.GetSandboxPodNamespace(), "pod", state.Actor.GetSandboxPodName())
@@ -114,45 +114,28 @@ func (s *CallWorkerSuspendStep) Execute(ctx context.Context, input *SuspendInput
 		}
 		return fmt.Errorf("while getting runtime-worker conn for worker pod: %w", err)
 	}
-	client := runtimeworkerpb.NewWorkerHerderClient(workerConn)
+	client := runtimeworkerpb.NewWorkerHerderClient(workerDaemonConn)
+
+	workloadSpec := workloadSpecFromActorTemplate(state.ActorTemplate)
 
 	// Checkpoint does not carry the sandbox config: runtime-worker uses the version the
 	// actor is currently running (recorded on-node at Run/Restore) and pins it
 	// into the snapshot manifest.
 	req := &runtimeworkerpb.CheckpointRequest{
-		TargetSandboxPodUid:    state.Actor.GetSandboxPodUid(),
+		TargetSandboxPodUid:         state.Actor.GetSandboxPodUid(),
 		ActorTemplateNamespace: state.Actor.GetActorTemplateNamespace(),
 		ActorTemplateName:      state.Actor.GetActorTemplateName(),
 		ActorId:                state.Actor.GetActorId(),
-		Spec: &runtimeworkerpb.WorkloadSpec{
-			PauseImage: state.ActorTemplate.Spec.PauseImage,
-		},
-		Type: runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_EXTERNAL,
+		Spec:                   workloadSpec,
+		Type:                   runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_EXTERNAL,
 		Config: &runtimeworkerpb.CheckpointRequest_ExternalConfig{
 			ExternalConfig: &runtimeworkerpb.ExternalCheckpointConfiguration{
 				SnapshotUriPrefix: state.Actor.GetInProgressSnapshot(),
 			},
 		},
+		Scope: toRuntimeWorkerSnapshotScope(state.ActorTemplate.Spec.SnapshotsConfig.OnCommit),
 	}
-	for _, ctr := range state.ActorTemplate.Spec.Containers {
-		workerCtr := &runtimeworkerpb.Container{
-			Name:    ctr.Name,
-			Image:   ctr.Image,
-			Command: ctr.Command,
-		}
-		for _, env := range ctr.Env {
-			var val string
-			if env.Value != nil {
-				val = *env.Value
-			}
-			workerEnv := &runtimeworkerpb.EnvEntry{
-				Name:  env.Name,
-				Value: val,
-			}
-			workerCtr.Env = append(workerCtr.Env, workerEnv)
-		}
-		req.Spec.Containers = append(req.Spec.Containers, workerCtr)
-	}
+
 	_, err = client.Checkpoint(ctx, req)
 	if err != nil {
 		return fmt.Errorf("while checkpointing workload: %w", err)

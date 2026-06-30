@@ -28,23 +28,23 @@ import (
 
 var ErrWorkerPodNotFound = errors.New("worker pod not found")
 
-// WorkerDialer handles gRPC connections to Worker pods.
+// WorkerDialer handles gRPC connections to runtime-worker pods.
 type WorkerDialer struct {
-	workerIndexer           cache.Indexer
-	workerPodSidecarIndexer cache.Indexer
-	workerConns             *lru.Cache
+	workerIndexer cache.Indexer
+	workerDaemonIndexer cache.Indexer
+	workerDaemonConns   *lru.Cache
 }
 
 // NewWorkerDialer creates a new WorkerDialer.
-func NewWorkerDialer(workerIndexer cache.Indexer, workerPodSidecarIndexer cache.Indexer) *WorkerDialer {
+func NewWorkerDialer(workerIndexer cache.Indexer, workerDaemonIndexer cache.Indexer) *WorkerDialer {
 	return &WorkerDialer{
-		workerIndexer:           workerIndexer,
-		workerPodSidecarIndexer: workerPodSidecarIndexer,
-		workerConns:             lru.New(1024),
+		workerIndexer: workerIndexer,
+		workerDaemonIndexer: workerDaemonIndexer,
+		workerDaemonConns:   lru.New(1024),
 	}
 }
 
-// DialForWorker returns a gRPC connection to the Worker running on the same node as the specified worker pod.
+// DialForWorker returns a gRPC connection to the runtime-worker running on the same node as the specified worker pod.
 // Returns ErrWorkerPodNotFound if the worker pod is not found in the informer cache.
 func (d *WorkerDialer) DialForWorker(workerPodNamespace, workerPodName string) (*grpc.ClientConn, error) {
 	workerPodKey := workerPodNamespace + "/" + workerPodName
@@ -63,29 +63,29 @@ func (d *WorkerDialer) DialForWorker(workerPodNamespace, workerPodName string) (
 
 	selectedWorker := matchingPods[0].(*corev1.Pod)
 
-	matchingWorkerPods, err := d.workerPodSidecarIndexer.ByIndex(byNode, selectedWorker.Spec.NodeName)
+	matchingWorkerDaemons, err := d.workerDaemonIndexer.ByIndex(byNode, selectedWorker.Spec.NodeName)
 	if err != nil {
 		return nil, fmt.Errorf("while finding runtime-worker for worker pod %q on node %q: %w", workerPodKey, selectedWorker.Spec.NodeName, err)
 	}
 
-	if len(matchingWorkerPods) != 1 {
-		return nil, fmt.Errorf("found %d runtime-worker pods on node %q, expected 1", len(matchingWorkerPods), selectedWorker.Spec.NodeName)
+	if len(matchingWorkerDaemons) != 1 {
+		return nil, fmt.Errorf("found %d runtime-worker pods on node %q, expected 1", len(matchingWorkerDaemons), selectedWorker.Spec.NodeName)
 	}
 
-	selectedWorkerPod := matchingWorkerPods[0].(*corev1.Pod)
-	runtimeWorkerPodKey := selectedWorkerPod.ObjectMeta.Namespace + "/" + selectedWorkerPod.ObjectMeta.Name
+	selectedWorkerDaemon := matchingWorkerDaemons[0].(*corev1.Pod)
+	workerDaemonKey := selectedWorkerDaemon.ObjectMeta.Namespace + "/" + selectedWorkerDaemon.ObjectMeta.Name
 
-	workerConnAny, ok := d.workerConns.Get(runtimeWorkerPodKey)
+	workerDaemonConnAny, ok := d.workerDaemonConns.Get(workerDaemonKey)
 	if ok {
-		return workerConnAny.(*grpc.ClientConn), nil
+		return workerDaemonConnAny.(*grpc.ClientConn), nil
 	}
 
-	if len(selectedWorkerPod.Status.PodIPs) == 0 {
-		return nil, fmt.Errorf("selected runtime-worker %q has no assigned IPs: %w", selectedWorkerPod.ObjectMeta.Namespace+"/"+selectedWorkerPod.ObjectMeta.Name, err)
+	if len(selectedWorkerDaemon.Status.PodIPs) == 0 {
+		return nil, fmt.Errorf("selected runtime-worker %q has no assigned IPs: %w", selectedWorkerDaemon.ObjectMeta.Namespace+"/"+selectedWorkerDaemon.ObjectMeta.Name, err)
 	}
 
-	workerConn, err := grpc.NewClient(
-		selectedWorkerPod.Status.PodIPs[0].IP+":8085",
+	workerDaemonConn, err := grpc.NewClient(
+		selectedWorkerDaemon.Status.PodIPs[0].IP+":8085",
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 	)
@@ -93,7 +93,7 @@ func (d *WorkerDialer) DialForWorker(workerPodNamespace, workerPodName string) (
 		return nil, fmt.Errorf("while creating runtime-worker gRPC client connection: %w", err)
 	}
 
-	d.workerConns.Add(runtimeWorkerPodKey, workerConn)
+	d.workerDaemonConns.Add(workerDaemonKey, workerDaemonConn)
 
-	return workerConn, nil
+	return workerDaemonConn, nil
 }

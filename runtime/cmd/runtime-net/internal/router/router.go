@@ -65,7 +65,7 @@ type RouterConfig struct {
 	Standalone     bool
 	Namespace      string
 	Kubeconfig     string
-	AteapiAddr     string
+	RuntimeAPIAddr string
 	HttpPort       int
 	XdsPort        int
 	ExtprocPort    int
@@ -125,11 +125,11 @@ func NewRouterServer(cfg RouterConfig) (*RouterServer, error) {
 		}
 	}
 
-	conn, err := grpc.NewClient(cfg.AteapiAddr, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})))
+	conn, err := grpc.NewClient(cfg.RuntimeAPIAddr, grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})))
 	if err != nil {
 		return nil, fmt.Errorf("failed to establish grpc channel to runtime-api client: %w", err)
 	}
-	slog.Info("Connecting to runtime-api", slog.String("address", cfg.AteapiAddr))
+	slog.Info("Connecting to runtime-api", slog.String("address", cfg.RuntimeAPIAddr))
 
 	apiClient := runtimeapipb.NewControlClient(conn)
 

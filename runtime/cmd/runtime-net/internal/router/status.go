@@ -267,7 +267,9 @@ func (s *RouterServer) handleStatusz(w http.ResponseWriter, req *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	_ = tmpl.Execute(w, data)
+	if err := tmpl.Execute(w, data); err != nil {
+		slog.ErrorContext(ctx, "Failed to render status dashboard", slog.String("err", err.Error()))
+	}
 }
 
 //go:embed dashboard.html

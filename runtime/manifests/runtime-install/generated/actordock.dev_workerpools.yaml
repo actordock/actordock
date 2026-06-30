@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -65,11 +64,6 @@ spec:
           spec:
             description: spec defines the desired state of WorkerPool
             properties:
-              sandboxImage:
-                description: SandboxImage is the runtime-sandbox container image to deploy as
-                  workers.
-                minLength: 1
-                type: string
               replicas:
                 description: Replicas is the number of worker pods to run.
                 format: int32
@@ -82,6 +76,8 @@ spec:
                   the worker pod shape (KVM/vhost device mounts and node placement) and which
                   SandboxConfigs are eligible. The concrete binary is still selected by
                   SandboxImage. Defaults to gvisor.
+
+                  See Also: TODOs in ActorTemplate SandboxClass
                 enum:
                 - gvisor
                 - microvm
@@ -93,6 +89,11 @@ spec:
                   this pool's SandboxClass. The referenced config's SandboxClass must match
                   this pool's SandboxClass. If empty, the default SandboxConfig for the
                   SandboxClass is used.
+                type: string
+              sandboxImage:
+                description: SandboxImage is the runtime-sandbox container image to
+                  deploy as workers.
+                minLength: 1
                 type: string
               template:
                 description: Template holds optional pod scheduling and resource settings
@@ -307,6 +308,66 @@ spec:
                   priorityClassName:
                     description: PriorityClassName for the worker pods.
                     type: string
+                  resources:
+                    description: Resources are the compute resources allocated for
+                      each worker pod.
+                    properties:
+                      claims:
+                        description: |-
+                          Claims lists the names of resources, defined in spec.resourceClaims,
+                          that are used by this container.
+
+                          This field depends on the
+                          DynamicResourceAllocation feature gate.
+
+                          This field is immutable. It can only be set for containers.
+                        items:
+                          description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                          properties:
+                            name:
+                              description: |-
+                                Name must match the name of one entry in pod.spec.resourceClaims of
+                                the Pod where this field is used. It makes that resource available
+                                inside a container.
+                              type: string
+                            request:
+                              description: |-
+                                Request is the name chosen for a request in the referenced claim.
+                                If empty, everything from the claim is made available, otherwise
+                                only the result of this request.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
+                      limits:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Limits describes the maximum amount of compute resources allowed.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                      requests:
+                        additionalProperties:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        description: |-
+                          Requests describes the minimum amount of compute resources required.
+                          If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                          otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                          More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                        type: object
+                    type: object
                   tolerations:
                     description: Tolerations for the worker pods.
                     items:
@@ -351,8 +412,8 @@ spec:
                     x-kubernetes-list-type: atomic
                 type: object
             required:
-            - sandboxImage
             - replicas
+            - sandboxImage
             type: object
           status:
             description: status is the observed state of WorkerPool

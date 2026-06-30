@@ -21,11 +21,51 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestHandleStatuszRendersRecordedQuery(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "templates-*.yaml")
+	if err != nil {
+		t.Fatalf("Unable creating temp files: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	cfg := RouterConfig{
+		Standalone:    true,
+		Namespace:     "default",
+		TemplatesFile: tmpFile.Name(),
+	}
+	srv, err := NewRouterServer(cfg)
+	if err != nil {
+		t.Fatalf("Failed generating router server: %v", err)
+	}
+	srv.extprocSrv = NewExtProcServer(cfg.ExtprocPort, &mockClient{}, nil)
+	srv.extprocSrv.recorder.Add(RecordedQuery{
+		Timestamp: time.Now(),
+		Client:    "127.0.0.1",
+		Host:      "example.com",
+		Path:      "/v1/test",
+		Method:    "GET",
+		Action:    "Matched test-actor",
+		Target:    "10.0.0.5",
+		Duration:  time.Millisecond * 10,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/statusz", nil)
+	w := httptest.NewRecorder()
+	srv.handleStatusz(w, req)
+
+	content := w.Body.String()
+	if !strings.Contains(content, "Matched test-actor") {
+		t.Fatalf("HTML missing recorded query action")
+	}
+}
 
 func TestStatuszEndpoint(t *testing.T) {
 	dnsAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:0")

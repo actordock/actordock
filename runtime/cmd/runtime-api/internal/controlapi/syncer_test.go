@@ -181,7 +181,7 @@ func TestSyncer_DeleteBoundWorker_ClearsActor(t *testing.T) {
 	actorID := "actor-orphan"
 	if err := persistence.CreateActor(ctx, &runtimeapipb.Actor{
 		ActorId: actorID, ActorTemplateNamespace: ns, ActorTemplateName: "tmpl",
-		Status:              runtimeapipb.Actor_STATUS_RUNNING,
+		Status:            runtimeapipb.Actor_STATUS_RUNNING,
 		SandboxPodNamespace: ns, SandboxPodName: pod, SandboxPodIp: ip,
 		InProgressSnapshot: "gs://snapshots/partial",
 		LatestSnapshotInfo: &runtimeapipb.SnapshotInfo{

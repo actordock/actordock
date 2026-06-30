@@ -32,14 +32,26 @@ import (
 
 const envSecretCacheTTL = 30 * time.Second
 
-func workloadSpecFromActorTemplate(ctx context.Context, kubeClient kubernetes.Interface, secretCache *envSecretCache, actorTemplate *runtimev1alpha1.ActorTemplate) (*runtimeworkerpb.WorkloadSpec, error) {
+// workloadSpecFromActorTemplate builds a WorkloadSpec without resolving
+// container env vars. Use this when downstream consumers (e.g. checkpoint
+// requests) don't need env entries materialized.
+func workloadSpecFromActorTemplate(actorTemplate *runtimev1alpha1.ActorTemplate) *runtimeworkerpb.WorkloadSpec {
 	workloadSpec := &runtimeworkerpb.WorkloadSpec{
 		PauseImage: actorTemplate.Spec.PauseImage,
 	}
-	resolver := envResolver{
-		kubeClient: kubeClient,
-		namespace:  actorTemplate.Namespace,
-		cache:      secretCache,
+
+	// add volumes
+	for _, vol := range actorTemplate.Spec.Volumes {
+		// volume is durable-dir type
+		if vol.VolumeSource.DurableDir != nil {
+			workloadSpec.Volumes = append(workloadSpec.Volumes, &runtimeworkerpb.Volume{
+				Name: vol.Name,
+				Type: runtimeworkerpb.VolumeType_VOLUME_TYPE_DURABLE_DIR,
+				Source: &runtimeworkerpb.Volume_DurableDir{
+					DurableDir: &runtimeworkerpb.DurableDirVolume{},
+				},
+			})
+		}
 	}
 
 	for _, ctr := range actorTemplate.Spec.Containers {
@@ -47,20 +59,62 @@ func workloadSpecFromActorTemplate(ctx context.Context, kubeClient kubernetes.In
 			Name:    ctr.Name,
 			Image:   ctr.Image,
 			Command: ctr.Command,
+			Readyz:  toRuntimeWorkerReadyz(ctr.Readyz),
 		}
+		for _, mount := range ctr.VolumeMounts {
+			workerCtr.VolumeMounts = append(workerCtr.VolumeMounts, &runtimeworkerpb.VolumeMount{
+				Name:      mount.Name,
+				MountPath: mount.MountPath,
+			})
+		}
+		workloadSpec.Containers = append(workloadSpec.Containers, workerCtr)
+	}
+
+	return workloadSpec
+}
+
+// workloadSpecFromActorTemplateWithEnv builds a WorkloadSpec and resolves each
+// container's env vars against the cluster. kubeClient must be non-nil;
+// secretCache is optional and, when supplied, deduplicates Secret reads.
+func workloadSpecFromActorTemplateWithEnv(ctx context.Context, kubeClient kubernetes.Interface, secretCache *envSecretCache, actorTemplate *runtimev1alpha1.ActorTemplate) (*runtimeworkerpb.WorkloadSpec, error) {
+	workloadSpec := workloadSpecFromActorTemplate(actorTemplate)
+
+	resolver := envResolver{
+		kubeClient: kubeClient,
+		namespace:  actorTemplate.Namespace,
+		cache:      secretCache,
+	}
+
+	for i, ctr := range actorTemplate.Spec.Containers {
 		for _, env := range ctr.Env {
 			workerEnv, err := resolver.resolve(ctx, ctr.Name, env)
 			if err != nil {
 				return nil, err
 			}
 			if workerEnv != nil {
-				workerCtr.Env = append(workerCtr.Env, workerEnv)
+				workloadSpec.Containers[i].Env = append(workloadSpec.Containers[i].Env, workerEnv)
 			}
 		}
-		workloadSpec.Containers = append(workloadSpec.Containers, workerCtr)
 	}
 
 	return workloadSpec, nil
+}
+
+// toRuntimeWorkerReadyz projects the CRD readyz field onto the runtimeworkerpb wire type.
+// Returns nil when the source is nil so containers without a probe stay
+// unchanged on the wire.
+func toRuntimeWorkerReadyz(in *runtimev1alpha1.ContainerReadyz) *runtimeworkerpb.Readyz {
+	if in == nil {
+		return nil
+	}
+	out := &runtimeworkerpb.Readyz{}
+	if in.HTTPGet != nil {
+		out.HttpGet = &runtimeworkerpb.HTTPGetAction{
+			Path: in.HTTPGet.Path,
+			Port: in.HTTPGet.Port,
+		}
+	}
+	return out
 }
 
 type envResolver struct {

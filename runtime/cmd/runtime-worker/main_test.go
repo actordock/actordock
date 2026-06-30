@@ -15,15 +15,24 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
 	"github.com/actordock/runtime/internal/sandboxpath"
+	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
+	"github.com/actordock/runtime/internal/proto/runtimesandboxpb"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 )
 
 func TestWriteFileAtomic(t *testing.T) {
@@ -76,7 +85,7 @@ func TestWriteFileAtomic(t *testing.T) {
 }
 
 func TestValidateActorRequest(t *testing.T) {
-	const okNS, okTmpl, okID, okUID = "runtime-demo", "counter", "counter-1", "422938ba-8860-4983-a25d-d6bcb0a69d4e"
+	const okNS, okTmpl, okID, okUID = "actordock-demo", "counter", "counter-1", "422938ba-8860-4983-a25d-d6bcb0a69d4e"
 	okSpec := &runtimeworkerpb.WorkloadSpec{Containers: []*runtimeworkerpb.Container{{Name: "worker"}}}
 
 	tests := []struct {
@@ -105,20 +114,20 @@ func TestValidateActorRequest(t *testing.T) {
 // break one field per case.
 func validRunRequest() *runtimeworkerpb.RunRequest {
 	return &runtimeworkerpb.RunRequest{
-		ActorTemplateNamespace: "runtime-demo",
+		ActorTemplateNamespace: "actordock-demo",
 		ActorTemplateName:      "counter",
 		ActorId:                "counter-1",
-		TargetSandboxPodUid:    "422938ba-8860-4983-a25d-d6bcb0a69d4e",
+		TargetSandboxPodUid:         "422938ba-8860-4983-a25d-d6bcb0a69d4e",
 		Spec:                   &runtimeworkerpb.WorkloadSpec{Containers: []*runtimeworkerpb.Container{{Name: "worker"}}},
 	}
 }
 
 func validCheckpointRequest() *runtimeworkerpb.CheckpointRequest {
 	return &runtimeworkerpb.CheckpointRequest{
-		ActorTemplateNamespace: "runtime-demo",
+		ActorTemplateNamespace: "actordock-demo",
 		ActorTemplateName:      "counter",
 		ActorId:                "counter-1",
-		TargetSandboxPodUid:    "422938ba-8860-4983-a25d-d6bcb0a69d4e",
+		TargetSandboxPodUid:         "422938ba-8860-4983-a25d-d6bcb0a69d4e",
 		Spec:                   &runtimeworkerpb.WorkloadSpec{Containers: []*runtimeworkerpb.Container{{Name: "worker"}}},
 		Type:                   runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_EXTERNAL,
 		Config: &runtimeworkerpb.CheckpointRequest_ExternalConfig{
@@ -126,15 +135,16 @@ func validCheckpointRequest() *runtimeworkerpb.CheckpointRequest {
 				SnapshotUriPrefix: "gs://bucket/actors/1/snapshots/2/",
 			},
 		},
+		Scope: runtimeworkerpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
 	}
 }
 
 func validRestoreRequest() *runtimeworkerpb.RestoreRequest {
 	return &runtimeworkerpb.RestoreRequest{
-		ActorTemplateNamespace: "runtime-demo",
+		ActorTemplateNamespace: "actordock-demo",
 		ActorTemplateName:      "counter",
 		ActorId:                "counter-1",
-		TargetSandboxPodUid:    "422938ba-8860-4983-a25d-d6bcb0a69d4e",
+		TargetSandboxPodUid:         "422938ba-8860-4983-a25d-d6bcb0a69d4e",
 		Spec:                   &runtimeworkerpb.WorkloadSpec{Containers: []*runtimeworkerpb.Container{{Name: "worker"}}},
 		Type:                   runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_EXTERNAL,
 		Config: &runtimeworkerpb.RestoreRequest_ExternalConfig{
@@ -142,6 +152,7 @@ func validRestoreRequest() *runtimeworkerpb.RestoreRequest {
 				SnapshotUriPrefix: "gs://bucket/actors/1/snapshots/2/",
 			},
 		},
+		Scope: runtimeworkerpb.SnapshotScope_SNAPSHOT_SCOPE_FULL,
 	}
 }
 
@@ -190,9 +201,9 @@ func TestValidateCheckpointRequest(t *testing.T) {
 			r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_LOCAL
 			r.Config = &runtimeworkerpb.CheckpointRequest_LocalConfig{LocalConfig: &runtimeworkerpb.LocalCheckpointConfiguration{SnapshotPrefix: ""}}
 		}), true},
-		{"unspecified snapshot type", makeReq(func(r *runtimeworkerpb.CheckpointRequest) {
-			r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_UNSPECIFIED
-		}), true},
+		{"unspecified snapshot type", makeReq(func(r *runtimeworkerpb.CheckpointRequest) { r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_UNSPECIFIED }), true},
+		{"unspecified snapshot scope", makeReq(func(r *runtimeworkerpb.CheckpointRequest) { r.Scope = runtimeworkerpb.SnapshotScope_SNAPSHOT_SCOPE_UNSPECIFIED }), true},
+		{"invalid snapshot scope", makeReq(func(r *runtimeworkerpb.CheckpointRequest) { r.Scope = runtimeworkerpb.SnapshotScope(23) }), true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -225,9 +236,9 @@ func TestValidateRestoreRequest(t *testing.T) {
 			r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_LOCAL
 			r.Config = &runtimeworkerpb.RestoreRequest_LocalConfig{LocalConfig: &runtimeworkerpb.LocalCheckpointConfiguration{SnapshotPrefix: ""}}
 		}), true},
-		{"unspecified snapshot type", makeReq(func(r *runtimeworkerpb.RestoreRequest) {
-			r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_UNSPECIFIED
-		}), true},
+		{"unspecified snapshot type", makeReq(func(r *runtimeworkerpb.RestoreRequest) { r.Type = runtimeworkerpb.CheckpointType_CHECKPOINT_TYPE_UNSPECIFIED }), true},
+		{"unspecified snapshot scope", makeReq(func(r *runtimeworkerpb.RestoreRequest) { r.Scope = runtimeworkerpb.SnapshotScope_SNAPSHOT_SCOPE_UNSPECIFIED }), true},
+		{"invalid snapshot scope", makeReq(func(r *runtimeworkerpb.RestoreRequest) { r.Scope = runtimeworkerpb.SnapshotScope(23) }), true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -257,10 +268,77 @@ func TestFetchAssetRejectsBadHash(t *testing.T) {
 		t.Fatalf("planting cache file: %v", err)
 	}
 
-	s := &SandboxHerder{}
+	s := &WorkerHerder{}
 	if _, err := s.fetchAsset(context.Background(), assetEntry{SHA256: badHash}); err == nil {
 		t.Error("fetchAsset returned a cache hit for an invalid hash; validation must run before the os.Stat early return")
 	}
+}
+
+// fakeObjectStorage serves fixed bytes for GetObject so fetchAsset can be tested.
+type fakeObjectStorage struct {
+	data []byte
+	err  error
+}
+
+func (f fakeObjectStorage) GetObject(_ context.Context, _, _ string) (io.ReadCloser, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return io.NopCloser(bytes.NewReader(f.data)), nil
+}
+
+func (fakeObjectStorage) PutObject(_ context.Context, _, _ string, _ io.Reader) error { return nil }
+
+// TestFetchAssetStreaming covers the streamed download: good asset cached,
+// over-cap rejected, hash mismatch rejected (failures leave no cache file).
+func TestFetchAssetStreaming(t *testing.T) {
+	origDir, origCap := sandboxpath.StaticFilesDir, maxAssetBytes
+	t.Cleanup(func() { sandboxpath.StaticFilesDir, maxAssetBytes = origDir, origCap })
+
+	content := []byte("micro-vm kernel bytes")
+	goodHash := fmt.Sprintf("%x", sha256.Sum256(content))
+	const url = "gs://test-bucket/asset"
+
+	t.Run("good asset is cached", func(t *testing.T) {
+		sandboxpath.StaticFilesDir = t.TempDir()
+		s := &WorkerHerder{anonGCSClient: fakeObjectStorage{data: content}}
+		path, err := s.fetchAsset(context.Background(), assetEntry{URL: url, SHA256: goodHash})
+		if err != nil {
+			t.Fatalf("fetchAsset: %v", err)
+		}
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("reading cached asset: %v", err)
+		}
+		if !bytes.Equal(got, content) {
+			t.Errorf("cached bytes = %q, want %q", got, content)
+		}
+	})
+
+	t.Run("over-cap asset rejected, cache not written", func(t *testing.T) {
+		sandboxpath.StaticFilesDir = t.TempDir()
+		maxAssetBytes = 4 // content is longer than this
+		s := &WorkerHerder{anonGCSClient: fakeObjectStorage{data: content}}
+		if _, err := s.fetchAsset(context.Background(), assetEntry{URL: url, SHA256: goodHash}); err == nil {
+			t.Fatal("fetchAsset accepted an over-cap asset")
+		}
+		if _, err := os.Stat(sandboxpath.RunSCBinaryPath(goodHash)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("over-cap download left a file at the cache path (stat err = %v)", err)
+		}
+	})
+
+	t.Run("hash mismatch rejected, cache not written", func(t *testing.T) {
+		sandboxpath.StaticFilesDir = t.TempDir()
+		maxAssetBytes = origCap
+		wrongHash := strings.Repeat("a", 64) // valid 64-hex format, wrong value
+		s := &WorkerHerder{anonGCSClient: fakeObjectStorage{data: content}}
+		if _, err := s.fetchAsset(context.Background(), assetEntry{URL: url, SHA256: wrongHash}); err == nil {
+			t.Fatal("fetchAsset accepted a hash mismatch")
+		}
+		if _, err := os.Stat(sandboxpath.RunSCBinaryPath(wrongHash)); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("mismatched download left a file at the cache path (stat err = %v)", err)
+		}
+	})
 }
 
 // TestRPCBoundariesReject confirms each of the three RPCs validates path inputs
@@ -269,10 +347,10 @@ func TestFetchAssetRejectsBadHash(t *testing.T) {
 // Internal. Guards against a future removal or reordering of the validation
 // call at any boundary.
 func TestRPCBoundariesReject(t *testing.T) {
-	s := &SandboxHerder{}
+	s := &WorkerHerder{}
 	ctx := context.Background()
 	badUID := "../escape" // valid actor ref, invalid runtime-sandbox UID
-	const okNS, okTmpl, okID = "runtime-demo", "counter", "counter-1"
+	const okNS, okTmpl, okID = "actordock-demo", "counter", "counter-1"
 	okSpec := &runtimeworkerpb.WorkloadSpec{Containers: []*runtimeworkerpb.Container{{Name: "worker"}}}
 
 	wantInvalidArgument := func(t *testing.T, rpc string, err error) {
@@ -307,4 +385,37 @@ func TestRPCBoundariesReject(t *testing.T) {
 		})
 		wantInvalidArgument(t, "Restore", err)
 	})
+}
+
+func TestBuildSandboxWorkloadSpecForwardsReadyz(t *testing.T) {
+	in := &runtimeworkerpb.WorkloadSpec{
+		PauseImage: "pause",
+		Containers: []*runtimeworkerpb.Container{
+			{
+				Name:  "with-probe",
+				Image: "main",
+				Readyz: &runtimeworkerpb.Readyz{
+					HttpGet: &runtimeworkerpb.HTTPGetAction{Path: "/health", Port: 8080},
+				},
+			},
+			{
+				Name: "without-probe",
+			},
+		},
+	}
+	want := &runtimesandboxpb.WorkloadSpec{
+		Containers: []*runtimesandboxpb.Container{
+			{
+				Name: "with-probe",
+				Readyz: &runtimesandboxpb.Readyz{
+					HttpGet: &runtimesandboxpb.HTTPGetAction{Path: "/health", Port: 8080},
+				},
+			},
+			{Name: "without-probe"},
+		},
+	}
+	got := buildSandboxWorkloadSpec(in)
+	if diff := cmp.Diff(want, got, protocmp.Transform()); diff != "" {
+		t.Errorf("buildSandboxWorkloadSpec mismatch (-want +got):\n%s", diff)
+	}
 }

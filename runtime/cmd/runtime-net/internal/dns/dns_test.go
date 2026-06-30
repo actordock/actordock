@@ -134,9 +134,9 @@ func TestReconcile(t *testing.T) {
 		t.Fatalf("failed to unmarshal updated stubDomains: %v", err)
 	}
 
-	ips, exists := stubDomains["actors.actordock.dev"]
+	ips, exists := stubDomains["actors.resources.runtime.actordock.dev"]
 	if !exists || len(ips) != 1 || ips[0] != "10.0.0.2" {
-		t.Errorf("expected stubDomains to map actors.actordock.dev to [10.0.0.2], but got: %v", stubDomains)
+		t.Errorf("expected stubDomains to map actors.resources.runtime.actordock.dev to [10.0.0.2], but got: %v", stubDomains)
 	}
 
 	otherIPs, exists := stubDomains["other-domain.com"]

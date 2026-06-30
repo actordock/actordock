@@ -47,12 +47,12 @@ const (
 //
 // Each runtime-sandbox server has two main states, "available" and "executing".
 //
-// When the runtime-sandbox is "available", the control plane is free to either
+// When the runtime-sandbox is "available", the runtime control plane is free to either
 // boot a new workload (using RunWorkload), or restore an existing workload from
 // a checkpoint (using RestoreWorkload).  These calls move the runtime-sandbox into
 // "executing" state.
 //
-// When the runtime-sandbox is "executing", the control plane can checkpoint the
+// When the runtime-sandbox is "executing", the runtime control plane can checkpoint the
 // running workload (with CheckpointWorkload).  This moves the runtime-sandbox back to
 // "free" state.
 type SandboxClient interface {
@@ -116,12 +116,12 @@ func (c *sandboxClient) RestoreWorkload(ctx context.Context, in *RestoreWorkload
 //
 // Each runtime-sandbox server has two main states, "available" and "executing".
 //
-// When the runtime-sandbox is "available", the control plane is free to either
+// When the runtime-sandbox is "available", the runtime control plane is free to either
 // boot a new workload (using RunWorkload), or restore an existing workload from
 // a checkpoint (using RestoreWorkload).  These calls move the runtime-sandbox into
 // "executing" state.
 //
-// When the runtime-sandbox is "executing", the control plane can checkpoint the
+// When the runtime-sandbox is "executing", the runtime control plane can checkpoint the
 // running workload (with CheckpointWorkload).  This moves the runtime-sandbox back to
 // "free" state.
 type SandboxServer interface {
