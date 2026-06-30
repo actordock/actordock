@@ -177,11 +177,11 @@ func loadFlagsFromEnv() {
 		flag *string
 		env  string
 	}{
-		{redisClusterAddress, "ATE_API_REDIS_ADDRESS"},
-		{clientJWTIssuer, "ATE_API_K8SJWT_ISSUER"},
-		{redisUseIAMAuth, "ATE_API_REDIS_USE_IAM_AUTH"},
-		{redisTLSServerName, "ATE_API_REDIS_TLS_SERVER_NAME"},
-		{redisClientCert, "ATE_API_REDIS_CLIENT_CERT"},
+		{redisClusterAddress, "RUNTIME_API_REDIS_ADDRESS"},
+		{clientJWTIssuer, "RUNTIME_API_K8SJWT_ISSUER"},
+		{redisUseIAMAuth, "RUNTIME_API_REDIS_USE_IAM_AUTH"},
+		{redisTLSServerName, "RUNTIME_API_REDIS_TLS_SERVER_NAME"},
+		{redisClientCert, "RUNTIME_API_REDIS_CLIENT_CERT"},
 	}
 	for _, o := range overrides {
 		if *o.flag == "@env" {
