@@ -26,8 +26,8 @@ import (
 
 	"github.com/actordock/runtime/cmd/runtime-sandbox-microvm/internal/ch"
 	"github.com/actordock/runtime/cmd/runtime-sandbox-microvm/internal/kata"
-	"github.com/actordock/runtime/internal/sandboxpath"
 	"github.com/actordock/runtime/internal/proto/runtimesandboxpb"
+	"github.com/actordock/runtime/internal/sandboxpath"
 )
 
 // CheckpointWorkload suspends the actor and writes a portable CH snapshot.

@@ -24,8 +24,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/actordock/runtime/internal/sandboxpath"
 	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
+	"github.com/actordock/runtime/internal/sandboxpath"
 )
 
 type tarEntry struct {

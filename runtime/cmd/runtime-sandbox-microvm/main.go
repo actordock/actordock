@@ -34,9 +34,9 @@ import (
 
 	"cloud.google.com/go/compute/metadata"
 	"github.com/actordock/runtime/internal/actorlog"
+	"github.com/actordock/runtime/internal/proto/runtimesandboxpb"
 	"github.com/actordock/runtime/internal/runtimeinterceptors"
 	"github.com/actordock/runtime/internal/sandboxpath"
-	"github.com/actordock/runtime/internal/proto/runtimesandboxpb"
 	"github.com/actordock/runtime/internal/serverboot"
 	"github.com/actordock/runtime/internal/version"
 	"github.com/hashicorp/go-reap"

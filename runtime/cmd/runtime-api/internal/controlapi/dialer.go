@@ -30,7 +30,7 @@ var ErrWorkerPodNotFound = errors.New("worker pod not found")
 
 // WorkerDialer handles gRPC connections to runtime-worker pods.
 type WorkerDialer struct {
-	workerIndexer cache.Indexer
+	workerIndexer       cache.Indexer
 	workerDaemonIndexer cache.Indexer
 	workerDaemonConns   *lru.Cache
 }
@@ -38,7 +38,7 @@ type WorkerDialer struct {
 // NewWorkerDialer creates a new WorkerDialer.
 func NewWorkerDialer(workerIndexer cache.Indexer, workerDaemonIndexer cache.Indexer) *WorkerDialer {
 	return &WorkerDialer{
-		workerIndexer: workerIndexer,
+		workerIndexer:       workerIndexer,
 		workerDaemonIndexer: workerDaemonIndexer,
 		workerDaemonConns:   lru.New(1024),
 	}

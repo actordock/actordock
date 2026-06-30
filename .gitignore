@@ -1,6 +1,7 @@
 /bin/
 /runtime/bin/
 /.gocache/
+/.gomodcache/
 /.gotmp/
 /.ko/
 /.runtime-vendor/

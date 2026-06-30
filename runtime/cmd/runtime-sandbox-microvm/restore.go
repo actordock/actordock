@@ -28,9 +28,9 @@ import (
 
 	"github.com/actordock/runtime/cmd/runtime-sandbox-microvm/internal/ch"
 	"github.com/actordock/runtime/cmd/runtime-sandbox-microvm/internal/kata"
-	"github.com/actordock/runtime/internal/sandboxpath"
 	"github.com/actordock/runtime/internal/proto/runtimesandboxpb"
 	"github.com/actordock/runtime/internal/readyz"
+	"github.com/actordock/runtime/internal/sandboxpath"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

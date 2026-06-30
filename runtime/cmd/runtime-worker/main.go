@@ -29,13 +29,13 @@ import (
 	"time"
 
 	"cloud.google.com/go/storage"
-	"github.com/actordock/runtime/cmd/runtime-worker/internal/runtimegcs"
 	"github.com/actordock/runtime/cmd/runtime-worker/internal/memorypullcache"
+	"github.com/actordock/runtime/cmd/runtime-worker/internal/runtimegcs"
+	"github.com/actordock/runtime/internal/proto/runtimesandboxpb"
+	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
+	"github.com/actordock/runtime/internal/resources"
 	"github.com/actordock/runtime/internal/runtimeinterceptors"
 	"github.com/actordock/runtime/internal/sandboxpath"
-	"github.com/actordock/runtime/internal/proto/runtimeworkerpb"
-	"github.com/actordock/runtime/internal/proto/runtimesandboxpb"
-	"github.com/actordock/runtime/internal/resources"
 	"github.com/actordock/runtime/internal/serverboot"
 	"github.com/actordock/runtime/internal/version"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -184,7 +184,7 @@ func main() {
 type WorkerHerder struct {
 	runtimeworkerpb.UnimplementedWorkerHerderServer
 
-	sandboxDialer   *SandboxDialer
+	sandboxDialer *SandboxDialer
 	pullCache     *memorypullcache.MemoryPullCache
 	anonGCSClient runtimegcs.ObjectStorage
 	gcsClient     runtimegcs.ObjectStorage
@@ -201,7 +201,7 @@ func NewService(
 	pullCache *memorypullcache.MemoryPullCache,
 ) *WorkerHerder {
 	wms := &WorkerHerder{
-		sandboxDialer:   sandboxDialer,
+		sandboxDialer: sandboxDialer,
 		pullCache:     pullCache,
 		anonGCSClient: anonGCSClient,
 		gcsClient:     gcsClient,
@@ -561,8 +561,8 @@ func (s *WorkerHerder) Restore(ctx context.Context, req *runtimeworkerpb.Restore
 	}
 
 	slog.InfoContext(ctx, "Restore timing breakdown", slog.String("actor", actorID),
-		slog.Duration("download", dDownload),   // rustfs/GCS fetch + decompress (or local copy)
-		slog.Duration("oci_unpack", dBundles),  // prepareOCIBundles: unpack the OCI image to the bundle
+		slog.Duration("download", dDownload),       // rustfs/GCS fetch + decompress (or local copy)
+		slog.Duration("oci_unpack", dBundles),      // prepareOCIBundles: unpack the OCI image to the bundle
 		slog.Duration("sandbox_restore", dSandbox), // runtime-sandbox RestoreWorkload (see its own breakdown)
 		slog.Duration("total", time.Since(tStart)))
 	return &runtimeworkerpb.RestoreResponse{}, nil

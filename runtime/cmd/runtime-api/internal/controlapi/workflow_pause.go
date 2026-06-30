@@ -120,7 +120,7 @@ func (s *CallWorkerPauseStep) Execute(ctx context.Context, input *PauseInput, st
 	// actor is currently running (recorded on-node at Run/Restore) and pins it
 	// into the snapshot manifest.
 	req := &runtimeworkerpb.CheckpointRequest{
-		TargetSandboxPodUid:         state.Actor.GetSandboxPodUid(),
+		TargetSandboxPodUid:    state.Actor.GetSandboxPodUid(),
 		ActorTemplateNamespace: state.Actor.GetActorTemplateNamespace(),
 		ActorTemplateName:      state.Actor.GetActorTemplateName(),
 		ActorId:                state.Actor.GetActorId(),

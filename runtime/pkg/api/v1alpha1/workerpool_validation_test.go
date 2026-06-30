@@ -33,7 +33,7 @@ func TestWorkerPoolValidation(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: WorkerPoolSpec{
-			Replicas:   1,
+			Replicas:     1,
 			SandboxImage: "runtime-sandbox:latest",
 		},
 	}

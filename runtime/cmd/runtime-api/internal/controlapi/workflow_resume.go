@@ -261,7 +261,7 @@ func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput,
 		slog.InfoContext(ctx, "Actor has snapshot; Restoring from snapshot")
 
 		req := &runtimeworkerpb.RestoreRequest{
-			TargetSandboxPodUid:         state.Actor.GetSandboxPodUid(),
+			TargetSandboxPodUid:    state.Actor.GetSandboxPodUid(),
 			ActorTemplateNamespace: state.Actor.GetActorTemplateNamespace(),
 			ActorTemplateName:      state.Actor.GetActorTemplateName(),
 			ActorId:                state.Actor.GetActorId(),
@@ -299,7 +299,7 @@ func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput,
 		snapshot := state.ActorTemplate.Status.GoldenSnapshot
 
 		req := &runtimeworkerpb.RestoreRequest{
-			TargetSandboxPodUid:         state.Actor.GetSandboxPodUid(),
+			TargetSandboxPodUid:    state.Actor.GetSandboxPodUid(),
 			ActorTemplateNamespace: state.Actor.GetActorTemplateNamespace(),
 			ActorTemplateName:      state.Actor.GetActorTemplateName(),
 			ActorId:                state.Actor.GetActorId(),
@@ -329,7 +329,7 @@ func (s *CallWorkerRestoreStep) Execute(ctx context.Context, input *ResumeInput,
 		}
 
 		req := &runtimeworkerpb.RunRequest{
-			TargetSandboxPodUid:         state.Actor.GetSandboxPodUid(),
+			TargetSandboxPodUid:    state.Actor.GetSandboxPodUid(),
 			ActorTemplateNamespace: state.Actor.GetActorTemplateNamespace(),
 			ActorTemplateName:      state.Actor.GetActorTemplateName(),
 			ActorId:                state.Actor.GetActorId(),

@@ -265,9 +265,9 @@ func testWorkerPoolApplyConfig(tmpl *runtimev1alpha1.WorkerPoolPodTemplate) *run
 	return &runtimev1alpha1.WorkerPool{
 		ObjectMeta: metav1.ObjectMeta{Name: "pool", Namespace: "default", UID: "uid"},
 		Spec: runtimev1alpha1.WorkerPoolSpec{
-			Replicas:   2,
+			Replicas:     2,
 			SandboxImage: "runtime-sandbox:v1",
-			Template:   tmpl,
+			Template:     tmpl,
 		},
 	}
 }
