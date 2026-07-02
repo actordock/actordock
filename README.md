@@ -21,20 +21,6 @@ E2B-compatible agent sandboxes on Kubernetes: SDK REST/HTTP through Actordock (P
 
 ![Actordock architecture](docs/assets/architecture.png)
 
-| Component | Layer | Role |
-|-----------|-------|------|
-| **E2B SDK** | Client | Official Python/JS SDK; REST for lifecycle, HTTP to `{sandboxId}.{domain}:49983` for commands |
-| **Platform** | Actordock | E2B-compatible REST (`POST /sandboxes`, pause, metrics, template builds) |
-| **Router** | Actordock | Ingress: parse sandbox id, `ResumeActor` via runtime-api, proxy to envd |
-| **Scheduler** | Actordock | TTL and auto-pause; calls runtime-api to suspend/delete idle sandboxes |
-| **Redis** | Actordock | Sandbox metadata (ids, tokens, expiry, template refs) |
-| **Dashboard** | Actordock | Web UI for templates, sandboxes, and cluster smoke checks |
-| **ActorTemplate CRD** | Runtime | `actordock.dev` templates; golden snapshot + workload spec |
-| **runtime-api** | Runtime | gRPC control plane: Create/Resume/Suspend/Delete actor |
-| **runtime-worker** | Runtime | Host Pod; multiplexes many actors onto fewer workers |
-| **runtime-sandbox** | Runtime | gVisor (`runsc`) isolation per actor workload |
-| **envd** | Runtime | In-sandbox process and filesystem API (`process.Start`, files) |
-| **rustfs** | Runtime | Snapshot storage (suspend/resume state) |
 
 **Flows:** Create (solid) — SDK → Platform → runtime-api → worker + envd → Redis. Command/Resume (dashed) — SDK → Router → runtime-api → envd. Lifecycle (dotted) — Scheduler → runtime-api suspend → snapshot.
 
