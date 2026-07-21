@@ -1,0 +1,177 @@
+# Copyright 2026 The Actordock Authors.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: actordock
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: actordock
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: actordock
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: controlplane
+  namespace: actordock
+spec:
+  selector:
+    app: controlplane
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controlplane
+  namespace: actordock
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: controlplane
+  template:
+    metadata:
+      labels:
+        app: controlplane
+    spec:
+      containers:
+        - name: controlplane
+          image: actordock/controlplane:dev
+          imagePullPolicy: Never
+          env:
+            - name: LISTEN_ADDR
+              value: ":8080"
+            - name: REDIS_ADDR
+              value: redis:6379
+            - name: POLICY
+              value: "fifo"
+            - name: SNAPSHOT_ROOT
+              value: /var/lib/actordock/snapshots
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+  namespace: actordock
+spec:
+  clusterIP: None
+  selector:
+    app: worker
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: worker
+  namespace: actordock
+spec:
+  serviceName: worker
+  replicas: 4
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: actordock/worker:dev
+          imagePullPolicy: Never
+          securityContext:
+            privileged: true
+          env:
+            - name: LISTEN_ADDR
+              value: ":8081"
+            - name: MAX_SLOTS
+              value: "1"
+            - name: CONTROLPLANE_URL
+              value: http://controlplane:8080
+            - name: WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ADVERTISE_URL
+              value: http://$(WORKER_ID).worker.actordock.svc.cluster.local:8081
+            - name: PLATFORM
+              value: systrap
+            - name: S3_ENDPOINT
+              value: http://rustfs.actordock.svc:9000
+            - name: S3_BUCKET
+              value: actordock-snapshots
+            - name: S3_ACCESS_KEY
+              value: rustfsadmin
+            - name: S3_SECRET_KEY
+              value: rustfsadmin
+            - name: S3_REGION
+              value: us-east-1
+            - name: S3_PATH_STYLE
+              value: "true"
+          ports:
+            - containerPort: 8081
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/actordock
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

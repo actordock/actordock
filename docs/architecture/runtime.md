@@ -2,6 +2,8 @@
 
 Status: skeleton.
 
+Hard constraint: C/R flow, golden/template boot, and snapshot packaging must be learned from Substrate (`runsc` / atelet paths) before inventing Actordock-only schemes. Divergence needs an ADR.
+
 ## Role
 
 The Runtime runs inside (or beside) a Worker and implements sandbox isolation and checkpoint/restore.

@@ -1,8 +1,10 @@
 # Architecture overview
 
-Status: skeleton — fill in as implementation lands.
+Status: Kind + gVisor multiplexing with Substrate-aligned Pause/Suspend.
 
-The platform exists to **run and measure** sandbox priority/allocation policies. Research framing: [`../research/problem.md`](../research/problem.md).
+## Hard constraint
+
+Platform layers below must track Substrate’s proven paths. **No closed-door redesign** of multiplexing, Pause/Suspend, snapshot I/O, or Worker/runtime wiring. Study Substrate first; document any intentional divergence in an ADR. Research novelty lives in scheduling *policy* and eval, not in reinventing the platform substrate.
 
 ## Layers
 
@@ -10,32 +12,38 @@ The platform exists to **run and measure** sandbox priority/allocation policies.
 Clients
    │
    ▼
-Control plane  ── placement / packing / resume target
-   │                 metadata + metrics
+Control plane  ── place / pause / suspend / resume (policy: fifo|random)
+   │                 Redis metadata
    ▼
-Data plane     ── sandboxID → Worker (resume if suspended, then proxy)
+Worker agents  ── runsc + local snapshots + rustfs upload/download
    │
-   ▼
-Worker pool    ── warm Pods; local Runtime (gVisor, …)
-   │
-   ▼
-Snapshots      ── local and/or remote checkpoint images
+   ├─ Pause     → local disk only (sticky resume)
+   └─ Suspend   → local checkpoint + rustfs prefix (per-file sparse-zstd)
 ```
 
-Kubernetes owns Worker pool size and health. Actordock owns sandbox identity, scheduling, and routing.
+## Snapshot model (Substrate-aligned)
 
-## Components (intended)
+| Op | Local | rustfs | Resume |
+|----|-------|--------|--------|
+| Pause | yes | no | same Worker |
+| Suspend | yes (source node) | yes | any Worker (download if needed) |
 
-| Component | Role |
+Eviction under Worker pressure uses **Suspend**.
+
+## Components
+
+| Component | Path |
 |-----------|------|
-| API / control plane | Sandbox CRUD, policy, scheduler |
-| Router | Resolve location; trigger resume; forward traffic |
-| Worker agent | Create / checkpoint / restore; report metrics |
-| State store | High-churn sandbox/Worker state (not etcd per op) |
-| Snapshot store | Checkpoint durability and fetch for cross-Worker resume |
+| controlplane | `cmd/controlplane` |
+| worker | `cmd/worker` |
+| policy | `internal/policy` (`fifo`, `random`) |
+| snapshotstore | `internal/snapshotstore` (S3/rustfs + FS for tests) |
+| Kind | `manifests/kind/{actordock,rustfs}.yaml` |
+| Bring-up / verify | `hack/kind-up.sh`, `hack/verify-local.sh` → `go test ./e2e/ -tags=e2e` |
+| E2E scenarios | `e2e/*_test.go` (build tag `e2e`) |
 
 ## Related
 
 - [scheduling.md](./scheduling.md)
-- [state-model.md](./state-model.md)
-- [runtime.md](./runtime.md)
+- [../decisions/0002-kind-gvisor-multiplex.md](../decisions/0002-kind-gvisor-multiplex.md)
+- [../decisions/0003-pause-suspend-rustfs.md](../decisions/0003-pause-suspend-rustfs.md)

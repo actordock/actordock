@@ -21,9 +21,16 @@ The system (gVisor C/R, Worker pool, routing) exists so strategies are **runnabl
 
 - Treating “one sandbox = one Pod” as the primary model.
 - E2B API parity as the product definition.
-- Vendoring/syncing Substrate; concepts only.
+- Vendoring/syncing Substrate as a dependency (orphan rewrite stays).
 - Claiming a final allocation algorithm before baselines and datasets exist.
+
+## Hard constraint: no closed-door platform work
+
+Platform mechanics are **not** a blank slate. Before changing Worker multiplexing, Pause/Suspend, snapshots, control-plane hot path, or runtime C/R, **study Substrate** and align unless an ADR records a deliberate divergence.
+
+- Innovate on: priority/allocation research and measurement.
+- Do not invent alternate platform internals just because we do not vendor Substrate.
 
 ## Differentiation
 
-Infrastructure peers focus on isolation or 1:1 sandbox Pods. Actordock focuses on **oversubscribed allocation under priority**—with an eval loop (metrics, baselines, datasets, literature) to justify the policy.
+Infrastructure peers focus on isolation or 1:1 sandbox Pods. Actordock focuses on **oversubscribed allocation under priority**—with an eval loop (metrics, baselines, datasets, literature) to justify the policy. Platform shape stays Substrate-aligned so research results stay comparable.

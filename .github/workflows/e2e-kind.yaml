@@ -1,0 +1,67 @@
+# Copyright 2026 The Actordock Authors.
+# SPDX-License-Identifier: Apache-2.0
+
+name: e2e-kind
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+      - name: Test
+        run: go test ./...
+
+  e2e-kind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        policy: [fifo, random]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Install kind
+        run: |
+          curl -fsSL -o ./kind "https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Create cluster and deploy
+        env:
+          KIND_CLUSTER_NAME: actordock
+          POLICY: ${{ matrix.policy }}
+        run: |
+          chmod +x hack/*.sh
+          ./hack/kind-up.sh
+
+      - name: Verify (e2e)
+        env:
+          SANDBOX_COUNT: "5"
+          MAX_RUNNING: "4"
+        run: ./hack/verify-local.sh
+
+      - name: Dump on failure
+        if: failure()
+        run: |
+          kubectl -n actordock get pods -o wide || true
+          kubectl -n actordock describe pods || true
+          kubectl -n actordock logs deploy/controlplane --all-containers=true || true
+          kubectl -n actordock logs statefulset/worker --all-containers=true || true
+
+      - name: Teardown
+        if: always()
+        run: ./hack/kind-down.sh || true

@@ -1,28 +1,31 @@
 # Scheduling (platform view)
 
-Status: skeleton. Research detail lives under [`../research/`](../research/).
+Status: v0 with Pause/Suspend + `fifo` / `random`.
 
-## Role in the research stack
+Hard constraint: placement/eviction *mechanics* (1 running sandbox per Worker, sticky Pause, portable Suspend) follow Substrate. Inventiveness belongs in pluggable **policies** and research metrics—not in inventing a different density model without studying Substrate first.
 
-The control plane must support **swappable allocation policies** and emit enough signals to score them. Default policy can be naive; the point is a fair comparison harness.
+## Model (Substrate-aligned)
 
-## Decisions every policy must answer
+**One running sandbox per Worker** (`MaxSlots=1`). Density comes from time-multiplexing the Worker pool via Suspend/Resume—not packing multiple sandboxes onto one Pod.
 
-| Decision | Question |
-|----------|----------|
-| Placement | Where does a new or cold-start sandbox go? |
-| Packing / eviction | Who suspends when a Worker is tight? |
-| Resume target | Restore in place or on another Worker? |
-| Priority application | How do priority / semantics change the three answers above? |
+## Snapshot-aware decisions
 
-## Inputs (shared by policies)
+| State | Resume rule |
+|-------|-------------|
+| `paused` | Sticky to last Worker (local snapshot only) |
+| `suspended` | Prefer sticky if local still present; else any idle Worker + rustfs download |
 
-**Semantics:** priority, affinity/anti-affinity, interactive vs batch, max resume latency, resource constraints.
+Eviction under Worker pressure uses **Suspend** so victims stay portable.
 
-**Metrics:** Worker load and slots, activity, checkpoint size/time, resume latency, failures, snapshot locality.
+## Policies
 
-## Outputs
+| Policy | Place | Evict |
+|--------|-------|-------|
+| `fifo` | Earliest idle Worker | Oldest running (frees its Worker) |
+| `random` | Random idle Worker | Random running (frees its Worker) |
 
-Chosen Worker or suspend set, plus a structured reason (for logs and offline analysis).
+Policy chooses **which Worker**; it does not co-locate multiple agents on one Worker.
 
-See also: [research/problem.md](../research/problem.md), [research/metrics.md](../research/metrics.md).
+## Related
+
+[../decisions/0003-pause-suspend-rustfs.md](../decisions/0003-pause-suspend-rustfs.md)

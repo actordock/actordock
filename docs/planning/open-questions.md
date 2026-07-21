@@ -2,6 +2,8 @@
 
 Move answers into `architecture/`, `research/`, or `decisions/` when settled.
 
+Platform answers must check Substrate first (hard constraint: no closed-door redesign of solved platform paths).
+
 ## Research
 
 1. Which priority model (strict classes vs numeric weights vs SLO deadlines)?
