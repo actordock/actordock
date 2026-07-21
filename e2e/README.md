@@ -44,6 +44,7 @@ EVAL_POLICY=fifo go test ./e2e/eval/ -tags=e2e -count=1 -timeout=30m -v -run Tes
 | `TestScheduleOversubscribeEvicts` | N>Workers; victim has objectKey |
 | `TestPauseStickyToSameWorker` | Pause sticky to same Worker |
 | `TestSuspendMigratesOffOrigin` | Suspend + occupy origin → migrate |
+| `TestResourceSignalsAllMetricsPositive` | GET signals; runtime/snapshot/worker **all numeric fields > 0** |
 | `TestPolicyFifoEvictsOldestCreated` | `fifo` victim = oldest CreatedAt |
 | `TestPolicyLRUIdleEvictsLongestIdle` | real `exec` + Worker push; kick longer-idle |
 | `TestPolicyResourceEvictGDS` | inflate `/dev/shm` RSS only (no re-Suspend); heavy evicted (larger Size → lower H) |

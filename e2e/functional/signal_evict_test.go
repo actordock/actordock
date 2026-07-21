@@ -140,6 +140,15 @@ func TestPolicyResourceEvictGDS(t *testing.T) {
 	}
 	time.Sleep(signalPushWait())
 
+	// Directly assert resource plugin has non-zero Size signal for heavy before eviction.
+	heavySig := h.GetSandboxSignals(ctx, heavy.ID)
+	if heavySig.Runtime.MemRSSBytes == 0 && heavySig.Snapshot.LastCheckpointBytes == 0 {
+		t.Fatalf("heavy sandbox has no Size signal (rss=0 checkpointBytes=0): %+v", heavySig)
+	}
+	if heavySig.KeepAliveH == 0 {
+		t.Fatalf("heavy keepAliveH=0: %+v", heavySig)
+	}
+
 	_ = resumeForcesEvict(t, h, ctx)
 	victim := findSuspendedVictim(t, h, ctx, candidateSet(filled))
 	// H = L + Cost/Size with similar Cost → larger Size → lower H → heavy evicted.

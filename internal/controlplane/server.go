@@ -56,6 +56,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/workers/register", s.registerWorker)
 	mux.HandleFunc("GET /v1/workers", s.listWorkers)
 	mux.HandleFunc("POST /v1/signals/resource", s.postResourceSignals)
+	mux.HandleFunc("GET /v1/signals/sandboxes", s.listSandboxSignals)
+	mux.HandleFunc("GET /v1/signals/sandboxes/{id}", s.getSandboxSignals)
+	mux.HandleFunc("GET /v1/signals/workers", s.listWorkerSignals)
 	return mux
 }
 
@@ -220,6 +223,46 @@ func (s *Server) postResourceSignals(w http.ResponseWriter, r *http.Request) {
 	}
 	s.signals.ApplyPush(req, now)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) listSandboxSignals(w http.ResponseWriter, _ *http.Request) {
+	if s.signals == nil {
+		http.Error(w, "resource signals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	m := s.signals.ListSandboxes(time.Now().UTC())
+	out := make([]signals.SandboxSignals, 0, len(m))
+	for _, sig := range m {
+		out = append(out, sig)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) getSandboxSignals(w http.ResponseWriter, r *http.Request) {
+	if s.signals == nil {
+		http.Error(w, "resource signals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.PathValue("id")
+	sig, ok := s.signals.GetSandbox(id, time.Now().UTC())
+	if !ok {
+		http.Error(w, "sandbox signals not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, sig)
+}
+
+func (s *Server) listWorkerSignals(w http.ResponseWriter, _ *http.Request) {
+	if s.signals == nil {
+		http.Error(w, "resource signals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	m := s.signals.ListWorkers(time.Now().UTC())
+	out := make([]signals.WorkerResource, 0, len(m))
+	for _, sig := range m {
+		out = append(out, sig)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

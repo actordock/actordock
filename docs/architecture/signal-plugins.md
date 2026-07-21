@@ -17,6 +17,8 @@ Worker / Sandbox          Control plane              Policy
 
 Observability (OTel `/metrics`) may **duplicate** the same samples for eval; the **scheduling hot path** uses the signal cache, not scrape latency.
 
+Read APIs (e2e): `GET /v1/signals/sandboxes`, `GET /v1/signals/sandboxes/{id}`, `GET /v1/signals/workers`.
+
 ## Resource object model (implemented)
 
 Signals are stored as **per-sandbox** (`SandboxSignals`: runtime + snapshot + keep-alive `H`) and **per-worker** (`WorkerResource`) rows in `signals.Store` (TTL, default 30s).

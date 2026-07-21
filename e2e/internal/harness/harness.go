@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/actordock/actordock/internal/signals"
 	"github.com/actordock/actordock/internal/types"
 )
 
@@ -370,6 +371,86 @@ func (h *Harness) FetchMetrics(ctx context.Context) string {
 		h.t.Fatalf("GET /metrics: %s: %s", resp.Status, bytes.TrimSpace(raw))
 	}
 	return string(raw)
+}
+
+func (h *Harness) ListSandboxSignals(ctx context.Context) []signals.SandboxSignals {
+	h.t.Helper()
+	var list []signals.SandboxSignals
+	h.DoJSON(ctx, http.MethodGet, "/v1/signals/sandboxes", nil, &list)
+	return list
+}
+
+func (h *Harness) GetSandboxSignals(ctx context.Context, id string) signals.SandboxSignals {
+	h.t.Helper()
+	var sig signals.SandboxSignals
+	h.DoJSON(ctx, http.MethodGet, "/v1/signals/sandboxes/"+id, nil, &sig)
+	return sig
+}
+
+func (h *Harness) ListWorkerSignals(ctx context.Context) []signals.WorkerResource {
+	h.t.Helper()
+	var list []signals.WorkerResource
+	h.DoJSON(ctx, http.MethodGet, "/v1/signals/workers", nil, &list)
+	return list
+}
+
+// WaitPositiveResourceSignals polls until sandboxID and its worker have all
+// numeric resource-plugin metrics > 0 (and healthy / timestamps set).
+func (h *Harness) WaitPositiveResourceSignals(ctx context.Context, sandboxID, workerID string, timeout time.Duration) {
+	h.t.Helper()
+	deadline := time.Now().Add(timeout)
+	var lastSB signals.SandboxSignals
+	var lastW signals.WorkerResource
+	for time.Now().Before(deadline) {
+		okSB, okW := false, false
+		for _, sig := range h.ListSandboxSignals(ctx) {
+			if sig.SandboxID == sandboxID {
+				lastSB = sig
+				okSB = sandboxSignalsAllPositive(sig)
+				break
+			}
+		}
+		for _, w := range h.ListWorkerSignals(ctx) {
+			if w.WorkerID == workerID {
+				lastW = w
+				okW = workerSignalsAllPositive(w)
+				break
+			}
+		}
+		if okSB && okW {
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	h.t.Fatalf("timeout waiting for positive resource signals\nsandbox=%+v\nworker=%+v", lastSB, lastW)
+}
+
+func sandboxSignalsAllPositive(sig signals.SandboxSignals) bool {
+	rt := sig.Runtime
+	snap := sig.Snapshot
+	return rt.CPUUtil > 0 &&
+		rt.MemRSSBytes > 0 &&
+		!rt.LastActiveAt.IsZero() &&
+		snap.LastCheckpointBytes > 0 &&
+		snap.LastPreemptCostSec > 0 &&
+		!snap.LastCheckpointAt.IsZero() &&
+		snap.LastCheckpointDur > 0 &&
+		!snap.LastRestoreAt.IsZero() &&
+		snap.LastRestoreDur > 0 &&
+		sig.KeepAliveH > 0 &&
+		!sig.ReportedAt.IsZero() &&
+		sig.WorkerID != ""
+}
+
+func workerSignalsAllPositive(w signals.WorkerResource) bool {
+	return w.WorkerID != "" &&
+		w.MaxSlots > 0 &&
+		w.UsedSlots > 0 &&
+		w.Healthy &&
+		w.CPUUtil > 0 &&
+		w.MemUtil > 0 &&
+		w.MemBytes > 0 &&
+		!w.ReportedAt.IsZero()
 }
 
 func EnvOr(k, def string) string {

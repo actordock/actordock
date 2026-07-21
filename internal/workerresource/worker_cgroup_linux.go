@@ -28,8 +28,14 @@ func ReadWorkerCgroup() (cpuUtil, memUtil float64, memBytes uint64, ok bool) {
 	}
 	memBytes, memOK := readCgroupUint(filepath.Join(root, "memory.current"))
 	limit, limitOK := readCgroupUint(filepath.Join(root, "memory.max"))
-	if limitOK && limit > 0 && memOK {
-		memUtil = float64(memBytes) / float64(limit)
+	if memOK && memBytes > 0 {
+		if limitOK && limit > 0 {
+			memUtil = float64(memBytes) / float64(limit)
+		} else {
+			// Kind often has memory.max=max; still report a positive utilization signal.
+			const nominal = float64(1 << 30) // 1 GiB
+			memUtil = float64(memBytes) / nominal
+		}
 		if memUtil > 1 {
 			memUtil = 1
 		}
