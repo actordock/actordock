@@ -1,8 +1,8 @@
 # Signal plugins (resource vs agent semantic)
 
-Status: **design** — not implemented yet. Intended rollout: **resource (serverless-style) first**, **agent semantic second**.
+Status: **resource plugin v1 implemented** (Worker push + sandbox/worker stores + `lru-idle` and FaasCache/`resource-evict`). Agent semantic: not implemented.
 
-Scheduling policies today (`fifo`, `random`) see only control-plane state: Workers, running sandboxes, snapshot metadata. Richer policies need **live signals**. We split signal producers into two plugin families so metrics, trust boundaries, and policy code stay separate.
+Scheduling policies today (`fifo`, `random`) mainly use control-plane Worker/sandbox state; `lru-idle` and `resource-evict` also read the short-TTL signal cache. We split signal producers into two plugin families so metrics, trust boundaries, and policy code stay separate.
 
 ## What is a signal plugin?
 
@@ -17,6 +17,32 @@ Worker / Sandbox          Control plane              Policy
 
 Observability (OTel `/metrics`) may **duplicate** the same samples for eval; the **scheduling hot path** uses the signal cache, not scrape latency.
 
+## Resource object model (implemented)
+
+Signals are stored as **per-sandbox** (`SandboxSignals`: runtime + snapshot + keep-alive `H`) and **per-worker** (`WorkerResource`) rows in `signals.Store` (TTL, default 30s).
+
+| Object | Scope | Fields | Used by `resource-evict` |
+|---|---|---|---|
+| `runtime` | running sandbox | `memRSSBytes`, `lastActiveAt` | **Size** (`memRSS`); **access** refreshes `H` when `lastActiveAt` advances |
+| | | `cpuUtil` | Observability / future; **not** in GDS `H` |
+| `snapshot` | checkpoint/restore cost | `lastCheckpointBytes`, `lastPreemptCostSec`, `lastCheckpointDur`, `lastRestoreDur`, `checkpointInProgress` | **Cost** / **Size** fallback; busy filter |
+| | | `lastCheckpointAt`, `lastRestoreAt` | Observability only |
+| `worker` | Worker/Pod | `cpuUtil`, `memUtil`, `healthy`, `maxSlots`, `usedSlots`, `memBytes` | **Place** least-loaded; skip unhealthy |
+| derived | sandbox | `keepAliveH` | Evict **argmin H**; `L` advanced via `OnEvict` |
+
+Legacy flat JSON fields (`cpuUtil`, `memRSSBytes`, `lastActiveAt`) normalize into `runtime` on ingest.
+
+### `resource-evict` = FaasCache / GreedyDual-Size
+
+Full formula and when-to-kick details: [scheduling.md](./scheduling.md#resource-evict-algorithm-greedy-dual-size).
+
+```text
+H = L + Cost / Size     # Frequency := 1 (GD-Size)
+evict argmin H when no idle Worker
+```
+
+Producers: Worker `ApplyPush`; control plane `RecordCheckpoint` / `RecordRestore`; scheduler `OnEvict` after victim choice.
+
 ## Two families
 
 | | **Resource (serverless-style)** | **Agent semantic** |
@@ -25,10 +51,10 @@ Observability (OTel `/metrics`) may **duplicate** the same samples for eval; the
 | **Serverless analogy** | Warm-pool keep-alive, LRU eviction, load-aware reclaim | Session/workflow priority, “don’t interrupt while user-visible work runs” |
 | **Primary sampler** | **Worker** (cgroups / container stats for the one running sandbox) | **Sandbox** (SDK, sidecar, or trusted agent process) |
 | **Trust model** | Platform-measured; agent cannot lie about CPU/RSS | Agent-reported; validate/version; treat as hint unless attested later |
-| **Typical signals** | `cpu_util`, `mem_rss_bytes`, `last_active_at`, optional `slot_hold_idle_sec` | `phase` (e.g. `waiting_external`, `tool_exec`, `idle`), optional `workflow_id`, `deadline`, user-facing flag |
+| **Typical signals** | `runtime.*`, `snapshot.*`, `worker.*` | `phase` (e.g. `waiting_external`, `tool_exec`, `idle`), optional `workflow_id`, `deadline`, user-facing flag |
 | **Main use in Actordock** | **Evict** least-valuable running sandbox when pool is full; optional cost hints for cross-Worker resume | **When** to suspend (opportunistic windows), **boost** workflow/session; filter “do not evict while …” |
 | **Not its job** | Business tenant tier alone (that’s API `priority`); picking GPU vs CPU node pools at K8s layer | Measuring RSS; replacing cgroup metrics |
-| **Planned policies** | `lru-idle`, `resource-evict`, combined with `locality-sticky` using existing snapshot fields | `semantic-opportunistic`, workflow-aware scoring (names TBD) |
+| **Planned policies** | `lru-idle` (pure runtime LRU) and `resource-evict` (FaasCache / GreedyDual-Size), combined with sticky resume | `semantic-opportunistic`, workflow-aware scoring (names TBD) |
 | **Literature bucket** | FaasCache, IceBreaker, Incendio (keep-alive / priority under cold start) | Crab (wait windows), Agentix/SAGA/HexAGenT (session/workflow), smetric (session routing) — see [../research/literature.md](../research/literature.md) |
 
 ## Resource plugin (traditional serverless)
@@ -39,9 +65,10 @@ Observability (OTel `/metrics`) may **duplicate** the same samples for eval; the
 
 **What policies consume:**
 
-- **Eviction:** Among `req.Running`, prefer suspending the sandbox with the longest low-CPU idle window (LRU / keep-alive inverse).
-- **Placement / resume:** Can stay sticky-first (scheduler invariant); resource signals mainly change **victim choice**, not Pause stickiness.
-- **Optional later:** Weight preempt cost by `mem_rss_bytes` or snapshot transfer history (still platform-side).
+- **Eviction (`resource-evict`):** GreedyDual-Size `H = L + Cost/Size` (FaasCache); victim = lowest `H`. Cost from snapshot preempt/restore; Size from RSS/checkpoint bytes; access via `lastActiveAt`.
+- **Eviction (`lru-idle`):** longest runtime idle only.
+- **Placement:** sticky-first on Resume when last Worker is free; else least-loaded idle Worker using `worker` CPU/mem util.
+- **Not in GDS `H`:** `runtime.cpuUtil`, checkpoint/restore timestamps (see [scheduling.md](./scheduling.md)).
 
 **User-facing “priority”:** Resource plugins do **not** replace tenant **scheduling priority** (a field on Create). That is a separate scalar for “who should get a slot first.” Resource signals answer “who is wasting a slot right now.” Policies may combine both: e.g. never evict above priority P unless pool critical; among equals, LRU by resource plugin.
 
@@ -103,7 +130,7 @@ Router and Actordock can **align** without merging code: e.g. gateway session `p
 ## Composition rules
 
 1. **Plugins publish; policies decide.** No policy-specific sampling in `internal/policy/*`.
-2. **Resource before semantic.** Resource plugin + one consumer policy (`lru-idle`) proves the signal pipeline and eval loop.
+2. **Resource before semantic.** Resource plugin + one consumer policy (`lru-idle` / `resource-evict`) proves the signal pipeline and eval loop.
 3. **Semantic extends, does not fork, the pipeline.** Same `SandboxSignals` store; semantic fields are optional keys. Missing semantic data → policies fall back to resource + fifo/priority baselines.
 4. **Pause / Suspend mechanics unchanged.** Signal plugins influence **which** sandbox is suspended, not whether Suspend remains the eviction primitive ([scheduling.md](./scheduling.md)).
 

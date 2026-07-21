@@ -29,11 +29,15 @@ case "${SUITE}" in
     run_pkg ./e2e/functional/ "${TIMEOUT}"
     ;;
   eval)
-    run_pkg ./e2e/eval/ "${E2E_TIMEOUT:-30m}"
+    # Default: four-policy comparison (writes EVAL_OUT_DIR/policy_compare.md).
+    EVAL_RUN="${EVAL_TEST_RUN:-TestEvalAllPolicies}"
+    echo "==> go test ./e2e/eval/ -tags=e2e -run ${EVAL_RUN}"
+    go test ./e2e/eval/ -tags=e2e -count=1 -timeout="${E2E_TIMEOUT:-60m}" -v -run "${EVAL_RUN}"
     ;;
   all)
     run_pkg ./e2e/functional/ "${TIMEOUT}"
-    run_pkg ./e2e/eval/ "${E2E_TIMEOUT:-30m}"
+    EVAL_RUN="${EVAL_TEST_RUN:-TestEvalAllPolicies}"
+    go test ./e2e/eval/ -tags=e2e -count=1 -timeout="${E2E_TIMEOUT:-60m}" -v -run "${EVAL_RUN}"
     ;;
   *)
     echo "unknown E2E_SUITE=${SUITE} (want functional|eval|all)" >&2

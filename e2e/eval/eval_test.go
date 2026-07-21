@@ -7,6 +7,8 @@ package eval
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,22 +16,20 @@ import (
 	"github.com/actordock/actordock/internal/types"
 )
 
-// TestEvalScenariosFifoVsRandom runs agent-oriented scenarios S1–S5 under fifo and random.
-// Metrics are deltas per scenario (before/after scrape). Does not assert policy winner.
-func TestEvalScenariosFifoVsRandom(t *testing.T) {
+var evalPolicies = []string{"fifo", "random", "lru-idle", "resource-evict"}
+
+// TestEvalAllPolicies runs S1–S5 under all four policies and writes a comparison table.
+func TestEvalAllPolicies(t *testing.T) {
 	ctx := context.Background()
 	h := harness.New(t)
 	workers := harness.EnvInt("MIN_WORKERS", 4)
 	h.WaitWorkers(ctx, workers)
 	h.WaitGolden(ctx)
 
-	type key struct {
-		scenario string
-		policy   string
-	}
-	reports := make(map[key]PolicyReport)
+	byKey := make(map[string]PolicyReport)
+	perPolicy := make(map[string][]PolicyReport)
 
-	for _, policy := range []string{"fifo", "random"} {
+	for _, policy := range evalPolicies {
 		h.SetPolicy(ctx, policy)
 		h.WaitWorkers(ctx, workers)
 		h.WaitGolden(ctx)
@@ -45,7 +45,8 @@ func TestEvalScenariosFifoVsRandom(t *testing.T) {
 			after := h.FetchMetrics(ctx)
 			r := ReportDelta(policy, before, after)
 			r.Scenario = sc.ID
-			reports[key{sc.ID, policy}] = r
+			byKey[sc.ID+"|"+policy] = r
+			perPolicy[policy] = append(perPolicy[policy], r)
 
 			t.Log(FormatReport(r))
 			if r.ResumeTotal < 1 {
@@ -54,11 +55,23 @@ func TestEvalScenariosFifoVsRandom(t *testing.T) {
 		}
 	}
 
+	scenarioIDs := make([]string, 0, len(evalScenarios))
 	for _, sc := range evalScenarios {
-		fifo := reports[key{sc.ID, "fifo"}]
-		random := reports[key{sc.ID, "random"}]
-		t.Log(CompareReports(fifo, random))
+		scenarioIDs = append(scenarioIDs, sc.ID)
 	}
+
+	agg := make([]PolicyReport, 0, len(evalPolicies))
+	for _, policy := range evalPolicies {
+		agg = append(agg, AggregateReports(perPolicy[policy]))
+	}
+
+	summary := FormatComparisonTable(agg)
+	detail := FormatScenarioComparisonTable(scenarioIDs, evalPolicies, byKey)
+	doc := "# Actordock policy eval comparison\n\n## Aggregate (S1–S5)\n\n" + summary +
+		"\n## Per scenario\n\n" + detail + "\n"
+
+	t.Log("\n" + doc)
+	writeEvalArtifact(t, doc)
 }
 
 // TestEvalFifoVsRandom keeps the legacy single combined workload for regression.
@@ -74,6 +87,22 @@ func TestEvalFifoVsRandom(t *testing.T) {
 	t.Log(FormatReport(fifo))
 	t.Log(FormatReport(random))
 	t.Log(CompareReports(fifo, random))
+}
+
+func writeEvalArtifact(t *testing.T, doc string) {
+	t.Helper()
+	dir := os.Getenv("EVAL_OUT_DIR")
+	if dir == "" {
+		dir = "docs/eval/results"
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("EVAL_OUT_DIR mkdir: %v", err)
+	}
+	path := filepath.Join(dir, "policy_compare.md")
+	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+	t.Logf("wrote %s", path)
 }
 
 func runLegacyCombinedEval(t *testing.T, h *harness.Harness, ctx context.Context, policy string, workers int) PolicyReport {
@@ -131,11 +160,4 @@ func runLegacyWorkload(t *testing.T, h *harness.Harness, ctx context.Context, wo
 	h.OccupyWorker(ctx, origin)
 	h.EnsureIdleExcept(ctx, origin)
 	_ = h.Resume(ctx, migrateID)
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
 }

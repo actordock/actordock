@@ -21,21 +21,11 @@ func NewFIFO() *FIFO { return &FIFO{} }
 func (p *FIFO) Name() string { return "fifo" }
 
 func (p *FIFO) Place(_ context.Context, req PlaceRequest) (PlaceResult, error) {
-	workers := append([]types.Worker(nil), req.Workers...)
-	sort.Slice(workers, func(i, j int) bool {
-		if workers[i].RegisteredAt.Equal(workers[j].RegisteredAt) {
-			return workers[i].ID < workers[j].ID
-		}
-		return workers[i].RegisteredAt.Before(workers[j].RegisteredAt)
-	})
-
-	for _, w := range workers {
-		if w.Healthy && w.FreeSlots() > 0 {
-			return PlaceResult{
-				WorkerID: w.ID,
-				Reason:   "fifo: earliest idle worker",
-			}, nil
-		}
+	if w, ok := pickIdleWorker(req.Workers, req.WorkerSignals, req.Running, req.SandboxSignals); ok {
+		return PlaceResult{
+			WorkerID: w.ID,
+			Reason:   "fifo: idle worker (load-aware tie-break)",
+		}, nil
 	}
 
 	if len(req.Running) == 0 {
@@ -58,19 +48,8 @@ func (p *FIFO) Place(_ context.Context, req PlaceRequest) (PlaceResult, error) {
 }
 
 func (p *FIFO) Resume(_ context.Context, req ResumeRequest) (PlaceResult, error) {
-	if req.Sandbox.WorkerID != "" {
-		for _, w := range req.Workers {
-			if w.ID == req.Sandbox.WorkerID && w.Healthy && w.FreeSlots() > 0 {
-				return PlaceResult{
-					WorkerID: w.ID,
-					Reason:   "fifo: sticky resume to last idle worker",
-				}, nil
-			}
-		}
+	if res, ok := tryStickyResume(req, "fifo: sticky resume to last idle worker"); ok {
+		return res, nil
 	}
-	return p.Place(context.Background(), PlaceRequest{
-		SandboxID: req.Sandbox.ID,
-		Workers:   req.Workers,
-		Running:   req.Running,
-	})
+	return p.Place(context.Background(), placeFromResume(req))
 }

@@ -54,6 +54,11 @@ actordock_sandbox_resume_wait_seconds_count{policy="fifo"} 8
 	if !strings.Contains(out, "winner=fifo") {
 		t.Fatalf("expected fifo wins some rows:\n%s", out)
 	}
+
+	table := FormatComparisonTable([]PolicyReport{r, AggregateReports([]PolicyReport{other})})
+	if !strings.Contains(table, "| fifo |") || !strings.Contains(table, "sticky_rate") {
+		t.Fatalf("bad table:\n%s", table)
+	}
 }
 
 func TestReportDelta(t *testing.T) {

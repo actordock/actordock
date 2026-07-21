@@ -21,13 +21,9 @@ jobs:
       - name: Test
         run: go test ./...
 
-  e2e-kind:
+  e2e-functional:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        policy: [fifo, random]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -42,26 +38,87 @@ jobs:
 
       - name: Create cluster and deploy
         env:
-          KIND_CLUSTER_NAME: actordock
-          POLICY: ${{ matrix.policy }}
+          KIND_CLUSTER_NAME: actordock-functional
+          POLICY: fifo
         run: |
           chmod +x hack/*.sh
           ./hack/kind-up.sh
 
-      - name: Verify (e2e)
+      - name: Functional e2e (all four policies via SetPolicy)
         env:
+          KIND_CLUSTER_NAME: actordock-functional
+          E2E_SUITE: functional
           SANDBOX_COUNT: "5"
           MAX_RUNNING: "4"
+          MIN_WORKERS: "2"
         run: ./hack/verify-local.sh
 
       - name: Dump on failure
         if: failure()
         run: |
-          kubectl -n actordock get pods -o wide || true
-          kubectl -n actordock describe pods || true
-          kubectl -n actordock logs deploy/controlplane --all-containers=true || true
-          kubectl -n actordock logs statefulset/worker --all-containers=true || true
+          kubectl --context kind-actordock-functional -n actordock get pods -o wide || true
+          kubectl --context kind-actordock-functional -n actordock describe pods || true
+          kubectl --context kind-actordock-functional -n actordock logs deploy/controlplane --all-containers=true || true
+          kubectl --context kind-actordock-functional -n actordock logs statefulset/worker --all-containers=true || true
 
       - name: Teardown
         if: always()
+        env:
+          KIND_CLUSTER_NAME: actordock-functional
+        run: ./hack/kind-down.sh || true
+
+  e2e-eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Install kind
+        run: |
+          curl -fsSL -o ./kind "https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+
+      - name: Create cluster and deploy
+        env:
+          KIND_CLUSTER_NAME: actordock-eval
+          POLICY: fifo
+        run: |
+          chmod +x hack/*.sh
+          ./hack/kind-up.sh
+
+      - name: Eval e2e (fifo|random|lru-idle|resource-evict comparison table)
+        env:
+          KIND_CLUSTER_NAME: actordock-eval
+          E2E_SUITE: eval
+          E2E_TIMEOUT: 60m
+          MIN_WORKERS: "4"
+          EVAL_OUT_DIR: docs/eval/results
+        run: |
+          mkdir -p docs/eval/results
+          ./hack/verify-local.sh
+
+      - name: Upload policy comparison table
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-compare
+          path: docs/eval/results/policy_compare.md
+          if-no-files-found: warn
+
+      - name: Dump on failure
+        if: failure()
+        run: |
+          kubectl --context kind-actordock-eval -n actordock get pods -o wide || true
+          kubectl --context kind-actordock-eval -n actordock describe pods || true
+          kubectl --context kind-actordock-eval -n actordock logs deploy/controlplane --all-containers=true || true
+          kubectl --context kind-actordock-eval -n actordock logs statefulset/worker --all-containers=true || true
+
+      - name: Teardown
+        if: always()
+        env:
+          KIND_CLUSTER_NAME: actordock-eval
         run: ./hack/kind-down.sh || true

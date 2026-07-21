@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/actordock/actordock/internal/runtime/gvisor"
 	"github.com/actordock/actordock/internal/snapshotstore"
 	"github.com/actordock/actordock/internal/types"
+	"github.com/actordock/actordock/internal/workerresource"
 	"github.com/actordock/actordock/internal/workerserver"
 )
 
@@ -76,8 +78,25 @@ func main() {
 	}
 	m := metrics.MustNew(env("POLICY", "worker"))
 
-	srv := workerserver.New(workerID, rt, snaps, log, m, metricsHandler)
+	activity := workerresource.NewActivity()
+	srv := workerserver.New(workerID, rt, snaps, log, m, metricsHandler, activity)
 	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler()}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	if envBool("SIGNAL_RESOURCE_ENABLED", true) && controlplaneURL != "" {
+		interval := envDuration("SIGNAL_RESOURCE_INTERVAL", 5*time.Second)
+		go (&workerresource.Pusher{
+			WorkerID:        workerID,
+			ControlPlaneURL: strings.TrimRight(controlplaneURL, "/"),
+			Interval:        interval,
+			Activity:        activity,
+			ListActive:      srv.ActiveSandboxIDs,
+			Log:             log,
+		}).Run(ctx)
+		log.Info("resource signal plugin enabled", "interval", interval.String())
+	}
 
 	go func() {
 		log.Info("worker listening", "addr", addr, "workerID", workerID)
@@ -100,9 +119,10 @@ func main() {
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 	<-stop
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_ = httpSrv.Shutdown(ctx)
+	cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	_ = httpSrv.Shutdown(shutdownCtx)
 }
 
 func openSnapshotStore(log *slog.Logger) (snapshotstore.Store, error) {
@@ -152,4 +172,25 @@ func env(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func envDuration(k string, def time.Duration) time.Duration {
+	if v := os.Getenv(k); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
+}
+
+func envBool(k string, def bool) bool {
+	v := os.Getenv(k)
+	if v == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return def
+	}
+	return b
 }

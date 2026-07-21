@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
-
-	"github.com/actordock/actordock/internal/types"
 )
 
 // Random places onto a random idle Worker (one running sandbox per Worker).
@@ -29,7 +27,7 @@ func NewRandom(rng *rand.Rand) *Random {
 func (p *Random) Name() string { return "random" }
 
 func (p *Random) Place(_ context.Context, req PlaceRequest) (PlaceResult, error) {
-	candidates := workersWithFree(req.Workers)
+	candidates := idleWorkerCandidates(req.Workers, req.WorkerSignals, req.Running, req.SandboxSignals)
 	if len(candidates) > 0 {
 		w := candidates[p.rng.Intn(len(candidates))]
 		return PlaceResult{
@@ -49,30 +47,8 @@ func (p *Random) Place(_ context.Context, req PlaceRequest) (PlaceResult, error)
 }
 
 func (p *Random) Resume(_ context.Context, req ResumeRequest) (PlaceResult, error) {
-	// Prefer the last Worker if it is idle (local snapshot sticky).
-	if req.Sandbox.WorkerID != "" {
-		for _, w := range req.Workers {
-			if w.ID == req.Sandbox.WorkerID && w.Healthy && w.FreeSlots() > 0 {
-				return PlaceResult{
-					WorkerID: w.ID,
-					Reason:   "random: sticky resume to last idle worker",
-				}, nil
-			}
-		}
+	if res, ok := tryStickyResume(req, "random: sticky resume to last idle worker"); ok {
+		return res, nil
 	}
-	return p.Place(context.Background(), PlaceRequest{
-		SandboxID: req.Sandbox.ID,
-		Workers:   req.Workers,
-		Running:   req.Running,
-	})
-}
-
-func workersWithFree(workers []types.Worker) []types.Worker {
-	out := make([]types.Worker, 0, len(workers))
-	for _, w := range workers {
-		if w.Healthy && w.FreeSlots() > 0 {
-			out = append(out, w)
-		}
-	}
-	return out
+	return p.Place(context.Background(), placeFromResume(req))
 }

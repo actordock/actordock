@@ -17,6 +17,7 @@ import (
 	"github.com/actordock/actordock/internal/metrics"
 	"github.com/actordock/actordock/internal/policy"
 	"github.com/actordock/actordock/internal/scheduler"
+	"github.com/actordock/actordock/internal/signals"
 	"github.com/actordock/actordock/internal/store"
 )
 
@@ -41,14 +42,17 @@ func main() {
 	}
 	m := metrics.MustNew(pol.Name())
 
+	signalTTL := envDuration("SIGNAL_TTL", 30*time.Second)
+	sigStore := signals.NewStore(signalTTL)
+
 	rdb := store.NewRedis(redisAddr)
 	if err := waitRedis(rdb, log); err != nil {
 		log.Error("redis ping", "addr", redisAddr, "err", err)
 		os.Exit(1)
 	}
 
-	sched := scheduler.New(rdb, pol, snapRoot, log, m)
-	srv := controlplane.New(sched, rdb, log, metricsHandler)
+	sched := scheduler.New(rdb, pol, snapRoot, log, m, sigStore)
+	srv := controlplane.New(sched, rdb, sigStore, log, metricsHandler)
 
 	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler()}
 	go func() {
@@ -103,6 +107,15 @@ func waitRedis(rdb *store.Redis, log *slog.Logger) error {
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
+	}
+	return def
+}
+
+func envDuration(k string, def time.Duration) time.Duration {
+	if v := os.Getenv(k); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
 	}
 	return def
 }

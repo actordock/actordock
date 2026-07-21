@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/internal/scheduler"
+	"github.com/actordock/actordock/internal/signals"
 	"github.com/actordock/actordock/internal/store"
 	"github.com/actordock/actordock/internal/types"
 )
@@ -18,15 +19,16 @@ import (
 type Server struct {
 	sched          *scheduler.Scheduler
 	store          store.Store
+	signals        *signals.Store
 	log            *slog.Logger
 	metricsHandler http.Handler
 }
 
-func New(sched *scheduler.Scheduler, st store.Store, log *slog.Logger, metricsHandler http.Handler) *Server {
+func New(sched *scheduler.Scheduler, st store.Store, sig *signals.Store, log *slog.Logger, metricsHandler http.Handler) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Server{sched: sched, store: st, log: log, metricsHandler: metricsHandler}
+	return &Server{sched: sched, store: st, signals: sig, log: log, metricsHandler: metricsHandler}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -53,6 +55,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("POST /v1/workers/register", s.registerWorker)
 	mux.HandleFunc("GET /v1/workers", s.listWorkers)
+	mux.HandleFunc("POST /v1/signals/resource", s.postResourceSignals)
 	return mux
 }
 
@@ -185,6 +188,38 @@ func (s *Server) registerWorker(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) getPolicy(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"policy": s.sched.PolicyName()})
+}
+
+func (s *Server) postResourceSignals(w http.ResponseWriter, r *http.Request) {
+	if s.signals == nil {
+		http.Error(w, "resource signals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var req signals.Push
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.WorkerID == "" {
+		http.Error(w, "workerID required", http.StatusBadRequest)
+		return
+	}
+	now := time.Now().UTC()
+	for i := range req.Samples {
+		req.Samples[i].WorkerID = req.WorkerID
+		req.Samples[i].NormalizeLegacy()
+		if req.Samples[i].ReportedAt.IsZero() {
+			req.Samples[i].ReportedAt = now
+		}
+	}
+	if req.Worker.WorkerID == "" {
+		req.Worker.WorkerID = req.WorkerID
+	}
+	if req.Worker.ReportedAt.IsZero() {
+		req.Worker.ReportedAt = now
+	}
+	s.signals.ApplyPush(req, now)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

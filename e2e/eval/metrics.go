@@ -259,34 +259,101 @@ func FormatReport(r PolicyReport) string {
 	)
 }
 
-func CompareReports(fifo, random PolicyReport) string {
+// AggregateReports merges per-scenario deltas into one report per policy (sums + weighted means).
+func AggregateReports(in []PolicyReport) PolicyReport {
+	if len(in) == 0 {
+		return PolicyReport{}
+	}
+	out := PolicyReport{Policy: in[0].Policy, Scenario: "ALL"}
+	var latSum, latN, preemptSum, preemptN, waitSum, waitN float64
+	for _, r := range in {
+		out.StickyLocal += r.StickyLocal
+		out.CrossWorker += r.CrossWorker
+		out.GoldenCold += r.GoldenCold
+		out.Evictions += r.Evictions
+		latSum += r.ResumeLatencyMean * r.ResumeLatencyN
+		latN += r.ResumeLatencyN
+		preemptSum += r.PreemptCostMean * r.PreemptCostN
+		preemptN += r.PreemptCostN
+		waitSum += r.ResumeWaitMean * r.ResumeWaitN
+		waitN += r.ResumeWaitN
+	}
+	out.ResumeTotal = out.StickyLocal + out.CrossWorker + out.GoldenCold
+	if loc := out.StickyLocal + out.CrossWorker; loc > 0 {
+		out.StickyRate = out.StickyLocal / loc
+	}
+	if latN > 0 {
+		out.ResumeLatencyMean, out.ResumeLatencyN = latSum/latN, latN
+	}
+	if preemptN > 0 {
+		out.PreemptCostMean, out.PreemptCostN = preemptSum/preemptN, preemptN
+	}
+	if waitN > 0 {
+		out.ResumeWaitMean, out.ResumeWaitN = waitSum/waitN, waitN
+	}
+	return out
+}
+
+// FormatComparisonTable is a markdown table comparing policies (one row per policy).
+func FormatComparisonTable(reports []PolicyReport) string {
 	var b strings.Builder
-	title := fifo.Scenario
+	b.WriteString("| policy | resumes | sticky_rate | resume_latency_s | evictions | preempt_cost_s | resume_wait_s |\n")
+	b.WriteString("|--------|--------:|------------:|-----------------:|----------:|---------------:|--------------:|\n")
+	for _, r := range reports {
+		fmt.Fprintf(&b, "| %s | %.0f | %.3f | %.4f | %.0f | %.4f | %.4f |\n",
+			r.Policy, r.ResumeTotal, r.StickyRate, r.ResumeLatencyMean,
+			r.Evictions, r.PreemptCostMean, r.ResumeWaitMean)
+	}
+	return b.String()
+}
+
+// FormatScenarioComparisonTable pivots scenario × policy for one metric column set.
+func FormatScenarioComparisonTable(scenarioIDs []string, policies []string, byKey map[string]PolicyReport) string {
+	var b strings.Builder
+	b.WriteString("| scenario | policy | resumes | sticky_rate | resume_latency_s | evictions | preempt_cost_s | resume_wait_s |\n")
+	b.WriteString("|----------|--------|--------:|------------:|-----------------:|----------:|---------------:|--------------:|\n")
+	for _, sc := range scenarioIDs {
+		for _, pol := range policies {
+			r, ok := byKey[sc+"|"+pol]
+			if !ok {
+				continue
+			}
+			fmt.Fprintf(&b, "| %s | %s | %.0f | %.3f | %.4f | %.0f | %.4f | %.4f |\n",
+				sc, pol, r.ResumeTotal, r.StickyRate, r.ResumeLatencyMean,
+				r.Evictions, r.PreemptCostMean, r.ResumeWaitMean)
+		}
+	}
+	return b.String()
+}
+
+func CompareReports(a, b PolicyReport) string {
+	var buf strings.Builder
+	title := a.Scenario
 	if title == "" {
 		title = "-"
 	}
-	fmt.Fprintf(&b, "scenario=%s fifo vs random:\n", title)
-	cmp := func(name string, a, bval float64, lowerBetter bool) {
+	fmt.Fprintf(&buf, "scenario=%s %s vs %s:\n", title, a.Policy, b.Policy)
+	cmp := func(name string, x, y float64, lowerBetter bool) {
 		winner := "tie"
 		switch {
-		case a == bval:
+		case x == y:
 			winner = "tie"
-		case lowerBetter && a < bval:
-			winner = "fifo"
-		case lowerBetter && a > bval:
-			winner = "random"
-		case !lowerBetter && a > bval:
-			winner = "fifo"
-		case !lowerBetter && a < bval:
-			winner = "random"
+		case lowerBetter && x < y:
+			winner = a.Policy
+		case lowerBetter && x > y:
+			winner = b.Policy
+		case !lowerBetter && x > y:
+			winner = a.Policy
+		case !lowerBetter && x < y:
+			winner = b.Policy
 		}
-		fmt.Fprintf(&b, "  %-22s fifo=%.4f random=%.4f winner=%s\n", name, a, bval, winner)
+		fmt.Fprintf(&buf, "  %-22s %s=%.4f %s=%.4f winner=%s\n", name, a.Policy, x, b.Policy, y, winner)
 	}
-	cmp("sticky_rate", fifo.StickyRate, random.StickyRate, false)
-	cmp("resume_latency_mean", fifo.ResumeLatencyMean, random.ResumeLatencyMean, true)
-	cmp("evictions", fifo.Evictions, random.Evictions, true)
-	cmp("preempt_cost_mean", fifo.PreemptCostMean, random.PreemptCostMean, true)
-	cmp("resume_wait_mean", fifo.ResumeWaitMean, random.ResumeWaitMean, true)
-	cmp("cross_worker", fifo.CrossWorker, random.CrossWorker, true)
-	return b.String()
+	cmp("sticky_rate", a.StickyRate, b.StickyRate, false)
+	cmp("resume_latency_mean", a.ResumeLatencyMean, b.ResumeLatencyMean, true)
+	cmp("evictions", a.Evictions, b.Evictions, true)
+	cmp("preempt_cost_mean", a.PreemptCostMean, b.PreemptCostMean, true)
+	cmp("resume_wait_mean", a.ResumeWaitMean, b.ResumeWaitMean, true)
+	cmp("cross_worker", a.CrossWorker, b.CrossWorker, true)
+	return buf.String()
 }

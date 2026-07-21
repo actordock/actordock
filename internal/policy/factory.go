@@ -12,7 +12,11 @@ func New(name string) (Policy, error) {
 		return NewRandom(nil), nil
 	case "fifo":
 		return NewFIFO(), nil
+	case "lru-idle":
+		return NewLRUIdle(), nil
+	case "resource-evict":
+		return NewResourceEvict(), nil
 	default:
-		return nil, fmt.Errorf("unknown policy %q (want random|fifo)", name)
+		return nil, fmt.Errorf("unknown policy %q (want random|fifo|lru-idle|resource-evict)", name)
 	}
 }

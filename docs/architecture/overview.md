@@ -36,7 +36,7 @@ Eviction under Worker pressure uses **Suspend**.
 |-----------|------|
 | controlplane | `cmd/controlplane` |
 | worker | `cmd/worker` |
-| policy | `internal/policy` (`fifo`, `random`) |
+| policy | `internal/policy` (`fifo`, `random`, `lru-idle`) |
 | snapshotstore | `internal/snapshotstore` (S3/rustfs + FS for tests) |
 | Kind | `manifests/kind/{actordock,rustfs}.yaml` |
 | Bring-up / verify | `hack/kind-up.sh`, `hack/verify-local.sh` → `go test ./e2e/functional/ -tags=e2e` |

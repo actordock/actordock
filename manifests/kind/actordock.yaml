@@ -78,6 +78,8 @@ spec:
               value: redis:6379
             - name: POLICY
               value: "fifo"
+            - name: SIGNAL_TTL
+              value: "30s"
             - name: SNAPSHOT_ROOT
               value: /var/lib/actordock/snapshots
           ports:
@@ -132,6 +134,10 @@ spec:
               value: "1"
             - name: CONTROLPLANE_URL
               value: http://controlplane:8080
+            - name: SIGNAL_RESOURCE_ENABLED
+              value: "true"
+            - name: SIGNAL_RESOURCE_INTERVAL
+              value: "5s"
             - name: WORKER_ID
               valueFrom:
                 fieldRef:

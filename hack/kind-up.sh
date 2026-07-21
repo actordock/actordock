@@ -16,6 +16,7 @@ echo "==> kind cluster ${CLUSTER_NAME}"
 if ! kind get clusters | grep -qx "${CLUSTER_NAME}"; then
   kind create cluster --name "${CLUSTER_NAME}"
 fi
+kubectl config use-context "kind-${CLUSTER_NAME}"
 kubectl cluster-info --context "kind-${CLUSTER_NAME}" >/dev/null
 
 # Substrate-style: help pod networking with gVisor/privileged Workers on Kind.

@@ -14,6 +14,7 @@ import (
 	"github.com/actordock/actordock/internal/metrics"
 	"github.com/actordock/actordock/internal/runtime"
 	"github.com/actordock/actordock/internal/snapshotstore"
+	"github.com/actordock/actordock/internal/workerresource"
 )
 
 // Server is the Worker agent HTTP API (1 running sandbox per Worker).
@@ -24,12 +25,13 @@ type Server struct {
 	log            *slog.Logger
 	metrics        *metrics.Metrics
 	metricsHandler http.Handler
+	activity       *workerresource.Activity
 
 	mu    sync.Mutex
 	alive map[string]struct{} // at most one entry when MaxSlots=1
 }
 
-func New(workerID string, rt runtime.Runtime, snaps snapshotstore.Store, log *slog.Logger, m *metrics.Metrics, metricsHandler http.Handler) *Server {
+func New(workerID string, rt runtime.Runtime, snaps snapshotstore.Store, log *slog.Logger, m *metrics.Metrics, metricsHandler http.Handler, activity *workerresource.Activity) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -40,7 +42,25 @@ func New(workerID string, rt runtime.Runtime, snaps snapshotstore.Store, log *sl
 		log:            log,
 		metrics:        m,
 		metricsHandler: metricsHandler,
+		activity:       activity,
 		alive:          make(map[string]struct{}),
+	}
+}
+
+// ActiveSandboxIDs returns running sandbox IDs on this Worker.
+func (s *Server) ActiveSandboxIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.alive))
+	for id := range s.alive {
+		out = append(out, id)
+	}
+	return out
+}
+
+func (s *Server) markActive(id string) {
+	if s.activity != nil {
+		s.activity.MarkActive(id, time.Now().UTC())
 	}
 }
 
@@ -113,6 +133,9 @@ func (s *Server) release(id string) {
 	s.mu.Lock()
 	delete(s.alive, id)
 	s.mu.Unlock()
+	if s.activity != nil {
+		s.activity.Remove(id)
+	}
 }
 
 func (s *Server) handleBoot(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +156,7 @@ func (s *Server) handleBoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("boot ok", "id", id)
+	s.markActive(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -145,6 +169,10 @@ func (s *Server) handleCheckpoint(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ImagePath == "" {
 		http.Error(w, "imagePath required", http.StatusBadRequest)
 		return
+	}
+	if s.activity != nil {
+		s.activity.SetCheckpointing(id, true)
+		defer s.activity.SetCheckpointing(id, false)
 	}
 	if err := s.rt.Checkpoint(r.Context(), id, req.ImagePath); err != nil {
 		s.log.Error("checkpoint failed", "id", id, "err", err)
@@ -213,6 +241,7 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.markActive(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -231,6 +260,7 @@ func (s *Server) handleExec(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	s.markActive(id)
 	writeJSON(w, http.StatusOK, map[string]string{"stdout": out})
 }
 
