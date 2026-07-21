@@ -3,12 +3,14 @@
 
 //go:build e2e
 
-package e2e
+package functional
 
 import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/actordock/actordock/e2e/internal/harness"
 )
 
 const markerPath = "/tmp/actordock-marker"
@@ -18,18 +20,18 @@ const markerValue = "checkpoint-ok"
 // file must still be readable. Scheduling affinity is covered elsewhere.
 func TestFSPreservedAcrossPause(t *testing.T) {
 	ctx := context.Background()
-	h := newHarness(t)
-	h.waitWorkers(ctx, 1)
-	h.waitGolden(ctx)
+	h := harness.New(t)
+	h.WaitWorkers(ctx, 1)
+	h.WaitGolden(ctx)
 
-	sb := h.createSandbox(ctx)
-	sb = h.resume(ctx, sb.ID)
-	h.writeFile(ctx, sb.ID, markerPath, markerValue)
+	sb := h.CreateSandbox(ctx)
+	sb = h.Resume(ctx, sb.ID)
+	h.WriteFile(ctx, sb.ID, markerPath, markerValue)
 
-	_ = h.pause(ctx, sb.ID)
-	_ = h.resume(ctx, sb.ID)
+	_ = h.Pause(ctx, sb.ID)
+	_ = h.Resume(ctx, sb.ID)
 
-	got := strings.TrimSpace(h.readFile(ctx, sb.ID, markerPath))
+	got := strings.TrimSpace(h.ReadFile(ctx, sb.ID, markerPath))
 	if got != markerValue {
 		t.Fatalf("after pause/resume marker=%q want %q", got, markerValue)
 	}
@@ -40,18 +42,18 @@ func TestFSPreservedAcrossPause(t *testing.T) {
 // covered by TestSuspendMigratesOffOrigin.
 func TestFSPreservedAcrossSuspend(t *testing.T) {
 	ctx := context.Background()
-	h := newHarness(t)
-	h.waitWorkers(ctx, 1)
-	h.waitGolden(ctx)
+	h := harness.New(t)
+	h.WaitWorkers(ctx, 1)
+	h.WaitGolden(ctx)
 
-	sb := h.createSandbox(ctx)
-	sb = h.resume(ctx, sb.ID)
-	h.writeFile(ctx, sb.ID, markerPath, markerValue)
+	sb := h.CreateSandbox(ctx)
+	sb = h.Resume(ctx, sb.ID)
+	h.WriteFile(ctx, sb.ID, markerPath, markerValue)
 
-	_ = h.suspend(ctx, sb.ID)
-	_ = h.resume(ctx, sb.ID)
+	_ = h.Suspend(ctx, sb.ID)
+	_ = h.Resume(ctx, sb.ID)
 
-	got := strings.TrimSpace(h.readFile(ctx, sb.ID, markerPath))
+	got := strings.TrimSpace(h.ReadFile(ctx, sb.ID, markerPath))
 	if got != markerValue {
 		t.Fatalf("after suspend/resume marker=%q want %q", got, markerValue)
 	}

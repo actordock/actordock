@@ -86,12 +86,12 @@ func TestUploadDownloadDirFS(t *testing.T) {
 		t.Fatal(err)
 	}
 	prefix := ObjectKeyFor("sb-1")
-	if err := UploadDir(ctx, st, local, prefix); err != nil {
+	if _, err := UploadDir(ctx, st, local, prefix); err != nil {
 		t.Fatal(err)
 	}
 
 	out := filepath.Join(t.TempDir(), "restored")
-	if err := DownloadDir(ctx, st, prefix, out); err != nil {
+	if _, err := DownloadDir(ctx, st, prefix, out); err != nil {
 		t.Fatal(err)
 	}
 	b, err := os.ReadFile(filepath.Join(out, "checkpoint.img"))

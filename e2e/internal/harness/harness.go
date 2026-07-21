@@ -1,9 +1,8 @@
 // Copyright 2026 The Actordock Authors.
 // SPDX-License-Identifier: Apache-2.0
 
-//go:build e2e
-
-package e2e
+// Package harness is the shared Kind/controlplane client for e2e suites.
+package harness
 
 import (
 	"bytes"
@@ -30,9 +29,10 @@ type Harness struct {
 	t      *testing.T
 }
 
-func newHarness(t *testing.T) *Harness {
+// New connects to the controlplane (port-forward if needed) and cleans sandboxes.
+func New(t *testing.T) *Harness {
 	t.Helper()
-	api := envOr("ACTORDOCK_API", defaultAPI)
+	api := EnvOr("ACTORDOCK_API", defaultAPI)
 	h := &Harness{
 		API:    api,
 		Client: &http.Client{Timeout: 3 * time.Minute},
@@ -41,7 +41,7 @@ func newHarness(t *testing.T) *Harness {
 	if err := h.ensureAPI(context.Background()); err != nil {
 		t.Fatalf("controlplane: %v", err)
 	}
-	h.cleanupSandboxes(context.Background())
+	h.CleanupSandboxes(context.Background())
 	t.Cleanup(h.close)
 	return h
 }
@@ -60,7 +60,7 @@ func (h *Harness) ensureAPI(ctx context.Context) error {
 	if os.Getenv("ACTORDOCK_SKIP_PORT_FORWARD") == "1" {
 		return fmt.Errorf("API %s unreachable and port-forward disabled", h.API)
 	}
-	ns := envOr("ACTORDOCK_NAMESPACE", "actordock")
+	ns := EnvOr("ACTORDOCK_NAMESPACE", "actordock")
 	cmd := exec.CommandContext(ctx, "kubectl", "-n", ns, "port-forward", "svc/controlplane", "18080:8080")
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
@@ -94,11 +94,11 @@ func (h *Harness) ping(ctx context.Context) error {
 	return nil
 }
 
-func (h *Harness) waitWorkers(ctx context.Context, min int) {
+func (h *Harness) WaitWorkers(ctx context.Context, min int) {
 	h.t.Helper()
 	deadline := time.Now().Add(2 * time.Minute)
 	for time.Now().Before(deadline) {
-		ws, err := h.listWorkers(ctx)
+		ws, err := h.ListWorkers(ctx)
 		if err == nil && len(ws) >= min {
 			return
 		}
@@ -107,7 +107,7 @@ func (h *Harness) waitWorkers(ctx context.Context, min int) {
 	h.t.Fatalf("timed out waiting for %d workers", min)
 }
 
-func (h *Harness) doJSON(ctx context.Context, method, path string, in any, out any) {
+func (h *Harness) DoJSON(ctx context.Context, method, path string, in any, out any) {
 	h.t.Helper()
 	var body io.Reader
 	if in != nil {
@@ -142,14 +142,14 @@ func (h *Harness) doJSON(ctx context.Context, method, path string, in any, out a
 	}
 }
 
-func (h *Harness) createSandbox(ctx context.Context) types.Sandbox {
+func (h *Harness) CreateSandbox(ctx context.Context) types.Sandbox {
 	h.t.Helper()
 	var sb types.Sandbox
-	h.doJSON(ctx, http.MethodPost, "/v1/sandboxes", nil, &sb)
+	h.DoJSON(ctx, http.MethodPost, "/v1/sandboxes", nil, &sb)
 	return sb
 }
 
-func (h *Harness) waitGolden(ctx context.Context) {
+func (h *Harness) WaitGolden(ctx context.Context) {
 	h.t.Helper()
 	deadline := time.Now().Add(3 * time.Minute)
 	for time.Now().Before(deadline) {
@@ -169,9 +169,9 @@ func (h *Harness) waitGolden(ctx context.Context) {
 	h.t.Fatal("timed out waiting for golden snapshot")
 }
 
-func (h *Harness) cleanupSandboxes(ctx context.Context) {
+func (h *Harness) CleanupSandboxes(ctx context.Context) {
 	h.t.Helper()
-	list := h.listSandboxes(ctx)
+	list := h.ListSandboxes(ctx)
 	for _, sb := range list {
 		req, err := http.NewRequestWithContext(ctx, http.MethodDelete, h.API+"/v1/sandboxes/"+sb.ID, nil)
 		if err != nil {
@@ -184,21 +184,21 @@ func (h *Harness) cleanupSandboxes(ctx context.Context) {
 	}
 }
 
-func (h *Harness) getSandbox(ctx context.Context, id string) types.Sandbox {
+func (h *Harness) GetSandbox(ctx context.Context, id string) types.Sandbox {
 	h.t.Helper()
 	var sb types.Sandbox
-	h.doJSON(ctx, http.MethodGet, "/v1/sandboxes/"+id, nil, &sb)
+	h.DoJSON(ctx, http.MethodGet, "/v1/sandboxes/"+id, nil, &sb)
 	return sb
 }
 
-func (h *Harness) listSandboxes(ctx context.Context) []types.Sandbox {
+func (h *Harness) ListSandboxes(ctx context.Context) []types.Sandbox {
 	h.t.Helper()
 	var list []types.Sandbox
-	h.doJSON(ctx, http.MethodGet, "/v1/sandboxes", nil, &list)
+	h.DoJSON(ctx, http.MethodGet, "/v1/sandboxes", nil, &list)
 	return list
 }
 
-func (h *Harness) listWorkers(ctx context.Context) ([]types.Worker, error) {
+func (h *Harness) ListWorkers(ctx context.Context) ([]types.Worker, error) {
 	var list []types.Worker
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.API+"/v1/workers", nil)
 	if err != nil {
@@ -218,49 +218,49 @@ func (h *Harness) listWorkers(ctx context.Context) ([]types.Worker, error) {
 	return list, nil
 }
 
-func (h *Harness) pause(ctx context.Context, id string) types.Sandbox {
+func (h *Harness) Pause(ctx context.Context, id string) types.Sandbox {
 	h.t.Helper()
 	var sb types.Sandbox
-	h.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+id+"/pause", nil, &sb)
+	h.DoJSON(ctx, http.MethodPost, "/v1/sandboxes/"+id+"/pause", nil, &sb)
 	return sb
 }
 
-func (h *Harness) suspend(ctx context.Context, id string) types.Sandbox {
+func (h *Harness) Suspend(ctx context.Context, id string) types.Sandbox {
 	h.t.Helper()
 	var sb types.Sandbox
-	h.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+id+"/suspend", nil, &sb)
+	h.DoJSON(ctx, http.MethodPost, "/v1/sandboxes/"+id+"/suspend", nil, &sb)
 	return sb
 }
 
-func (h *Harness) resume(ctx context.Context, id string) types.Sandbox {
+func (h *Harness) Resume(ctx context.Context, id string) types.Sandbox {
 	h.t.Helper()
 	var sb types.Sandbox
-	h.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+id+"/resume", nil, &sb)
+	h.DoJSON(ctx, http.MethodPost, "/v1/sandboxes/"+id+"/resume", nil, &sb)
 	return sb
 }
 
-func (h *Harness) exec(ctx context.Context, id string, argv ...string) string {
+func (h *Harness) Exec(ctx context.Context, id string, argv ...string) string {
 	h.t.Helper()
 	var out struct {
 		Stdout string `json:"stdout"`
 	}
-	h.doJSON(ctx, http.MethodPost, "/v1/sandboxes/"+id+"/exec", map[string]any{"argv": argv}, &out)
+	h.DoJSON(ctx, http.MethodPost, "/v1/sandboxes/"+id+"/exec", map[string]any{"argv": argv}, &out)
 	return out.Stdout
 }
 
-func (h *Harness) writeFile(ctx context.Context, id, path, content string) {
+func (h *Harness) WriteFile(ctx context.Context, id, path, content string) {
 	h.t.Helper()
-	_ = h.exec(ctx, id, "/bin/busybox", "sh", "-c", "printf '%s' '"+content+"' > "+path)
+	_ = h.Exec(ctx, id, "/bin/busybox", "sh", "-c", "printf '%s' '"+content+"' > "+path)
 }
 
-func (h *Harness) readFile(ctx context.Context, id, path string) string {
+func (h *Harness) ReadFile(ctx context.Context, id, path string) string {
 	h.t.Helper()
-	return h.exec(ctx, id, "/bin/busybox", "cat", path)
+	return h.Exec(ctx, id, "/bin/busybox", "cat", path)
 }
 
-func (h *Harness) workerBusy(ctx context.Context, workerID string) bool {
+func (h *Harness) WorkerBusy(ctx context.Context, workerID string) bool {
 	h.t.Helper()
-	for _, sb := range h.listSandboxes(ctx) {
+	for _, sb := range h.ListSandboxes(ctx) {
 		if sb.State == types.SandboxRunning && sb.WorkerID == workerID {
 			return true
 		}
@@ -268,30 +268,30 @@ func (h *Harness) workerBusy(ctx context.Context, workerID string) bool {
 	return false
 }
 
-// occupyWorker resumes fillers until workerID hosts a running sandbox.
-func (h *Harness) occupyWorker(ctx context.Context, workerID string) {
+// OccupyWorker resumes fillers until workerID hosts a running sandbox.
+func (h *Harness) OccupyWorker(ctx context.Context, workerID string) {
 	h.t.Helper()
 	for i := 0; i < 32; i++ {
-		if h.workerBusy(ctx, workerID) {
+		if h.WorkerBusy(ctx, workerID) {
 			return
 		}
-		sb := h.createSandbox(ctx)
-		_ = h.resume(ctx, sb.ID)
+		sb := h.CreateSandbox(ctx)
+		_ = h.Resume(ctx, sb.ID)
 	}
 	h.t.Fatalf("could not occupy worker %s", workerID)
 }
 
-// ensureIdleExcept suspends one running sandbox not on exceptWorker so resume
+// EnsureIdleExcept suspends one running sandbox not on exceptWorker so resume
 // has a free Worker that is not the origin.
-func (h *Harness) ensureIdleExcept(ctx context.Context, exceptWorker string) {
+func (h *Harness) EnsureIdleExcept(ctx context.Context, exceptWorker string) {
 	h.t.Helper()
-	workers, err := h.listWorkers(ctx)
+	workers, err := h.ListWorkers(ctx)
 	if err != nil {
 		h.t.Fatal(err)
 	}
 	busy := map[string]bool{}
 	var candidates []types.Sandbox
-	for _, sb := range h.listSandboxes(ctx) {
+	for _, sb := range h.ListSandboxes(ctx) {
 		if sb.State == types.SandboxRunning {
 			busy[sb.WorkerID] = true
 			if sb.WorkerID != exceptWorker {
@@ -311,26 +311,75 @@ func (h *Harness) ensureIdleExcept(ctx context.Context, exceptWorker string) {
 	if len(candidates) == 0 {
 		h.t.Fatalf("no non-origin running sandbox to free; except=%s", exceptWorker)
 	}
-	_ = h.suspend(ctx, candidates[0].ID)
+	_ = h.Suspend(ctx, candidates[0].ID)
 }
 
-func (h *Harness) policy(ctx context.Context) string {
+func (h *Harness) Policy(ctx context.Context) string {
 	h.t.Helper()
 	var out struct {
 		Policy string `json:"policy"`
 	}
-	h.doJSON(ctx, http.MethodGet, "/v1/policy", nil, &out)
+	h.DoJSON(ctx, http.MethodGet, "/v1/policy", nil, &out)
 	return out.Policy
 }
 
-func envOr(k, def string) string {
+// SetPolicy restarts controlplane with POLICY=<name> and waits until /v1/policy matches.
+func (h *Harness) SetPolicy(ctx context.Context, name string) {
+	h.t.Helper()
+	ns := EnvOr("ACTORDOCK_NAMESPACE", "actordock")
+	set := exec.CommandContext(ctx, "kubectl", "-n", ns, "set", "env", "deployment/controlplane", "POLICY="+name)
+	if out, err := set.CombinedOutput(); err != nil {
+		h.t.Fatalf("set policy %s: %v: %s", name, err, out)
+	}
+	roll := exec.CommandContext(ctx, "kubectl", "-n", ns, "rollout", "status", "deployment/controlplane", "--timeout=180s")
+	if out, err := roll.CombinedOutput(); err != nil {
+		h.t.Fatalf("rollout controlplane: %v: %s", err, out)
+	}
+	h.close()
+	h.pfCmd = nil
+	if err := h.ensureAPI(ctx); err != nil {
+		h.t.Fatalf("api after policy change: %v", err)
+	}
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if h.Policy(ctx) == name {
+			h.CleanupSandboxes(ctx)
+			return
+		}
+		time.Sleep(time.Second)
+	}
+	h.t.Fatalf("policy still %q, want %q", h.Policy(ctx), name)
+}
+
+func (h *Harness) FetchMetrics(ctx context.Context) string {
+	h.t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.API+"/metrics", nil)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	resp, err := h.Client.Do(req)
+	if err != nil {
+		h.t.Fatalf("GET /metrics: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if resp.StatusCode >= 300 {
+		h.t.Fatalf("GET /metrics: %s: %s", resp.Status, bytes.TrimSpace(raw))
+	}
+	return string(raw)
+}
+
+func EnvOr(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
 	}
 	return def
 }
 
-func envInt(k string, def int) int {
+func EnvInt(k string, def int) int {
 	v := os.Getenv(k)
 	if v == "" {
 		return def

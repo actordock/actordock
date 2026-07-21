@@ -2,8 +2,10 @@
 # Copyright 2026 The Actordock Authors.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Run Go e2e tests against a live Kind stack.
+# Run Go e2e suites against a live Kind stack.
 # Requires: ./hack/kind-up.sh (or equivalent) already succeeded.
+#
+# E2E_SUITE=functional (default) | eval | all
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -12,5 +14,29 @@ cd "${ROOT}"
 export ACTORDOCK_API="${ACTORDOCK_API:-http://127.0.0.1:18080}"
 export ACTORDOCK_NAMESPACE="${ACTORDOCK_NAMESPACE:-actordock}"
 
-echo "==> go test ./e2e/ -tags=e2e"
-go test ./e2e/ -tags=e2e -count=1 -timeout="${E2E_TIMEOUT:-20m}" -v
+SUITE="${E2E_SUITE:-functional}"
+TIMEOUT="${E2E_TIMEOUT:-20m}"
+
+run_pkg() {
+  local pkg="$1"
+  local timeout="$2"
+  echo "==> go test ${pkg} -tags=e2e"
+  go test "${pkg}" -tags=e2e -count=1 -timeout="${timeout}" -v
+}
+
+case "${SUITE}" in
+  functional)
+    run_pkg ./e2e/functional/ "${TIMEOUT}"
+    ;;
+  eval)
+    run_pkg ./e2e/eval/ "${E2E_TIMEOUT:-30m}"
+    ;;
+  all)
+    run_pkg ./e2e/functional/ "${TIMEOUT}"
+    run_pkg ./e2e/eval/ "${E2E_TIMEOUT:-30m}"
+    ;;
+  *)
+    echo "unknown E2E_SUITE=${SUITE} (want functional|eval|all)" >&2
+    exit 1
+    ;;
+esac

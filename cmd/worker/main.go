@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/actordock/actordock/internal/metrics"
 	"github.com/actordock/actordock/internal/runtime/gvisor"
 	"github.com/actordock/actordock/internal/snapshotstore"
 	"github.com/actordock/actordock/internal/types"
@@ -68,7 +69,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	srv := workerserver.New(workerID, rt, snaps, log)
+	metricsHandler, err := metrics.InstallPrometheus()
+	if err != nil {
+		log.Error("metrics", "err", err)
+		os.Exit(1)
+	}
+	m := metrics.MustNew(env("POLICY", "worker"))
+
+	srv := workerserver.New(workerID, rt, snaps, log, m, metricsHandler)
 	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler()}
 
 	go func() {

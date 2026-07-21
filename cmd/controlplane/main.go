@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/internal/controlplane"
+	"github.com/actordock/actordock/internal/metrics"
 	"github.com/actordock/actordock/internal/policy"
 	"github.com/actordock/actordock/internal/scheduler"
 	"github.com/actordock/actordock/internal/store"
@@ -33,14 +34,21 @@ func main() {
 		os.Exit(1)
 	}
 
+	metricsHandler, err := metrics.InstallPrometheus()
+	if err != nil {
+		log.Error("metrics", "err", err)
+		os.Exit(1)
+	}
+	m := metrics.MustNew(pol.Name())
+
 	rdb := store.NewRedis(redisAddr)
 	if err := waitRedis(rdb, log); err != nil {
 		log.Error("redis ping", "addr", redisAddr, "err", err)
 		os.Exit(1)
 	}
 
-	sched := scheduler.New(rdb, pol, snapRoot, log)
-	srv := controlplane.New(sched, rdb, log)
+	sched := scheduler.New(rdb, pol, snapRoot, log, m)
+	srv := controlplane.New(sched, rdb, log, metricsHandler)
 
 	httpSrv := &http.Server{Addr: addr, Handler: srv.Handler()}
 	go func() {

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/actordock/actordock/internal/metrics"
 	"github.com/actordock/actordock/internal/policy"
 	"github.com/actordock/actordock/internal/snapshotstore"
 	"github.com/actordock/actordock/internal/store"
@@ -29,24 +30,30 @@ type Scheduler struct {
 	workers  *workerclient.Client
 	snapRoot string
 	log      *slog.Logger
+	metrics  *metrics.Metrics
 
 	goldenMu sync.Mutex
 }
 
-func New(st store.Store, pol policy.Policy, snapRoot string, log *slog.Logger) *Scheduler {
+func New(st store.Store, pol policy.Policy, snapRoot string, log *slog.Logger, m *metrics.Metrics) *Scheduler {
 	if log == nil {
 		log = slog.Default()
 	}
 	if snapRoot == "" {
 		snapRoot = "/var/lib/actordock/snapshots"
 	}
-	return &Scheduler{
+	s := &Scheduler{
 		store:    st,
 		policy:   pol,
 		workers:  workerclient.New(),
 		snapRoot: snapRoot,
 		log:      log,
+		metrics:  m,
 	}
+	if m != nil {
+		m.SetPoolStats(s)
+	}
+	return s
 }
 
 func (s *Scheduler) PolicyName() string { return s.policy.Name() }
@@ -64,6 +71,38 @@ func (s *Scheduler) logDecision(d types.Decision) {
 		"victimID", d.VictimID,
 		"reason", d.Reason,
 	)
+}
+
+func (s *Scheduler) SandboxCounts(ctx context.Context) (running, paused, suspended int64, err error) {
+	all, err := s.store.ListSandboxes(ctx)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	for _, sb := range all {
+		switch sb.State {
+		case types.SandboxRunning:
+			running++
+		case types.SandboxPaused:
+			paused++
+		case types.SandboxSuspended:
+			suspended++
+		}
+	}
+	return running, paused, suspended, nil
+}
+
+func (s *Scheduler) HealthyWorkers(ctx context.Context) (int64, error) {
+	all, err := s.store.ListWorkers(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var n int64
+	for _, w := range all {
+		if w.Healthy {
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (s *Scheduler) healthyWorkers(ctx context.Context) ([]types.Worker, error) {
@@ -118,6 +157,7 @@ func (s *Scheduler) Create(ctx context.Context) (types.Sandbox, error) {
 		return types.Sandbox{}, err
 	}
 	s.logDecision(types.Decision{Policy: s.policy.Name(), Action: "create", SandboxID: sb.ID, Reason: "registered suspended"})
+	s.metrics.RecordDecision(ctx, "create", "ok", "registered suspended")
 	return sb, nil
 }
 
@@ -141,32 +181,48 @@ func (s *Scheduler) EnsureGolden(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	decStart := time.Now()
 	res, err := s.policy.Place(ctx, policy.PlaceRequest{SandboxID: "golden", Workers: workers, Running: running})
+	s.metrics.RecordDecisionLatency(ctx, time.Since(decStart))
 	if err != nil {
+		s.metrics.RecordDecision(ctx, "place", "error", err.Error())
 		return "", fmt.Errorf("ensure golden place: %w", err)
 	}
+	action := "place"
 	if res.VictimID != "" {
+		action = "evict"
+		evictStart := time.Now()
 		if _, err := s.suspendLocked(ctx, res.VictimID); err != nil {
+			s.metrics.RecordDecision(ctx, action, "error", err.Error())
 			return "", fmt.Errorf("ensure golden evict: %w", err)
 		}
+		s.metrics.RecordEviction(ctx, res.Reason)
+		s.metrics.RecordPreemptCost(ctx, time.Since(evictStart))
 	}
+	s.metrics.RecordDecision(ctx, action, "ok", res.Reason)
 	w, err := s.store.GetWorker(ctx, res.WorkerID)
 	if err != nil {
 		return "", err
 	}
 
 	id := "golden-" + uuid.NewString()
+	s.metrics.MarkRunning(ctx, id, w.ID, time.Now().UTC())
 	if err := s.workers.Boot(ctx, w.Address, id); err != nil {
+		s.metrics.MarkSlotFreed(ctx, id, w.ID, time.Now().UTC())
 		return "", fmt.Errorf("golden boot: %w", err)
 	}
 	path := s.localPath(w.ID, id)
+	cpStart := time.Now()
 	if err := s.workers.Checkpoint(ctx, w.Address, id, workerclient.CheckpointOpts{
 		ImagePath: path,
 		ObjectKey: goldenPrefix,
 	}); err != nil {
 		_ = s.workers.Delete(ctx, w.Address, id)
+		s.metrics.MarkSlotFreed(ctx, id, w.ID, time.Now().UTC())
 		return "", fmt.Errorf("golden suspend: %w", err)
 	}
+	s.metrics.RecordCheckpointLatency(ctx, "suspend", time.Since(cpStart))
+	s.metrics.MarkSlotFreed(ctx, id, w.ID, time.Now().UTC())
 	if err := s.store.PutGolden(ctx, goldenPrefix); err != nil {
 		return "", err
 	}
@@ -176,6 +232,7 @@ func (s *Scheduler) EnsureGolden(ctx context.Context) (string, error) {
 
 // Resume restores from Latest (external/local) or Golden onto an idle Worker.
 func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error) {
+	resumeStart := time.Now()
 	sb, err := s.store.GetSandbox(ctx, id)
 	if err != nil {
 		return types.Sandbox{}, err
@@ -183,6 +240,7 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 	if sb.State != types.SandboxSuspended && sb.State != types.SandboxPaused {
 		return types.Sandbox{}, fmt.Errorf("sandbox %s is %s, want suspended|paused", id, sb.State)
 	}
+	prevWorkerID := sb.WorkerID
 
 	workers, err := s.healthyWorkers(ctx)
 	if err != nil {
@@ -216,14 +274,22 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 		}
 	}
 
+	decStart := time.Now()
 	res, err := s.policy.Resume(ctx, policy.ResumeRequest{Sandbox: sb, Workers: workers, Running: running})
+	s.metrics.RecordDecisionLatency(ctx, time.Since(decStart))
 	if err != nil {
+		s.metrics.RecordDecision(ctx, "resume", "error", err.Error())
 		return types.Sandbox{}, err
 	}
 	if res.VictimID != "" {
+		evictStart := time.Now()
 		if _, err := s.suspendLocked(ctx, res.VictimID); err != nil {
+			s.metrics.RecordDecision(ctx, "evict", "error", err.Error())
 			return types.Sandbox{}, fmt.Errorf("evict %s: %w", res.VictimID, err)
 		}
+		s.metrics.RecordEviction(ctx, res.Reason)
+		s.metrics.RecordPreemptCost(ctx, time.Since(evictStart))
+		s.metrics.RecordDecision(ctx, "evict", "ok", res.Reason)
 	}
 	w, err := s.store.GetWorker(ctx, res.WorkerID)
 	if err != nil {
@@ -232,12 +298,15 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 
 	objectKey := sb.ObjectKey
 	localPath := sb.LocalSnapshotPath
+	localOnly := false
+	usedGolden := false
 	switch {
 	case sb.State == types.SandboxPaused || sb.SnapshotSource == types.SnapshotLocal:
 		if localPath == "" {
 			localPath = s.localPath(w.ID, id)
 		}
 		objectKey = "" // local only
+		localOnly = true
 	case sb.SnapshotSource == types.SnapshotExternal && objectKey != "":
 		if localPath == "" || w.ID != sb.WorkerID {
 			localPath = s.localPath(w.ID, id)
@@ -250,20 +319,38 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 		}
 		objectKey = g
 		localPath = s.localPath(w.ID, id)
+		usedGolden = true
 	}
 
+	path := metrics.ClassifyResumePath(prevWorkerID, w.ID, localOnly, objectKey, usedGolden)
+	action := "migrate"
+	switch path {
+	case metrics.PathStickyLocal:
+		action = "sticky"
+	case metrics.PathGoldenCold:
+		action = "place"
+	}
+	s.metrics.RecordDecision(ctx, action, "ok", res.Reason)
+	s.metrics.RecordResumeWait(ctx, time.Since(resumeStart))
+
 	opts := workerclient.RestoreOpts{ImagePath: localPath, ObjectKey: objectKey}
+	restoreStart := time.Now()
 	if err := s.workers.Restore(ctx, w.Address, id, opts); err != nil {
 		return types.Sandbox{}, err
 	}
+	s.metrics.RecordRestoreLatency(ctx, path, time.Since(restoreStart))
 
+	now := time.Now().UTC()
 	sb.State = types.SandboxRunning
 	sb.WorkerID = w.ID
 	sb.LocalSnapshotPath = localPath
-	sb.UpdatedAt = time.Now().UTC()
+	sb.UpdatedAt = now
 	if err := s.store.PutSandbox(ctx, sb); err != nil {
 		return types.Sandbox{}, err
 	}
+	s.metrics.MarkRunning(ctx, id, w.ID, now)
+	s.metrics.RecordResumePath(ctx, path)
+	s.metrics.RecordResumeLatency(ctx, path, time.Since(resumeStart))
 	s.logDecision(types.Decision{
 		Policy: s.policy.Name(), Action: "resume",
 		SandboxID: id, WorkerID: w.ID, VictimID: res.VictimID, Reason: res.Reason,
@@ -297,14 +384,19 @@ func (s *Scheduler) pauseOrSuspend(ctx context.Context, id string, upload bool) 
 	}
 	path := s.localPath(w.ID, id)
 	opts := workerclient.CheckpointOpts{ImagePath: path}
+	mode := "pause"
 	if upload {
 		opts.ObjectKey = snapshotstore.ObjectKeyFor(id)
+		mode = "suspend"
 	}
+	cpStart := time.Now()
 	if err := s.workers.Checkpoint(ctx, w.Address, id, opts); err != nil {
 		return types.Sandbox{}, err
 	}
+	s.metrics.RecordCheckpointLatency(ctx, mode, time.Since(cpStart))
+	now := time.Now().UTC()
 	sb.LocalSnapshotPath = path
-	sb.UpdatedAt = time.Now().UTC()
+	sb.UpdatedAt = now
 	if upload {
 		sb.State = types.SandboxSuspended
 		sb.ObjectKey = opts.ObjectKey
@@ -316,11 +408,13 @@ func (s *Scheduler) pauseOrSuspend(ctx context.Context, id string, upload bool) 
 	if err := s.store.PutSandbox(ctx, sb); err != nil {
 		return types.Sandbox{}, err
 	}
+	s.metrics.MarkSlotFreed(ctx, id, w.ID, now)
 	action := "pause"
 	if upload {
 		action = "suspend"
 	}
 	s.logDecision(types.Decision{Policy: s.policy.Name(), Action: action, SandboxID: id, WorkerID: w.ID})
+	s.metrics.RecordDecision(ctx, action, "ok", "")
 	return sb, nil
 }
 
@@ -333,6 +427,7 @@ func (s *Scheduler) Delete(ctx context.Context, id string) error {
 		if w, err := s.store.GetWorker(ctx, sb.WorkerID); err == nil {
 			_ = s.workers.Delete(ctx, w.Address, id)
 		}
+		s.metrics.MarkSlotFreed(ctx, id, sb.WorkerID, time.Now().UTC())
 	}
 	return s.store.DeleteSandbox(ctx, id)
 }

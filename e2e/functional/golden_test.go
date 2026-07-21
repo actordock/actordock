@@ -3,13 +3,14 @@
 
 //go:build e2e
 
-package e2e
+package functional
 
 import (
 	"context"
 	"net/http"
 	"testing"
 
+	"github.com/actordock/actordock/e2e/internal/harness"
 	"github.com/actordock/actordock/internal/types"
 )
 
@@ -17,19 +18,19 @@ import (
 // sandbox boots from golden into running. No pause/suspend/scheduling stress.
 func TestGoldenEnsureAndColdResume(t *testing.T) {
 	ctx := context.Background()
-	h := newHarness(t)
-	h.waitWorkers(ctx, 1)
-	h.waitGolden(ctx)
+	h := harness.New(t)
+	h.WaitWorkers(ctx, 1)
+	h.WaitGolden(ctx)
 
 	var golden struct {
 		ObjectKey string `json:"objectKey"`
 	}
-	h.doJSON(ctx, http.MethodGet, "/v1/golden", nil, &golden)
+	h.DoJSON(ctx, http.MethodGet, "/v1/golden", nil, &golden)
 	if golden.ObjectKey == "" {
 		t.Fatal("GET /v1/golden returned empty objectKey")
 	}
 
-	sb := h.createSandbox(ctx)
+	sb := h.CreateSandbox(ctx)
 	if sb.State != types.SandboxSuspended {
 		t.Fatalf("create state=%s want suspended", sb.State)
 	}
@@ -37,7 +38,7 @@ func TestGoldenEnsureAndColdResume(t *testing.T) {
 		t.Fatalf("fresh sandbox should have no latest snapshot, objectKey=%q", sb.ObjectKey)
 	}
 
-	resumed := h.resume(ctx, sb.ID)
+	resumed := h.Resume(ctx, sb.ID)
 	if resumed.State != types.SandboxRunning {
 		t.Fatalf("cold resume state=%s", resumed.State)
 	}

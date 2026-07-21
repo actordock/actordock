@@ -3,12 +3,13 @@
 
 //go:build e2e
 
-package e2e
+package functional
 
 import (
 	"context"
 	"testing"
 
+	"github.com/actordock/actordock/e2e/internal/harness"
 	"github.com/actordock/actordock/internal/types"
 )
 
@@ -17,27 +18,27 @@ import (
 // Does not cover pause sticky, migration, or FS correctness.
 func TestScheduleOversubscribeEvicts(t *testing.T) {
 	ctx := context.Background()
-	h := newHarness(t)
-	h.waitWorkers(ctx, envInt("MIN_WORKERS", 4))
-	h.waitGolden(ctx)
+	h := harness.New(t)
+	h.WaitWorkers(ctx, harness.EnvInt("MIN_WORKERS", 4))
+	h.WaitGolden(ctx)
 
-	n := envInt("SANDBOX_COUNT", 5)
-	maxRunning := envInt("MAX_RUNNING", 4)
+	n := harness.EnvInt("SANDBOX_COUNT", 5)
+	maxRunning := harness.EnvInt("MAX_RUNNING", 4)
 
 	ids := make([]string, 0, n)
 	for i := 0; i < n; i++ {
-		sb := h.createSandbox(ctx)
+		sb := h.CreateSandbox(ctx)
 		if sb.State != types.SandboxSuspended {
 			t.Fatalf("create state=%s want suspended", sb.State)
 		}
 		ids = append(ids, sb.ID)
 	}
 	for _, id := range ids {
-		_ = h.resume(ctx, id)
+		_ = h.Resume(ctx, id)
 	}
 
 	running, suspended := 0, 0
-	for _, sb := range h.listSandboxes(ctx) {
+	for _, sb := range h.ListSandboxes(ctx) {
 		switch sb.State {
 		case types.SandboxRunning:
 			running++
@@ -60,15 +61,15 @@ func TestScheduleOversubscribeEvicts(t *testing.T) {
 // return to the same Worker. Does not assert FS contents or cross-Worker.
 func TestPauseStickyToSameWorker(t *testing.T) {
 	ctx := context.Background()
-	h := newHarness(t)
-	h.waitWorkers(ctx, 1)
-	h.waitGolden(ctx)
+	h := harness.New(t)
+	h.WaitWorkers(ctx, 1)
+	h.WaitGolden(ctx)
 
-	sb := h.createSandbox(ctx)
-	sb = h.resume(ctx, sb.ID)
+	sb := h.CreateSandbox(ctx)
+	sb = h.Resume(ctx, sb.ID)
 	origin := sb.WorkerID
 
-	paused := h.pause(ctx, sb.ID)
+	paused := h.Pause(ctx, sb.ID)
 	if paused.State != types.SandboxPaused {
 		t.Fatalf("pause state=%s", paused.State)
 	}
@@ -79,7 +80,7 @@ func TestPauseStickyToSameWorker(t *testing.T) {
 		t.Fatalf("pause must not upload, objectKey=%q", paused.ObjectKey)
 	}
 
-	resumed := h.resume(ctx, sb.ID)
+	resumed := h.Resume(ctx, sb.ID)
 	if resumed.State != types.SandboxRunning {
 		t.Fatalf("resume state=%s", resumed.State)
 	}
@@ -93,15 +94,15 @@ func TestPauseStickyToSameWorker(t *testing.T) {
 // Does not assert FS contents.
 func TestSuspendMigratesOffOrigin(t *testing.T) {
 	ctx := context.Background()
-	h := newHarness(t)
-	h.waitWorkers(ctx, envInt("MIN_WORKERS", 4))
-	h.waitGolden(ctx)
+	h := harness.New(t)
+	h.WaitWorkers(ctx, harness.EnvInt("MIN_WORKERS", 4))
+	h.WaitGolden(ctx)
 
-	sb := h.createSandbox(ctx)
-	sb = h.resume(ctx, sb.ID)
+	sb := h.CreateSandbox(ctx)
+	sb = h.Resume(ctx, sb.ID)
 	origin := sb.WorkerID
 
-	suspended := h.suspend(ctx, sb.ID)
+	suspended := h.Suspend(ctx, sb.ID)
 	if suspended.State != types.SandboxSuspended {
 		t.Fatalf("suspend state=%s", suspended.State)
 	}
@@ -112,10 +113,10 @@ func TestSuspendMigratesOffOrigin(t *testing.T) {
 		t.Fatalf("suspend snapshotSource=%q want external", suspended.SnapshotSource)
 	}
 
-	h.occupyWorker(ctx, origin)
-	h.ensureIdleExcept(ctx, origin)
+	h.OccupyWorker(ctx, origin)
+	h.EnsureIdleExcept(ctx, origin)
 
-	resumed := h.resume(ctx, sb.ID)
+	resumed := h.Resume(ctx, sb.ID)
 	if resumed.State != types.SandboxRunning {
 		t.Fatalf("resume state=%s", resumed.State)
 	}

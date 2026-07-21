@@ -16,16 +16,17 @@ import (
 
 // Server is the Actordock control-plane HTTP API (slim Substrate ateapi surface).
 type Server struct {
-	sched *scheduler.Scheduler
-	store store.Store
-	log   *slog.Logger
+	sched          *scheduler.Scheduler
+	store          store.Store
+	log            *slog.Logger
+	metricsHandler http.Handler
 }
 
-func New(sched *scheduler.Scheduler, st store.Store, log *slog.Logger) *Server {
+func New(sched *scheduler.Scheduler, st store.Store, log *slog.Logger, metricsHandler http.Handler) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Server{sched: sched, store: st, log: log}
+	return &Server{sched: sched, store: st, log: log, metricsHandler: metricsHandler}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -34,6 +35,9 @@ func (s *Server) Handler() http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
+	if s.metricsHandler != nil {
+		mux.Handle("GET /metrics", s.metricsHandler)
+	}
 	mux.HandleFunc("GET /v1/policy", s.getPolicy)
 	mux.HandleFunc("POST /v1/golden/ensure", s.ensureGolden)
 	mux.HandleFunc("GET /v1/golden", s.getGolden)

@@ -9,32 +9,38 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"time"
 
+	"github.com/actordock/actordock/internal/metrics"
 	"github.com/actordock/actordock/internal/runtime"
 	"github.com/actordock/actordock/internal/snapshotstore"
 )
 
 // Server is the Worker agent HTTP API (1 running sandbox per Worker).
 type Server struct {
-	workerID string
-	rt       runtime.Runtime
-	snaps    snapshotstore.Store
-	log      *slog.Logger
+	workerID       string
+	rt             runtime.Runtime
+	snaps          snapshotstore.Store
+	log            *slog.Logger
+	metrics        *metrics.Metrics
+	metricsHandler http.Handler
 
 	mu    sync.Mutex
 	alive map[string]struct{} // at most one entry when MaxSlots=1
 }
 
-func New(workerID string, rt runtime.Runtime, snaps snapshotstore.Store, log *slog.Logger) *Server {
+func New(workerID string, rt runtime.Runtime, snaps snapshotstore.Store, log *slog.Logger, m *metrics.Metrics, metricsHandler http.Handler) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
 	return &Server{
-		workerID: workerID,
-		rt:       rt,
-		snaps:    snaps,
-		log:      log,
-		alive:    make(map[string]struct{}),
+		workerID:       workerID,
+		rt:             rt,
+		snaps:          snaps,
+		log:            log,
+		metrics:        m,
+		metricsHandler: metricsHandler,
+		alive:          make(map[string]struct{}),
 	}
 }
 
@@ -42,6 +48,9 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /status", s.handleStatus)
+	if s.metricsHandler != nil {
+		mux.Handle("GET /metrics", s.metricsHandler)
+	}
 	mux.HandleFunc("POST /sandboxes/{id}/boot", s.handleBoot)
 	mux.HandleFunc("POST /sandboxes/{id}/checkpoint", s.handleCheckpoint)
 	mux.HandleFunc("POST /sandboxes/{id}/restore", s.handleRestore)
@@ -147,11 +156,14 @@ func (s *Server) handleCheckpoint(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "snapshot store not configured", http.StatusServiceUnavailable)
 			return
 		}
-		if err := snapshotstore.UploadDir(r.Context(), s.snaps, req.ImagePath, req.ObjectKey); err != nil {
+		xferStart := time.Now()
+		n, err := snapshotstore.UploadDir(r.Context(), s.snaps, req.ImagePath, req.ObjectKey)
+		if err != nil {
 			s.log.Error("upload snapshot failed", "id", id, "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.metrics.RecordTransfer(r.Context(), "upload", time.Since(xferStart), n)
 	}
 	s.release(id)
 	w.WriteHeader(http.StatusNoContent)
@@ -184,12 +196,15 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "local snapshot missing and no objectKey", http.StatusConflict)
 			return
 		}
-		if err := snapshotstore.DownloadDir(r.Context(), s.snaps, req.ObjectKey, req.ImagePath); err != nil {
+		xferStart := time.Now()
+		n, err := snapshotstore.DownloadDir(r.Context(), s.snaps, req.ObjectKey, req.ImagePath)
+		if err != nil {
 			s.release(id)
 			s.log.Error("download snapshot failed", "id", id, "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		s.metrics.RecordTransfer(r.Context(), "download", time.Since(xferStart), n)
 	}
 
 	if err := s.rt.Restore(r.Context(), id, req.ImagePath); err != nil {
