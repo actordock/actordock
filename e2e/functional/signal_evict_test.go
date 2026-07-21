@@ -115,7 +115,7 @@ func TestPolicyLRUIdleEvictsLongestIdle(t *testing.T) {
 	}
 }
 
-// TestPolicyResourceEvictGDS: real large /dev/shm + suspend/resume; prefer evicting larger Size (lower H).
+// TestPolicyResourceEvictGDS: real large /dev/shm + suspend/resume; GDS evicts larger Size (lower H).
 func TestPolicyResourceEvictGDS(t *testing.T) {
 	ctx := context.Background()
 	h := harness.New(t)
@@ -141,12 +141,11 @@ func TestPolicyResourceEvictGDS(t *testing.T) {
 
 	_ = resumeForcesEvict(t, h, ctx)
 	victim := findSuspendedVictim(t, h, ctx, candidateSet(filled))
-	// FaasCache/GDS keeps high Cost/Size. A large real checkpoint usually raises Cost
-	// enough that the heavy sandbox has higher H and is retained; a light one is evicted.
-	if victim == heavy.ID {
-		t.Fatalf("resource-evict victim=%s was heavy; want a lighter sandbox kept-out (higher Cost/Size H keeps heavy)", victim)
+	// H = L + Cost/Size: larger Size lowers H, so heavy is the preferred victim when Cost is similar.
+	if victim != heavy.ID {
+		t.Fatalf("resource-evict victim=%s want heavy %s (larger Size → lower keep-alive H)", victim, heavy.ID)
 	}
-	t.Logf("resource-evict victim=%s heavy_kept=%s", victim, heavy.ID)
+	t.Logf("resource-evict victim=heavy %s", heavy.ID)
 }
 
 // TestPolicyRandomEvictsUnderContention: random must Suspend someone when pool is full.

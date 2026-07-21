@@ -9,27 +9,29 @@ Live-cluster checks against Kind (gVisor Workers + rustfs). Cluster suites use
 |------|------|
 | `internal/harness/` | Shared controlplane client (port-forward, API helpers) |
 | `functional/` | Correctness: all four policies can place/evict as designed |
-| `eval/` | Performance: S1–S5 under four policies + markdown comparison table |
+| `eval/` | Performance: S1–S5 per policy; CI matrix parallel by `EVAL_POLICY` |
 
 ## How to run
 
 ```bash
 ./hack/kind-up.sh
 ./hack/verify-local.sh                 # functional only (default)
-E2E_SUITE=eval ./hack/verify-local.sh  # four-policy eval + docs/eval/results/policy_compare.md
+E2E_SUITE=eval ./hack/verify-local.sh  # all four policies sequentially
+POLICY=fifo ./hack/kind-up.sh
+EVAL_POLICY=fifo E2E_SUITE=eval ./hack/verify-local.sh  # one policy (no SetPolicy)
 E2E_SUITE=all ./hack/verify-local.sh   # both (same cluster; sequential)
 ```
 
-CI runs **functional** and **eval** as **two parallel jobs / two Kind clusters**
-(`actordock-functional`, `actordock-eval`).
+CI: **functional** one job + **eval** matrix of four policy jobs (parallel Kind clusters
+`actordock-eval-<policy>`).
 
 Or directly:
 
 ```bash
 go test ./e2e/functional/ -tags=e2e -count=1 -timeout=20m -v
 
-go test ./e2e/eval/ -tags=e2e -count=1 -timeout=60m -v -run TestEvalAllPolicies
-# artifact: EVAL_OUT_DIR/policy_compare.md (default docs/eval/results/)
+EVAL_POLICY=fifo go test ./e2e/eval/ -tags=e2e -count=1 -timeout=30m -v -run TestEvalAllPolicies
+# artifact: EVAL_OUT_DIR/policy_compare.md (+ policy_compare_<policy>.md when single)
 ```
 
 ## Functional suite
@@ -44,7 +46,7 @@ go test ./e2e/eval/ -tags=e2e -count=1 -timeout=60m -v -run TestEvalAllPolicies
 | `TestSuspendMigratesOffOrigin` | Suspend + occupy origin → migrate |
 | `TestPolicyFifoEvictsOldestCreated` | `fifo` victim = oldest CreatedAt |
 | `TestPolicyLRUIdleEvictsLongestIdle` | real `exec` + Worker push; kick longer-idle |
-| `TestPolicyResourceEvictGDS` | real `/dev/shm` + suspend/resume; heavy kept (higher Cost/Size H), light evicted |
+| `TestPolicyResourceEvictGDS` | real `/dev/shm` + suspend/resume; heavy evicted (larger Size → lower H) |
 | `TestPolicyRandomEvictsUnderContention` | `random` evicts someone; third resume runs |
 | `TestPlace*UsesFreeWorker` | Place: second resume avoids occupied Worker (`MaxSlots=1`, live `/status`) |
 
@@ -52,14 +54,15 @@ No API-injected fake metrics. Evict idle/GDS use **Worker push** + **checkpoint/
 
 ## Eval suite
 
-`TestEvalAllPolicies` runs S1–S5 under **fifo / random / lru-idle / resource-evict**.
-Metrics are **deltas** on controlplane `/metrics`. Writes:
+`TestEvalAllPolicies` runs S1–S5. Metrics are **deltas** on controlplane `/metrics`.
 
-- Aggregate markdown table (one row per policy)
-- Per-scenario table
-- File: `${EVAL_OUT_DIR:-docs/eval/results}/policy_compare.md`
+| Mode | Behavior |
+|------|----------|
+| `EVAL_POLICY=<name>` | One policy (CI matrix); skip `SetPolicy` if cluster already matches |
+| unset | All four policies sequentially via `SetPolicy` (local) |
 
-CI uploads that file as artifact `policy-compare`.
+Writes `${EVAL_OUT_DIR:-docs/eval/results}/policy_compare.md` (and `policy_compare_<policy>.md` when single).
+CI uploads `policy-compare-<policy>` per matrix job.
 
 | ID | Scenario |
 |----|----------|
@@ -69,6 +72,6 @@ CI uploads that file as artifact `policy-compare`.
 | **S4** `S4_pool_contention` | Oversubscribe latest resumes |
 | **S5** `S5_stateful_agent` | FS + memory, sticky then migrate |
 
-Env: `MIN_WORKERS` (default 4), `EVAL_OUT_DIR`, `SIGNAL_PUSH_WAIT_SEC`, `EVAL_*` counts.
+Env: `EVAL_POLICY`, `MIN_WORKERS` (default 4), `EVAL_OUT_DIR`, `SIGNAL_PUSH_WAIT_SEC`, `EVAL_*` counts.
 
 Does not fail on which policy wins — only that each policy produces resume metrics.

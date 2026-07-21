@@ -9,16 +9,19 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/actordock/actordock/e2e/internal/harness"
-	"github.com/actordock/actordock/internal/types"
 )
 
 var evalPolicies = []string{"fifo", "random", "lru-idle", "resource-evict"}
 
-// TestEvalAllPolicies runs S1–S5 under all four policies and writes a comparison table.
+// TestEvalAllPolicies runs S1–S5 and writes a comparison markdown artifact.
+//
+// EVAL_POLICY=<name> — run only that policy (CI matrix / parallel Kind jobs).
+// When unset, runs all four policies sequentially (local full compare; uses SetPolicy).
 func TestEvalAllPolicies(t *testing.T) {
 	ctx := context.Background()
 	h := harness.New(t)
@@ -26,13 +29,12 @@ func TestEvalAllPolicies(t *testing.T) {
 	h.WaitWorkers(ctx, workers)
 	h.WaitGolden(ctx)
 
+	policies := policiesToRun(t)
 	byKey := make(map[string]PolicyReport)
 	perPolicy := make(map[string][]PolicyReport)
 
-	for _, policy := range evalPolicies {
-		h.SetPolicy(ctx, policy)
-		h.WaitWorkers(ctx, workers)
-		h.WaitGolden(ctx)
+	for _, policy := range policies {
+		ensurePolicy(t, h, ctx, policy, workers)
 
 		for _, sc := range evalScenarios {
 			h.CleanupSandboxes(ctx)
@@ -60,36 +62,53 @@ func TestEvalAllPolicies(t *testing.T) {
 		scenarioIDs = append(scenarioIDs, sc.ID)
 	}
 
-	agg := make([]PolicyReport, 0, len(evalPolicies))
-	for _, policy := range evalPolicies {
+	agg := make([]PolicyReport, 0, len(policies))
+	for _, policy := range policies {
 		agg = append(agg, AggregateReports(perPolicy[policy]))
 	}
 
 	summary := FormatComparisonTable(agg)
-	detail := FormatScenarioComparisonTable(scenarioIDs, evalPolicies, byKey)
-	doc := "# Actordock policy eval comparison\n\n## Aggregate (S1–S5)\n\n" + summary +
+	detail := FormatScenarioComparisonTable(scenarioIDs, policies, byKey)
+	title := "all policies"
+	if len(policies) == 1 {
+		title = policies[0]
+	}
+	doc := "# Actordock policy eval comparison (" + title + ")\n\n## Aggregate (S1–S5)\n\n" + summary +
 		"\n## Per scenario\n\n" + detail + "\n"
 
 	t.Log("\n" + doc)
-	writeEvalArtifact(t, doc)
+	writeEvalArtifact(t, policies, doc)
 }
 
-// TestEvalFifoVsRandom keeps the legacy single combined workload for regression.
-func TestEvalFifoVsRandom(t *testing.T) {
-	ctx := context.Background()
-	h := harness.New(t)
-	workers := harness.EnvInt("MIN_WORKERS", 4)
+func policiesToRun(t *testing.T) []string {
+	t.Helper()
+	raw := strings.TrimSpace(os.Getenv("EVAL_POLICY"))
+	if raw == "" {
+		return append([]string(nil), evalPolicies...)
+	}
+	for _, p := range evalPolicies {
+		if p == raw {
+			return []string{p}
+		}
+	}
+	t.Fatalf("EVAL_POLICY=%q not in %v", raw, evalPolicies)
+	return nil
+}
+
+// ensurePolicy uses the live controlplane policy when it already matches (CI Kind
+// started with POLICY=...); otherwise restarts via SetPolicy (local multi-policy).
+func ensurePolicy(t *testing.T, h *harness.Harness, ctx context.Context, policy string, workers int) {
+	t.Helper()
+	if h.Policy(ctx) == policy {
+		h.CleanupSandboxes(ctx)
+		return
+	}
+	h.SetPolicy(ctx, policy)
 	h.WaitWorkers(ctx, workers)
-
-	fifo := runLegacyCombinedEval(t, h, ctx, "fifo", workers)
-	random := runLegacyCombinedEval(t, h, ctx, "random", workers)
-
-	t.Log(FormatReport(fifo))
-	t.Log(FormatReport(random))
-	t.Log(CompareReports(fifo, random))
+	h.WaitGolden(ctx)
 }
 
-func writeEvalArtifact(t *testing.T, doc string) {
+func writeEvalArtifact(t *testing.T, policies []string, doc string) {
 	t.Helper()
 	dir := os.Getenv("EVAL_OUT_DIR")
 	if dir == "" {
@@ -98,66 +117,14 @@ func writeEvalArtifact(t *testing.T, doc string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("EVAL_OUT_DIR mkdir: %v", err)
 	}
-	path := filepath.Join(dir, "policy_compare.md")
-	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
-		t.Fatalf("write %s: %v", path, err)
+	paths := []string{filepath.Join(dir, "policy_compare.md")}
+	if len(policies) == 1 {
+		paths = append(paths, filepath.Join(dir, "policy_compare_"+policies[0]+".md"))
 	}
-	t.Logf("wrote %s", path)
-}
-
-func runLegacyCombinedEval(t *testing.T, h *harness.Harness, ctx context.Context, policy string, workers int) PolicyReport {
-	t.Helper()
-	h.SetPolicy(ctx, policy)
-	h.WaitWorkers(ctx, workers)
-	h.WaitGolden(ctx)
-	h.CleanupSandboxes(ctx)
-
-	before := h.FetchMetrics(ctx)
-	runLegacyWorkload(t, h, ctx, workers)
-	time.Sleep(500 * time.Millisecond)
-	after := h.FetchMetrics(ctx)
-	r := ReportDelta(policy, before, after)
-	r.Scenario = "legacy_combined"
-	return r
-}
-
-func runLegacyWorkload(t *testing.T, h *harness.Harness, ctx context.Context, workers int) {
-	t.Helper()
-	n := harness.EnvInt("EVAL_SANDBOX_COUNT", workers*2)
-	if n < workers+1 {
-		n = workers + 1
-	}
-	ids := make([]string, 0, n)
-	for i := 0; i < n; i++ {
-		ids = append(ids, h.CreateSandbox(ctx).ID)
-	}
-	for _, id := range ids {
-		_ = h.Resume(ctx, id)
-	}
-	var stickyID, stickyWorker string
-	for _, sb := range h.ListSandboxes(ctx) {
-		if sb.State == types.SandboxRunning {
-			stickyID, stickyWorker = sb.ID, sb.WorkerID
-			break
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+			t.Fatalf("write %s: %v", path, err)
 		}
+		t.Logf("wrote %s", path)
 	}
-	if stickyID == "" {
-		t.Fatal("legacy: no running sandbox for sticky")
-	}
-	_ = h.Pause(ctx, stickyID)
-	_ = h.Resume(ctx, stickyID)
-	var migrateID, origin string
-	for _, sb := range h.ListSandboxes(ctx) {
-		if sb.State == types.SandboxRunning && sb.ID != stickyID {
-			migrateID, origin = sb.ID, sb.WorkerID
-			break
-		}
-	}
-	if migrateID == "" {
-		migrateID, origin = stickyID, stickyWorker
-	}
-	_ = h.Suspend(ctx, migrateID)
-	h.OccupyWorker(ctx, origin)
-	h.EnsureIdleExcept(ctx, origin)
-	_ = h.Resume(ctx, migrateID)
 }

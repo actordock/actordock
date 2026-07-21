@@ -69,7 +69,11 @@ jobs:
 
   e2e-eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        policy: [fifo, random, lru-idle, resource-evict]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -84,18 +88,19 @@ jobs:
 
       - name: Create cluster and deploy
         env:
-          KIND_CLUSTER_NAME: actordock-eval
-          POLICY: fifo
+          KIND_CLUSTER_NAME: actordock-eval-${{ matrix.policy }}
+          POLICY: ${{ matrix.policy }}
         run: |
           chmod +x hack/*.sh
           ./hack/kind-up.sh
 
-      - name: Eval e2e (fifo|random|lru-idle|resource-evict comparison table)
+      - name: Eval e2e (S1–S5 for ${{ matrix.policy }})
         env:
-          KIND_CLUSTER_NAME: actordock-eval
+          KIND_CLUSTER_NAME: actordock-eval-${{ matrix.policy }}
           E2E_SUITE: eval
-          E2E_TIMEOUT: 60m
+          E2E_TIMEOUT: 30m
           MIN_WORKERS: "4"
+          EVAL_POLICY: ${{ matrix.policy }}
           EVAL_OUT_DIR: docs/eval/results
         run: |
           mkdir -p docs/eval/results
@@ -105,20 +110,22 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: policy-compare
-          path: docs/eval/results/policy_compare.md
+          name: policy-compare-${{ matrix.policy }}
+          path: |
+            docs/eval/results/policy_compare.md
+            docs/eval/results/policy_compare_${{ matrix.policy }}.md
           if-no-files-found: warn
 
       - name: Dump on failure
         if: failure()
         run: |
-          kubectl --context kind-actordock-eval -n actordock get pods -o wide || true
-          kubectl --context kind-actordock-eval -n actordock describe pods || true
-          kubectl --context kind-actordock-eval -n actordock logs deploy/controlplane --all-containers=true || true
-          kubectl --context kind-actordock-eval -n actordock logs statefulset/worker --all-containers=true || true
+          kubectl --context kind-actordock-eval-${{ matrix.policy }} -n actordock get pods -o wide || true
+          kubectl --context kind-actordock-eval-${{ matrix.policy }} -n actordock describe pods || true
+          kubectl --context kind-actordock-eval-${{ matrix.policy }} -n actordock logs deploy/controlplane --all-containers=true || true
+          kubectl --context kind-actordock-eval-${{ matrix.policy }} -n actordock logs statefulset/worker --all-containers=true || true
 
       - name: Teardown
         if: always()
         env:
-          KIND_CLUSTER_NAME: actordock-eval
+          KIND_CLUSTER_NAME: actordock-eval-${{ matrix.policy }}
         run: ./hack/kind-down.sh || true

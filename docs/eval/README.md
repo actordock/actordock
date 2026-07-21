@@ -29,6 +29,6 @@ Each dataset version directory should include:
 - Metrics table aligned with `docs/research/metrics.md`
 - Optional: raw decision logs for debugging
 
-CI job `e2e-eval` writes `results/policy_compare.md` (four policies × S1–S5) and uploads it as the `policy-compare` artifact.
+CI job `e2e-eval` is a **matrix over four policies**; each job writes `results/policy_compare.md` (and `policy_compare_<policy>.md`) for S1–S5 under that policy and uploads artifact `policy-compare-<policy>`.
 
 Do not commit huge binary checkpoints here; link or use Git LFS if needed.

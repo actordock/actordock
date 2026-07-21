@@ -29,14 +29,16 @@ case "${SUITE}" in
     run_pkg ./e2e/functional/ "${TIMEOUT}"
     ;;
   eval)
-    # Default: four-policy comparison (writes EVAL_OUT_DIR/policy_compare.md).
+    # EVAL_POLICY=<fifo|random|lru-idle|resource-evict> runs one policy (CI matrix).
+    # Unset → all four sequentially (local). Writes EVAL_OUT_DIR/policy_compare*.md.
     EVAL_RUN="${EVAL_TEST_RUN:-TestEvalAllPolicies}"
-    echo "==> go test ./e2e/eval/ -tags=e2e -run ${EVAL_RUN}"
+    echo "==> go test ./e2e/eval/ -tags=e2e -run ${EVAL_RUN} EVAL_POLICY=${EVAL_POLICY:-<all>}"
     go test ./e2e/eval/ -tags=e2e -count=1 -timeout="${E2E_TIMEOUT:-60m}" -v -run "${EVAL_RUN}"
     ;;
   all)
     run_pkg ./e2e/functional/ "${TIMEOUT}"
     EVAL_RUN="${EVAL_TEST_RUN:-TestEvalAllPolicies}"
+    echo "==> go test ./e2e/eval/ -tags=e2e -run ${EVAL_RUN} EVAL_POLICY=${EVAL_POLICY:-<all>}"
     go test ./e2e/eval/ -tags=e2e -count=1 -timeout="${E2E_TIMEOUT:-60m}" -v -run "${EVAL_RUN}"
     ;;
   *)
