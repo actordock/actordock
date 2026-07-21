@@ -30,13 +30,18 @@ type Status struct {
 }
 
 type CheckpointOpts struct {
-	ImagePath string
-	ObjectKey string // empty = Pause (local); set = Suspend (upload)
+	ImagePath string `json:"imagePath"`
+	ObjectKey string `json:"objectKey,omitempty"` // empty = Pause (local); set = Suspend (upload)
+}
+
+// CheckpointResult is returned by the Worker after a successful checkpoint.
+type CheckpointResult struct {
+	CheckpointBytes uint64 `json:"checkpointBytes"`
 }
 
 type RestoreOpts struct {
-	ImagePath string
-	ObjectKey string // download if local missing
+	ImagePath string `json:"imagePath"`
+	ObjectKey string `json:"objectKey,omitempty"` // download if local missing
 }
 
 func (c *Client) Status(ctx context.Context, base string) (Status, error) {
@@ -51,8 +56,12 @@ func (c *Client) Boot(ctx context.Context, base, id string) error {
 	return c.do(ctx, http.MethodPost, base+"/sandboxes/"+id+"/boot", map[string]string{"id": id}, nil)
 }
 
-func (c *Client) Checkpoint(ctx context.Context, base, id string, opts CheckpointOpts) error {
-	return c.do(ctx, http.MethodPost, base+"/sandboxes/"+id+"/checkpoint", opts, nil)
+func (c *Client) Checkpoint(ctx context.Context, base, id string, opts CheckpointOpts) (CheckpointResult, error) {
+	var out CheckpointResult
+	if err := c.do(ctx, http.MethodPost, base+"/sandboxes/"+id+"/checkpoint", opts, &out); err != nil {
+		return CheckpointResult{}, err
+	}
+	return out, nil
 }
 
 func (c *Client) Restore(ctx context.Context, base, id string, opts RestoreOpts) error {

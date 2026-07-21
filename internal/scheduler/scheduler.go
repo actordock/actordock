@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -232,7 +231,7 @@ func (s *Scheduler) EnsureGolden(ctx context.Context) (string, error) {
 	}
 	path := s.localPath(w.ID, id)
 	cpStart := time.Now()
-	if err := s.workers.Checkpoint(ctx, w.Address, id, workerclient.CheckpointOpts{
+	if _, err := s.workers.Checkpoint(ctx, w.Address, id, workerclient.CheckpointOpts{
 		ImagePath: path,
 		ObjectKey: goldenPrefix,
 	}); err != nil {
@@ -420,13 +419,14 @@ func (s *Scheduler) pauseOrSuspend(ctx context.Context, id string, upload bool) 
 		mode = "suspend"
 	}
 	cpStart := time.Now()
-	if err := s.workers.Checkpoint(ctx, w.Address, id, opts); err != nil {
+	cpRes, err := s.workers.Checkpoint(ctx, w.Address, id, opts)
+	if err != nil {
 		return types.Sandbox{}, err
 	}
 	s.metrics.RecordCheckpointLatency(ctx, mode, time.Since(cpStart))
 	if s.signals != nil {
 		s.signals.RecordCheckpoint(id, signals.SnapshotResource{
-			LastCheckpointBytes: dirSize(path),
+			LastCheckpointBytes: cpRes.CheckpointBytes,
 			LastPreemptCostSec:  time.Since(cpStart).Seconds(),
 			LastCheckpointAt:    time.Now().UTC(),
 			LastCheckpointDur:   time.Since(cpStart),
@@ -510,25 +510,4 @@ func filterRunningOn(running []types.Sandbox, workerID string) []types.Sandbox {
 		}
 	}
 	return out
-}
-
-func dirSize(root string) uint64 {
-	if root == "" {
-		return 0
-	}
-	var total uint64
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
-		}
-		if info.Size() > 0 {
-			total += uint64(info.Size())
-		}
-		return nil
-	})
-	return total
 }

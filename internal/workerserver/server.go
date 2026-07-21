@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -179,6 +180,8 @@ func (s *Server) handleCheckpoint(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	// Measure on the Worker (where the image lives); control plane cannot see this path.
+	bytes := dirSize(req.ImagePath)
 	if req.ObjectKey != "" {
 		if s.snaps == nil {
 			http.Error(w, "snapshot store not configured", http.StatusServiceUnavailable)
@@ -192,9 +195,14 @@ func (s *Server) handleCheckpoint(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.metrics.RecordTransfer(r.Context(), "upload", time.Since(xferStart), n)
+		// Fallback if Walk missed sparse/empty layout but upload transferred data.
+		if bytes == 0 && n > 0 {
+			bytes = uint64(n)
+		}
 	}
 	s.release(id)
-	w.WriteHeader(http.StatusNoContent)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]uint64{"checkpointBytes": bytes})
 }
 
 func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
@@ -275,4 +283,25 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func dirSize(root string) uint64 {
+	if root == "" {
+		return 0
+	}
+	var total uint64
+	_ = filepath.WalkDir(root, func(_ string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if info.Size() > 0 {
+			total += uint64(info.Size())
+		}
+		return nil
+	})
+	return total
 }
