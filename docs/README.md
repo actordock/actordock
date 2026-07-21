@@ -17,7 +17,7 @@ Actordock design, research, and planning. Code lives elsewhere; this tree holds 
 |------|---------|
 | `vision.md` | Positioning: research core + system non-goals |
 | `research/` | Problem, metrics, baselines, experiments, literature |
-| `architecture/` | How the runtime/control plane supports the research |
+| `architecture/` | How the runtime/control plane supports the research (incl. [signal-plugins.md](./architecture/signal-plugins.md)) |
 | `eval/` | Dataset formats, fixtures, comparison artifacts |
 | `decisions/` | ADRs |
 | `planning/` | Roadmap and open questions |

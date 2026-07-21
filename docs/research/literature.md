@@ -50,16 +50,19 @@ How to use:
 |-----|------|-------|-----------|----------|
 | substrate | OSS / systems | N:M actor↔Worker multiplexing + snapshot resume | Platform shape we build on conceptually | No published priority-allocation eval loop |
 | agent-sandbox | k8s-sigs | Sandbox CR, warm pool, hibernate | Isolation / 1:1 Pod lifecycle | Not N:M semantic allocator |
+| vllm-semantic-router | OSS | MoM / intent classification; SAAR session-phase model selection | Reuse **phase/session** vocabulary; cache-aware “when to switch” | Routes **LLM requests**, not **Worker slots**; no sandbox C/R eval loop |
+| aurelio-semantic-router | OSS | Vector routes for tools / LLM decisions in-app | Fast **in-agent** routing pattern | Not platform scheduler; no Worker pool |
 
 ## Takeaways for Actordock
 
 1. **Do not claim green field on “agent + sandbox + C/R”**—Crab/DeltaBox own nearby C/R semantics.
-2. **Do claim gap on “priority × Worker-slot allocation under C/R”** with comparable datasets—index above supports that.
-3. Steal ideas carefully:
+2. **Do not conflate with inference semantic routers**—vLLM SR / app routers optimize **model and request path**; Actordock semantic signals optimize **sandbox slot** placement/eviction ([../architecture/signal-plugins.md](../architecture/signal-plugins.md)).
+3. **Do claim gap on “priority × Worker-slot allocation under C/R”** with comparable datasets—index above supports that.
+4. Steal ideas carefully:
    - From Crab: LLM/idle windows as *optional* cost-hiding signal (not the only priority).
    - From Agentix/SAGA/HexAGenT: session/workflow-level priority & fairness metrics.
    - From IceBreaker/Incendio: utility / latency-benefit scoring for scarce warm capacity.
-4. Next survey pass: live migration cost models; Borg-like preemption formalisms; any public **sandbox idle/active traces**.
+5. Next survey pass: live migration cost models; Borg-like preemption formalisms; any public **sandbox idle/active traces**.
 
 ## Paper notes
 

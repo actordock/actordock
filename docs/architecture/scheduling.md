@@ -26,6 +26,9 @@ Eviction under Worker pressure uses **Suspend** so victims stay portable.
 
 Policy chooses **which Worker**; it does not co-locate multiple agents on one Worker.
 
+Future policies (`lru-idle`, `priority-static`, semantic-aware) consume **signal plugins** (resource vs agent semantic). See [signal-plugins.md](./signal-plugins.md).
+
 ## Related
 
-[../decisions/0003-pause-suspend-rustfs.md](../decisions/0003-pause-suspend-rustfs.md)
+- [signal-plugins.md](./signal-plugins.md)
+- [../decisions/0003-pause-suspend-rustfs.md](../decisions/0003-pause-suspend-rustfs.md)

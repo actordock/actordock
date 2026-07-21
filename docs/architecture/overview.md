@@ -45,5 +45,6 @@ Eviction under Worker pressure uses **Suspend**.
 ## Related
 
 - [scheduling.md](./scheduling.md)
+- [signal-plugins.md](./signal-plugins.md) — resource vs agent semantic signal plugins (planned)
 - [../decisions/0002-kind-gvisor-multiplex.md](../decisions/0002-kind-gvisor-multiplex.md)
 - [../decisions/0003-pause-suspend-rustfs.md](../decisions/0003-pause-suspend-rustfs.md)
