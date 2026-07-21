@@ -105,16 +105,16 @@ jobs:
         run: |
           mkdir -p docs/eval/results
           ./hack/verify-local.sh
+          test -f "docs/eval/results/policy_report_${{ matrix.policy }}.json"
+          ls -la docs/eval/results/
 
-      - name: Upload policy comparison table
-        if: always()
+      - name: Upload policy report
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: policy-compare-${{ matrix.policy }}
-          path: |
-            docs/eval/results/policy_compare.md
-            docs/eval/results/policy_compare_${{ matrix.policy }}.md
-          if-no-files-found: warn
+          path: docs/eval/results/policy_report_${{ matrix.policy }}.json
+          if-no-files-found: error
 
       - name: Dump on failure
         if: failure()
@@ -129,3 +129,35 @@ jobs:
         env:
           KIND_CLUSTER_NAME: actordock-eval-${{ matrix.policy }}
         run: ./hack/kind-down.sh || true
+
+  e2e-eval-summary:
+    runs-on: ubuntu-latest
+    needs: e2e-eval
+    if: always() && needs.e2e-eval.result != 'cancelled'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24.x"
+
+      - name: Download per-policy eval artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: policy-compare-*
+          path: docs/eval/results/parts
+          merge-multiple: true
+
+      - name: Merge policy comparison table
+        run: |
+          mkdir -p docs/eval/results
+          echo "==> downloaded reports:"
+          find docs/eval/results/parts -type f -name 'policy_report_*.json' -print
+          go run ./hack/merge-eval-results docs/eval/results/parts docs/eval/results/policy_compare.md
+          cat docs/eval/results/policy_compare.md
+
+      - name: Upload merged comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: policy-compare-all
+          path: docs/eval/results/policy_compare.md
+          if-no-files-found: error

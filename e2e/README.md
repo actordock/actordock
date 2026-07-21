@@ -46,7 +46,7 @@ EVAL_POLICY=fifo go test ./e2e/eval/ -tags=e2e -count=1 -timeout=30m -v -run Tes
 | `TestSuspendMigratesOffOrigin` | Suspend + occupy origin → migrate |
 | `TestPolicyFifoEvictsOldestCreated` | `fifo` victim = oldest CreatedAt |
 | `TestPolicyLRUIdleEvictsLongestIdle` | real `exec` + Worker push; kick longer-idle |
-| `TestPolicyResourceEvictGDS` | real `/dev/shm` + suspend/resume; heavy evicted (larger Size → lower H) |
+| `TestPolicyResourceEvictGDS` | inflate `/dev/shm` RSS only (no re-Suspend); heavy evicted (larger Size → lower H) |
 | `TestPolicyRandomEvictsUnderContention` | `random` evicts someone; third resume runs |
 | `TestPlace*UsesFreeWorker` | Place: second resume avoids occupied Worker (`MaxSlots=1`, live `/status`) |
 
@@ -61,8 +61,12 @@ No API-injected fake metrics. Evict idle/GDS use **Worker push** + **checkpoint/
 | `EVAL_POLICY=<name>` | One policy (CI matrix); skip `SetPolicy` if cluster already matches |
 | unset | All four policies sequentially via `SetPolicy` (local) |
 
-Writes `${EVAL_OUT_DIR:-docs/eval/results}/policy_compare.md` (and `policy_compare_<policy>.md` when single).
-CI uploads `policy-compare-<policy>` per matrix job.
+Writes under `${EVAL_OUT_DIR:-docs/eval/results}/`:
+
+- `policy_compare.md` / `policy_compare_<policy>.md`
+- `policy_report_<policy>.json` (for CI merge)
+
+CI uploads `policy-compare-<policy>` per matrix job, then **`e2e-eval-summary`** merges all JSON into artifact `policy-compare-all`.
 
 | ID | Scenario |
 |----|----------|

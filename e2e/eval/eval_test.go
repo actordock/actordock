@@ -7,6 +7,7 @@ package eval
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,7 +78,7 @@ func TestEvalAllPolicies(t *testing.T) {
 		"\n## Per scenario\n\n" + detail + "\n"
 
 	t.Log("\n" + doc)
-	writeEvalArtifact(t, policies, doc)
+	writeEvalArtifact(t, policies, doc, perPolicy)
 }
 
 func policiesToRun(t *testing.T) []string {
@@ -108,11 +109,19 @@ func ensurePolicy(t *testing.T, h *harness.Harness, ctx context.Context, policy 
 	h.WaitGolden(ctx)
 }
 
-func writeEvalArtifact(t *testing.T, policies []string, doc string) {
+func writeEvalArtifact(t *testing.T, policies []string, doc string, perPolicy map[string][]PolicyReport) {
 	t.Helper()
 	dir := os.Getenv("EVAL_OUT_DIR")
 	if dir == "" {
 		dir = "docs/eval/results"
+	}
+	if !filepath.IsAbs(dir) {
+		// go test runs with package cwd (e2e/eval); resolve relative to module root.
+		root, err := findModuleRoot()
+		if err != nil {
+			t.Fatalf("module root: %v", err)
+		}
+		dir = filepath.Join(root, dir)
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("EVAL_OUT_DIR mkdir: %v", err)
@@ -126,5 +135,31 @@ func writeEvalArtifact(t *testing.T, policies []string, doc string) {
 			t.Fatalf("write %s: %v", path, err)
 		}
 		t.Logf("wrote %s", path)
+	}
+	for _, policy := range policies {
+		art := BuildPolicyEvalArtifact(policy, perPolicy[policy])
+		path, err := WritePolicyEvalJSON(dir, art)
+		if err != nil {
+			t.Fatalf("write json: %v", err)
+		}
+		t.Logf("wrote %s", path)
+	}
+}
+
+func findModuleRoot() (string, error) {
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	dir := wd
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return "", fmt.Errorf("go.mod not found from %s", wd)
+		}
+		dir = parent
 	}
 }

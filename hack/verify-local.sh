@@ -13,6 +13,7 @@ cd "${ROOT}"
 
 export ACTORDOCK_API="${ACTORDOCK_API:-http://127.0.0.1:18080}"
 export ACTORDOCK_NAMESPACE="${ACTORDOCK_NAMESPACE:-actordock}"
+export EVAL_OUT_DIR="${EVAL_OUT_DIR:-${ROOT}/docs/eval/results}"
 
 SUITE="${E2E_SUITE:-functional}"
 TIMEOUT="${E2E_TIMEOUT:-20m}"
@@ -29,16 +30,16 @@ case "${SUITE}" in
     run_pkg ./e2e/functional/ "${TIMEOUT}"
     ;;
   eval)
-    # EVAL_POLICY=<fifo|random|lru-idle|resource-evict> runs one policy (CI matrix).
-    # Unset → all four sequentially (local). Writes EVAL_OUT_DIR/policy_compare*.md.
+    # EVAL_POLICY=fifo|random|lru-idle|resource-evict runs one policy (CI matrix).
+    # Unset runs all four sequentially (local). Writes EVAL_OUT_DIR/policy_compare*.md.
     EVAL_RUN="${EVAL_TEST_RUN:-TestEvalAllPolicies}"
-    echo "==> go test ./e2e/eval/ -tags=e2e -run ${EVAL_RUN} EVAL_POLICY=${EVAL_POLICY:-<all>}"
+    echo "==> go test ./e2e/eval/ -tags=e2e -run ${EVAL_RUN} EVAL_POLICY=${EVAL_POLICY:-ALL}"
     go test ./e2e/eval/ -tags=e2e -count=1 -timeout="${E2E_TIMEOUT:-60m}" -v -run "${EVAL_RUN}"
     ;;
   all)
     run_pkg ./e2e/functional/ "${TIMEOUT}"
     EVAL_RUN="${EVAL_TEST_RUN:-TestEvalAllPolicies}"
-    echo "==> go test ./e2e/eval/ -tags=e2e -run ${EVAL_RUN} EVAL_POLICY=${EVAL_POLICY:-<all>}"
+    echo "==> go test ./e2e/eval/ -tags=e2e -run ${EVAL_RUN} EVAL_POLICY=${EVAL_POLICY:-ALL}"
     go test ./e2e/eval/ -tags=e2e -count=1 -timeout="${E2E_TIMEOUT:-60m}" -v -run "${EVAL_RUN}"
     ;;
   *)

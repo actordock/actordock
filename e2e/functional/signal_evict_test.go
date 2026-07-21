@@ -115,7 +115,8 @@ func TestPolicyLRUIdleEvictsLongestIdle(t *testing.T) {
 	}
 }
 
-// TestPolicyResourceEvictGDS: real large /dev/shm + suspend/resume; GDS evicts larger Size (lower H).
+// TestPolicyResourceEvictGDS: Size-dominant GDS — inflate RSS only on one sandbox.
+// Do NOT re-Suspend everyone afterward: that couples Cost to Size and flips victims on CI.
 func TestPolicyResourceEvictGDS(t *testing.T) {
 	ctx := context.Background()
 	h := harness.New(t)
@@ -126,22 +127,22 @@ func TestPolicyResourceEvictGDS(t *testing.T) {
 
 	filled := fillAllWorkers(t, h, ctx)
 	heavy := filled[0]
-	_ = h.Exec(ctx, heavy.ID, "/bin/busybox", "dd", "if=/dev/zero", "of=/dev/shm/heavy", "bs=1M", "count=32")
-	for _, sb := range filled[1:] {
+	// Equalize LastActiveAt / keep Cost from the shared cold-resume path.
+	for _, sb := range filled {
 		_ = h.Exec(ctx, sb.ID, "/bin/busybox", "true")
 	}
-	// Record real checkpoint Size/Cost for every running sandbox, then bring them back.
-	for _, sb := range filled {
-		_ = h.Suspend(ctx, sb.ID)
-	}
-	for i := range filled {
-		filled[i] = h.Resume(ctx, filled[i].ID)
+	time.Sleep(signalPushWait())
+
+	// Large anonymous memory → high GDS Size; Cost stays comparable across peers.
+	_ = h.Exec(ctx, heavy.ID, "/bin/busybox", "dd", "if=/dev/zero", "of=/dev/shm/heavy", "bs=1M", "count=64")
+	for _, sb := range filled[1:] {
+		_ = h.Exec(ctx, sb.ID, "/bin/busybox", "true")
 	}
 	time.Sleep(signalPushWait())
 
 	_ = resumeForcesEvict(t, h, ctx)
 	victim := findSuspendedVictim(t, h, ctx, candidateSet(filled))
-	// H = L + Cost/Size: larger Size lowers H, so heavy is the preferred victim when Cost is similar.
+	// H = L + Cost/Size with similar Cost → larger Size → lower H → heavy evicted.
 	if victim != heavy.ID {
 		t.Fatalf("resource-evict victim=%s want heavy %s (larger Size → lower keep-alive H)", victim, heavy.ID)
 	}

@@ -6,3 +6,10 @@ bin/
 /tmp/
 .DS_Store
 .buildstamp
+
+# Generated eval artifacts (keep README.md)
+docs/eval/results/*.md
+!docs/eval/results/README.md
+docs/eval/results/*.json
+docs/eval/results/*.log
+docs/eval/results/parts/
