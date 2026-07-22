@@ -5,7 +5,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CLUSTER_NAME="${KIND_CLUSTER_NAME:-actordock}"
-POLICY="${POLICY:-fifo}"
+POLICY="${POLICY:-semantic-score}"
 
 need() { command -v "$1" >/dev/null || { echo "missing $1"; exit 1; }; }
 need docker

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/e2e/internal/harness"
+	"github.com/actordock/actordock/internal/signals"
 	"github.com/actordock/actordock/internal/types"
 )
 
@@ -103,8 +104,24 @@ func scenarioS4PoolContention(t *testing.T, h *harness.Harness, ctx context.Cont
 			_ = h.Suspend(ctx, sb.ID)
 		}
 	}
-	for _, id := range ids {
+	for i, id := range ids {
 		_ = h.Resume(ctx, id)
+		// Simulate agent phases once the pool is full so semantic-score ≠ fifo.
+		if h.Policy(ctx) == "semantic-score" && i+1 == workers {
+			running := make([]types.Sandbox, 0, workers)
+			for _, sb := range h.ListSandboxes(ctx) {
+				if sb.State == types.SandboxRunning {
+					running = append(running, sb)
+				}
+			}
+			for j, sb := range running {
+				if j == 0 {
+					h.PostSemantic(ctx, sb.ID, signals.PhaseToolLoop, true)
+				} else {
+					h.PostSemantic(ctx, sb.ID, signals.PhaseLLMWait, false)
+				}
+			}
+		}
 	}
 }
 

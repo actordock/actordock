@@ -17,16 +17,16 @@ import (
 	"github.com/actordock/actordock/e2e/internal/harness"
 )
 
-var evalPolicies = []string{"fifo", "random", "lru-idle", "resource-evict"}
+var evalPolicies = []string{"fifo", "random", "lru-idle", "resource-evict", "semantic-score"}
 
 // TestEvalAllPolicies runs S1–S5 and writes a comparison markdown artifact.
 //
 // EVAL_POLICY=<name> — run only that policy (CI matrix / parallel Kind jobs).
-// When unset, runs all four policies sequentially (local full compare; uses SetPolicy).
+// When unset, runs all policies sequentially (local full compare; uses SetPolicy).
 func TestEvalAllPolicies(t *testing.T) {
 	ctx := context.Background()
 	h := harness.New(t)
-	workers := harness.EnvInt("MIN_WORKERS", 4)
+	workers := harness.EnvInt("MIN_WORKERS", 2)
 	h.WaitWorkers(ctx, workers)
 	h.WaitGolden(ctx)
 

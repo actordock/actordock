@@ -1,6 +1,6 @@
 # Signal plugins (resource vs agent semantic)
 
-Status: **resource plugin v1 implemented** (Worker push + sandbox/worker stores + `lru-idle` and FaasCache/`resource-evict`). Agent semantic: not implemented.
+Status: **resource plugin v1 implemented**; **agent semantic ingest + `semantic-score` policy implemented** (classifier L3 still optional/future). See [semantic-score.md](./semantic-score.md).
 
 Scheduling policies today (`fifo`, `random`) mainly use control-plane Worker/sandbox state; `lru-idle` and `resource-evict` also read the short-TTL signal cache. We split signal producers into two plugin families so metrics, trust boundaries, and policy code stay separate.
 
@@ -53,10 +53,10 @@ Producers: Worker `ApplyPush`; control plane `RecordCheckpoint` / `RecordRestore
 | **Serverless analogy** | Warm-pool keep-alive, LRU eviction, load-aware reclaim | Session/workflow priority, “don’t interrupt while user-visible work runs” |
 | **Primary sampler** | **Worker** (cgroups / container stats for the one running sandbox) | **Sandbox** (SDK, sidecar, or trusted agent process) |
 | **Trust model** | Platform-measured; agent cannot lie about CPU/RSS | Agent-reported; validate/version; treat as hint unless attested later |
-| **Typical signals** | `runtime.*`, `snapshot.*`, `worker.*` | `phase` (e.g. `waiting_external`, `tool_exec`, `idle`), optional `workflow_id`, `deadline`, user-facing flag |
+| **Typical signals** | `runtime.*`, `snapshot.*`, `worker.*` | `phase` (`llm_wait` / `tool_loop` / `idle`; Crab turn+LLM-wait, SAAR tool-loop/idle), optional `workflow_id`, `deadline` |
 | **Main use in Actordock** | **Evict** least-valuable running sandbox when pool is full; optional cost hints for cross-Worker resume | **When** to suspend (opportunistic windows), **boost** workflow/session; filter “do not evict while …” |
 | **Not its job** | Business tenant tier alone (that’s API `priority`); picking GPU vs CPU node pools at K8s layer | Measuring RSS; replacing cgroup metrics |
-| **Planned policies** | `lru-idle` (pure runtime LRU) and `resource-evict` (FaasCache / GreedyDual-Size), combined with sticky resume | `semantic-opportunistic`, workflow-aware scoring (names TBD) |
+| **Planned policies** | `lru-idle` / `resource-evict` (implemented) | `semantic-score` (implemented; L3 classifier optional) — [semantic-score.md](./semantic-score.md) |
 | **Literature bucket** | FaasCache, IceBreaker, Incendio (keep-alive / priority under cold start) | Crab (wait windows), Agentix/SAGA/HexAGenT (session/workflow), smetric (session routing) — see [../research/literature.md](../research/literature.md) |
 
 ## Resource plugin (traditional serverless)
@@ -82,8 +82,8 @@ Producers: Worker `ApplyPush`; control plane `RecordCheckpoint` / `RecordRestore
 
 **What policies consume:**
 
-- **Eviction filters:** e.g. do not select victims in `tool_exec` unless starvation override.
-- **Opportunistic suspend:** prefer victims in `waiting_external` or long `idle` when semantic + resource agree.
+- **Eviction filters:** e.g. do not select victims in `tool_loop` unless starvation override (SAAR-style hard lock).
+- **Opportunistic suspend:** prefer victims in `llm_wait` or long `idle` when semantic + resource agree (Crab-style wait windows).
 - **Resume ordering:** boost sandboxes with near deadline or active workflow step (works with API `priority`).
 
 **Trust and versioning:** Semantic payloads should be **typed, versioned**, and rate-limited. v0 can be best-effort (eval harness only); production may require signed reports or sidecar-only injection.
@@ -111,7 +111,7 @@ Many OSS projects use **semantic** in the name but solve a **different layer** t
 **Actordock sandbox semantic plugin:**
 
 - Sits on the **control plane** scheduling hot path: signals attach to **`sandboxID`**, not to a single HTTP request ID.
-- Similar *labels* (e.g. `waiting_external`, `tool_exec`, workflow step) may appear in both systems, but here they drive **whether to Suspend**, **who to evict**, and **resume ordering**—not **which LLM endpoint** serves the next token.
+- Similar *labels* (e.g. `llm_wait`, `tool_loop`, workflow step) may appear in both systems, but here they drive **whether to Suspend**, **who to evict**, and **resume ordering**—not **which LLM endpoint** serves the next token.
 - State is **whole sandbox memory + filesystem**; moving work is **Pause/Suspend + rustfs**, with metrics like `preempt_cost`, `cross_worker`, `resume_path`—not merely cache miss on one model.
 
 **aurelio-labs/semantic-router** is another layer again: a **library** for fast vector-based **tool/route choice inside the agent app**, not cluster slot allocation.
@@ -149,6 +149,7 @@ Router and Actordock can **align** without merging code: e.g. gateway session `p
 ## Related
 
 - [scheduling.md](./scheduling.md) — policy hook and snapshot rules
+- [semantic-score.md](./semantic-score.md) — planned agent-semantic Place/Evict policy
 - [../research/baselines.md](../research/baselines.md) — `lru-idle` / `priority-static` targets
 - [../research/metrics.md](../research/metrics.md) — eval KPIs (including per priority class)
 - [../research/literature.md](../research/literature.md) — papers and nearby systems (incl. inference semantic routers)

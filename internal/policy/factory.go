@@ -16,7 +16,9 @@ func New(name string) (Policy, error) {
 		return NewLRUIdle(), nil
 	case "resource-evict":
 		return NewResourceEvict(), nil
+	case "semantic-score":
+		return NewSemanticScore(), nil
 	default:
-		return nil, fmt.Errorf("unknown policy %q (want random|fifo|lru-idle|resource-evict)", name)
+		return nil, fmt.Errorf("unknown policy %q (want random|fifo|lru-idle|resource-evict|semantic-score)", name)
 	}
 }

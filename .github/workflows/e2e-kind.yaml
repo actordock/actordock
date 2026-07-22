@@ -39,7 +39,7 @@ jobs:
       - name: Create cluster and deploy
         env:
           KIND_CLUSTER_NAME: actordock-functional
-          POLICY: fifo
+          POLICY: semantic-score
         run: |
           chmod +x hack/*.sh
           ./hack/kind-up.sh
@@ -73,7 +73,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        policy: [fifo, random, lru-idle, resource-evict]
+        policy: [fifo, random, lru-idle, resource-evict, semantic-score]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

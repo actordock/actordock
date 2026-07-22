@@ -5,9 +5,12 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -260,45 +263,8 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 	}
 	prevWorkerID := sb.WorkerID
 
-	workers, err := s.healthyWorkers(ctx)
-	if err != nil {
-		return types.Sandbox{}, err
-	}
-	running, err := s.running(ctx)
-	if err != nil {
-		return types.Sandbox{}, err
-	}
-
-	if sb.State == types.SandboxPaused {
-		sticky, ok := workerByID(workers, sb.WorkerID)
-		if !ok {
-			return types.Sandbox{}, fmt.Errorf("paused sandbox requires sticky worker %s", sb.WorkerID)
-		}
-		workers = []types.Worker{sticky}
-		running = filterRunningOn(running, sb.WorkerID)
-	} else if sb.SnapshotSource == types.SnapshotLocal && sb.WorkerID != "" {
-		if sticky, ok := workerByID(workers, sb.WorkerID); ok && sticky.FreeSlots() > 0 {
-			if exists, err := s.workers.LocalSnapshotExists(ctx, sticky.Address, sb.LocalSnapshotPath); err == nil && exists {
-				workers = []types.Worker{sticky}
-				running = filterRunningOn(running, sb.WorkerID)
-			}
-		}
-	} else if sb.WorkerID != "" && sb.SnapshotSource == types.SnapshotExternal {
-		if sticky, ok := workerByID(workers, sb.WorkerID); ok && sticky.FreeSlots() > 0 {
-			if exists, err := s.workers.LocalSnapshotExists(ctx, sticky.Address, sb.LocalSnapshotPath); err == nil && exists {
-				workers = []types.Worker{sticky}
-				running = filterRunningOn(running, sb.WorkerID)
-			}
-		}
-	}
-
 	decStart := time.Now()
-	now := decStart
-	sandboxSig, workerSig := s.signalViews(now)
-	res, err := s.policy.Resume(ctx, policy.ResumeRequest{
-		Sandbox: sb, Workers: workers, Running: running,
-		SandboxSignals: sandboxSig, WorkerSignals: workerSig,
-	})
+	res, err := s.resumePolicyDecide(ctx, sb)
 	s.metrics.RecordDecisionLatency(ctx, time.Since(decStart))
 	if err != nil {
 		s.metrics.RecordDecision(ctx, "resume", "error", err.Error())
@@ -369,7 +335,7 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 		s.signals.RecordRestore(id, time.Now().UTC(), time.Since(restoreStart), time.Now().UTC())
 	}
 
-	now = time.Now().UTC()
+	now := time.Now().UTC()
 	sb.State = types.SandboxRunning
 	sb.WorkerID = w.ID
 	sb.LocalSnapshotPath = localPath
@@ -378,6 +344,9 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 		return types.Sandbox{}, err
 	}
 	s.metrics.MarkRunning(ctx, id, w.ID, now)
+	if s.signals != nil {
+		s.signals.MarkRunning(id, now)
+	}
 	s.metrics.RecordResumePath(ctx, path)
 	s.metrics.RecordResumeLatency(ctx, path, time.Since(resumeStart))
 	s.logDecision(types.Decision{
@@ -447,6 +416,9 @@ func (s *Scheduler) pauseOrSuspend(ctx context.Context, id string, upload bool) 
 		return types.Sandbox{}, err
 	}
 	s.metrics.MarkSlotFreed(ctx, id, w.ID, now)
+	if upload && s.signals != nil {
+		s.signals.MarkSuspended(id, now)
+	}
 	action := "pause"
 	if upload {
 		action = "suspend"
@@ -510,4 +482,86 @@ func filterRunningOn(running []types.Sandbox, workerID string) []types.Sandbox {
 		}
 	}
 	return out
+}
+
+// resumePolicyDecide asks POLICY for a Worker (and optional victim). When every
+// running peer is tool_loop/lock and SEMANTIC_OVERRIDE is off, wait and retry
+// until a slot frees or SEMANTIC_WAIT_SEC elapses (default 120s; 0 = no wait).
+func (s *Scheduler) resumePolicyDecide(ctx context.Context, sb types.Sandbox) (policy.PlaceResult, error) {
+	wait := semanticWaitDuration()
+	deadline := time.Now().Add(wait)
+	var lastErr error
+	for {
+		workers, running, err := s.resumeCandidates(ctx, sb)
+		if err != nil {
+			return policy.PlaceResult{}, err
+		}
+		now := time.Now().UTC()
+		sandboxSig, workerSig := s.signalViews(now)
+		res, err := s.policy.Resume(ctx, policy.ResumeRequest{
+			Sandbox: sb, Workers: workers, Running: running,
+			SandboxSignals: sandboxSig, WorkerSignals: workerSig,
+		})
+		if err == nil {
+			return res, nil
+		}
+		lastErr = err
+		if !errors.Is(err, policy.ErrAllSemanticLocked) || wait <= 0 {
+			return policy.PlaceResult{}, err
+		}
+		if time.Now().After(deadline) {
+			return policy.PlaceResult{}, fmt.Errorf("%w (waited %s)", lastErr, wait)
+		}
+		s.log.Info("resume waiting: all peers tool_loop/lock", "sandboxID", sb.ID)
+		select {
+		case <-ctx.Done():
+			return policy.PlaceResult{}, ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
+func (s *Scheduler) resumeCandidates(ctx context.Context, sb types.Sandbox) ([]types.Worker, []types.Sandbox, error) {
+	workers, err := s.healthyWorkers(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	running, err := s.running(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	if sb.State == types.SandboxPaused {
+		sticky, ok := workerByID(workers, sb.WorkerID)
+		if !ok {
+			return nil, nil, fmt.Errorf("paused sandbox requires sticky worker %s", sb.WorkerID)
+		}
+		return []types.Worker{sticky}, filterRunningOn(running, sb.WorkerID), nil
+	}
+	if sb.SnapshotSource == types.SnapshotLocal && sb.WorkerID != "" {
+		if sticky, ok := workerByID(workers, sb.WorkerID); ok && sticky.FreeSlots() > 0 {
+			if exists, err := s.workers.LocalSnapshotExists(ctx, sticky.Address, sb.LocalSnapshotPath); err == nil && exists {
+				return []types.Worker{sticky}, filterRunningOn(running, sb.WorkerID), nil
+			}
+		}
+	} else if sb.WorkerID != "" && sb.SnapshotSource == types.SnapshotExternal {
+		if sticky, ok := workerByID(workers, sb.WorkerID); ok && sticky.FreeSlots() > 0 {
+			if exists, err := s.workers.LocalSnapshotExists(ctx, sticky.Address, sb.LocalSnapshotPath); err == nil && exists {
+				return []types.Worker{sticky}, filterRunningOn(running, sb.WorkerID), nil
+			}
+		}
+	}
+	return workers, running, nil
+}
+
+func semanticWaitDuration() time.Duration {
+	v := os.Getenv("SEMANTIC_WAIT_SEC")
+	if v == "" {
+		return 120 * time.Second
+	}
+	sec, err := strconv.Atoi(v)
+	if err != nil || sec < 0 {
+		return 120 * time.Second
+	}
+	return time.Duration(sec) * time.Second
 }

@@ -62,6 +62,37 @@ func TestStoreCheckpointPreservesRuntime(t *testing.T) {
 	}
 }
 
+func TestApplySemanticAndAttainedWait(t *testing.T) {
+	st := NewStore(30 * time.Second)
+	now := time.Now().UTC()
+	st.ApplySemantic(SemanticPush{
+		SandboxID: "s1",
+		Semantic:  SemanticResource{Phase: PhaseToolLoop, Lock: true},
+	}, now)
+	sig, ok := st.GetSandbox("s1", now)
+	if !ok {
+		t.Fatal("missing after semantic")
+	}
+	if sig.Semantic.Phase != PhaseToolLoop || !sig.Semantic.Lock {
+		t.Fatalf("semantic=%+v", sig.Semantic)
+	}
+
+	st.MarkRunning("s1", now)
+	st.MarkSuspended("s1", now.Add(10*time.Second))
+	sig, ok = st.GetSandbox("s1", now.Add(10*time.Second))
+	if !ok {
+		t.Fatal("missing after suspend mark")
+	}
+	if sig.Semantic.AttainedServiceSec < 9.5 {
+		t.Fatalf("attained=%v want ~10", sig.Semantic.AttainedServiceSec)
+	}
+	st.MarkRunning("s1", now.Add(20*time.Second))
+	sig, _ = st.GetSandbox("s1", now.Add(20*time.Second))
+	if sig.Semantic.WaitSec < 9.5 {
+		t.Fatalf("wait=%v want ~10", sig.Semantic.WaitSec)
+	}
+}
+
 func TestGDSOnEvictAdvancesClock(t *testing.T) {
 	st := NewStore(30 * time.Second)
 	now := time.Now()

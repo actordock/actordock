@@ -19,11 +19,11 @@ import (
 func TestScheduleOversubscribeEvicts(t *testing.T) {
 	ctx := context.Background()
 	h := harness.New(t)
-	h.WaitWorkers(ctx, harness.EnvInt("MIN_WORKERS", 4))
+	h.WaitWorkers(ctx, harness.EnvInt("MIN_WORKERS", 2))
 	h.WaitGolden(ctx)
 
-	n := harness.EnvInt("SANDBOX_COUNT", 5)
-	maxRunning := harness.EnvInt("MAX_RUNNING", 4)
+	n := harness.EnvInt("SANDBOX_COUNT", 3)
+	maxRunning := harness.EnvInt("MAX_RUNNING", 2)
 
 	ids := make([]string, 0, n)
 	for i := 0; i < n; i++ {
@@ -95,7 +95,7 @@ func TestPauseStickyToSameWorker(t *testing.T) {
 func TestSuspendMigratesOffOrigin(t *testing.T) {
 	ctx := context.Background()
 	h := harness.New(t)
-	h.WaitWorkers(ctx, harness.EnvInt("MIN_WORKERS", 4))
+	h.WaitWorkers(ctx, harness.EnvInt("MIN_WORKERS", 2))
 	h.WaitGolden(ctx)
 
 	sb := h.CreateSandbox(ctx)

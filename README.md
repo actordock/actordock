@@ -12,3 +12,5 @@ Actordock multiplexes idle agent sandboxes onto a warm Worker pool (gVisor suspe
 ```
 
 Design & research docs: [docs/](./docs/). E2E: [e2e/](./e2e/).
+
+DeepSeek agent demo (sandbox `run_code` + semantic traces): [demos/agent-llm-multiplex/](./demos/agent-llm-multiplex/).

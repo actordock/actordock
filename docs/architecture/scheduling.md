@@ -1,6 +1,6 @@
 # Scheduling (platform view)
 
-Status: v1 with Pause/Suspend + `fifo` / `random` / `lru-idle` / `resource-evict`.
+Status: v1 with Pause/Suspend + `fifo` / `random` / `lru-idle` / `resource-evict` / `semantic-score` (design: [semantic-score.md](./semantic-score.md)).
 
 Hard constraint: placement/eviction *mechanics* (1 running sandbox per Worker, sticky Pause, portable Suspend) follow Substrate. Inventiveness belongs in pluggable **policies** and research metrics—not in inventing a different density model without studying Substrate first.
 
@@ -25,6 +25,7 @@ Eviction under Worker pressure uses **Suspend** so victims stay portable.
 | `random` | Random idle Worker | Random running |
 | `lru-idle` | Least-loaded idle Worker | Longest `runtime.lastActiveAt` idle (pure LRU) |
 | `resource-evict` | Least-loaded idle Worker | Lowest FaasCache / **GreedyDual-Size** keep-alive `H` |
+| `semantic-score` | Least-loaded idle Worker | Agent-semantic `keepScore` after phase-lock filter — see [semantic-score.md](./semantic-score.md) |
 
 Policy chooses **which Worker**; it does not co-locate multiple agents on one Worker.
 
@@ -60,4 +61,5 @@ See [signal-plugins.md](./signal-plugins.md) for the three signal objects and pr
 ## Related
 
 - [signal-plugins.md](./signal-plugins.md)
+- [semantic-score.md](./semantic-score.md) — planned agent-semantic policy
 - [../decisions/0003-pause-suspend-rustfs.md](../decisions/0003-pause-suspend-rustfs.md)

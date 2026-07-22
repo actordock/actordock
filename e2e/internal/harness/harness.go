@@ -240,6 +240,22 @@ func (h *Harness) Resume(ctx context.Context, id string) types.Sandbox {
 	return sb
 }
 
+// TryResume returns HTTP status and body without failing the test on 4xx/5xx.
+func (h *Harness) TryResume(ctx context.Context, id string) (int, string) {
+	h.t.Helper()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.API+"/v1/sandboxes/"+id+"/resume", nil)
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	resp, err := h.Client.Do(req)
+	if err != nil {
+		h.t.Fatalf("resume %s: %v", id, err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(bytes.TrimSpace(raw))
+}
+
 func (h *Harness) Exec(ctx context.Context, id string, argv ...string) string {
 	h.t.Helper()
 	var out struct {
@@ -327,20 +343,7 @@ func (h *Harness) Policy(ctx context.Context) string {
 // SetPolicy restarts controlplane with POLICY=<name> and waits until /v1/policy matches.
 func (h *Harness) SetPolicy(ctx context.Context, name string) {
 	h.t.Helper()
-	ns := EnvOr("ACTORDOCK_NAMESPACE", "actordock")
-	set := exec.CommandContext(ctx, "kubectl", "-n", ns, "set", "env", "deployment/controlplane", "POLICY="+name)
-	if out, err := set.CombinedOutput(); err != nil {
-		h.t.Fatalf("set policy %s: %v: %s", name, err, out)
-	}
-	roll := exec.CommandContext(ctx, "kubectl", "-n", ns, "rollout", "status", "deployment/controlplane", "--timeout=180s")
-	if out, err := roll.CombinedOutput(); err != nil {
-		h.t.Fatalf("rollout controlplane: %v: %s", err, out)
-	}
-	h.close()
-	h.pfCmd = nil
-	if err := h.ensureAPI(ctx); err != nil {
-		h.t.Fatalf("api after policy change: %v", err)
-	}
+	h.SetControlplaneEnv(ctx, "POLICY="+name)
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		if h.Policy(ctx) == name {
@@ -350,6 +353,29 @@ func (h *Harness) SetPolicy(ctx context.Context, name string) {
 		time.Sleep(time.Second)
 	}
 	h.t.Fatalf("policy still %q, want %q", h.Policy(ctx), name)
+}
+
+// SetControlplaneEnv sets env on deployment/controlplane and waits for rollout.
+func (h *Harness) SetControlplaneEnv(ctx context.Context, envPairs ...string) {
+	h.t.Helper()
+	if len(envPairs) == 0 {
+		return
+	}
+	ns := EnvOr("ACTORDOCK_NAMESPACE", "actordock")
+	args := append([]string{"-n", ns, "set", "env", "deployment/controlplane"}, envPairs...)
+	set := exec.CommandContext(ctx, "kubectl", args...)
+	if out, err := set.CombinedOutput(); err != nil {
+		h.t.Fatalf("set env %v: %v: %s", envPairs, err, out)
+	}
+	roll := exec.CommandContext(ctx, "kubectl", "-n", ns, "rollout", "status", "deployment/controlplane", "--timeout=180s")
+	if out, err := roll.CombinedOutput(); err != nil {
+		h.t.Fatalf("rollout controlplane: %v: %s", err, out)
+	}
+	h.close()
+	h.pfCmd = nil
+	if err := h.ensureAPI(ctx); err != nil {
+		h.t.Fatalf("api after env change: %v", err)
+	}
 }
 
 func (h *Harness) FetchMetrics(ctx context.Context) string {
@@ -385,6 +411,18 @@ func (h *Harness) GetSandboxSignals(ctx context.Context, id string) signals.Sand
 	var sig signals.SandboxSignals
 	h.DoJSON(ctx, http.MethodGet, "/v1/signals/sandboxes/"+id, nil, &sig)
 	return sig
+}
+
+// PostSemantic posts a simulated agent L1 heartbeat (no real LLM).
+func (h *Harness) PostSemantic(ctx context.Context, sandboxID, phase string, lock bool) {
+	h.t.Helper()
+	h.DoJSON(ctx, http.MethodPost, "/v1/signals/semantic", signals.SemanticPush{
+		SandboxID: sandboxID,
+		Semantic: signals.SemanticResource{
+			Phase: phase,
+			Lock:  lock,
+		},
+	}, nil)
 }
 
 func (h *Harness) ListWorkerSignals(ctx context.Context) []signals.WorkerResource {

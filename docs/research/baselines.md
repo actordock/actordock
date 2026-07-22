@@ -10,6 +10,6 @@ Policies to beat or contextualize. Implement as named, versioned strategies behi
 | `least-loaded` | Pack by current Worker load only | No semantics |
 | `locality-sticky` | Prefer last Worker / local snapshot | Highlights resume locality |
 
-Proposed research policies (names TBD) should cite which baselines they improve on which metrics.
+Proposed research policies (e.g. [`semantic-score`](../architecture/semantic-score.md)) should cite which baselines they improve on which metrics.
 
 Add/remove rows as literature survey suggests standard peers (see [literature.md](./literature.md)).

@@ -26,7 +26,7 @@ func main() {
 
 	addr := env("LISTEN_ADDR", ":8080")
 	redisAddr := env("REDIS_ADDR", "127.0.0.1:6379")
-	policyName := env("POLICY", "fifo")
+	policyName := env("POLICY", "semantic-score")
 	snapRoot := env("SNAPSHOT_ROOT", "/var/lib/actordock/snapshots")
 
 	pol, err := policy.New(policyName)

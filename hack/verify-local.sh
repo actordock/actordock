@@ -30,7 +30,7 @@ case "${SUITE}" in
     run_pkg ./e2e/functional/ "${TIMEOUT}"
     ;;
   eval)
-    # EVAL_POLICY=fifo|random|lru-idle|resource-evict runs one policy (CI matrix).
+    # EVAL_POLICY=fifo|random|lru-idle|resource-evict|semantic-score runs one policy (CI matrix).
     # Unset runs all four sequentially (local). Writes EVAL_OUT_DIR/policy_compare*.md.
     EVAL_RUN="${EVAL_TEST_RUN:-TestEvalAllPolicies}"
     echo "==> go test ./e2e/eval/ -tags=e2e -run ${EVAL_RUN} EVAL_POLICY=${EVAL_POLICY:-ALL}"

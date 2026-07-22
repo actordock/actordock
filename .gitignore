@@ -7,6 +7,13 @@ bin/
 .DS_Store
 .buildstamp
 
+# Demo local artifacts
+demos/agent-llm-multiplex/traces/
+demos/agent-llm-multiplex/.venv/
+demos/agent-llm-multiplex/.env
+__pycache__/
+*.pyc
+
 # Generated eval artifacts (keep README.md)
 docs/eval/results/*.md
 !docs/eval/results/README.md

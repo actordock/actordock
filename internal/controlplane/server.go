@@ -56,6 +56,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/workers/register", s.registerWorker)
 	mux.HandleFunc("GET /v1/workers", s.listWorkers)
 	mux.HandleFunc("POST /v1/signals/resource", s.postResourceSignals)
+	mux.HandleFunc("POST /v1/signals/semantic", s.postSemanticSignals)
 	mux.HandleFunc("GET /v1/signals/sandboxes", s.listSandboxSignals)
 	mux.HandleFunc("GET /v1/signals/sandboxes/{id}", s.getSandboxSignals)
 	mux.HandleFunc("GET /v1/signals/workers", s.listWorkerSignals)
@@ -222,6 +223,24 @@ func (s *Server) postResourceSignals(w http.ResponseWriter, r *http.Request) {
 		req.Worker.ReportedAt = now
 	}
 	s.signals.ApplyPush(req, now)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) postSemanticSignals(w http.ResponseWriter, r *http.Request) {
+	if s.signals == nil {
+		http.Error(w, "signals disabled", http.StatusServiceUnavailable)
+		return
+	}
+	var req signals.SemanticPush
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.SandboxID == "" {
+		http.Error(w, "sandboxID required", http.StatusBadRequest)
+		return
+	}
+	s.signals.ApplySemantic(req, time.Now().UTC())
 	w.WriteHeader(http.StatusNoContent)
 }
 

@@ -57,10 +57,10 @@ func TestPlaceFifoUsesFreeWorker(t *testing.T) {
 	placeOnFreeWorker(t, h, ctx, "fifo")
 }
 
-func TestPlaceRandomUsesFreeWorker(t *testing.T) {
+func TestPlaceSemanticScoreUsesFreeWorker(t *testing.T) {
 	ctx := context.Background()
 	h := harness.New(t)
 	h.WaitWorkers(ctx, harness.EnvInt("MIN_WORKERS", 2))
 	h.WaitGolden(ctx)
-	placeOnFreeWorker(t, h, ctx, "random")
+	placeOnFreeWorker(t, h, ctx, "semantic-score")
 }

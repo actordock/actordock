@@ -77,7 +77,7 @@ spec:
             - name: REDIS_ADDR
               value: redis:6379
             - name: POLICY
-              value: "fifo"
+              value: "semantic-score"
             - name: SIGNAL_TTL
               value: "30s"
             - name: SNAPSHOT_ROOT
@@ -112,7 +112,7 @@ metadata:
   namespace: actordock
 spec:
   serviceName: worker
-  replicas: 4
+  replicas: 2
   selector:
     matchLabels:
       app: worker

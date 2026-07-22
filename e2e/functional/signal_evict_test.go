@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/actordock/actordock/e2e/internal/harness"
+	"github.com/actordock/actordock/internal/signals"
 	"github.com/actordock/actordock/internal/types"
 )
 
@@ -180,4 +181,70 @@ func TestPolicyRandomEvictsUnderContention(t *testing.T) {
 		t.Fatal("random: expected new sandbox running after eviction")
 	}
 	t.Logf("random victim=%s new=%s", victim, third)
+}
+
+// TestPolicySemanticScoreSparesToolLoop: fake agent phases — tool_loop kept, llm_wait evicted.
+func TestPolicySemanticScoreSparesToolLoop(t *testing.T) {
+	ctx := context.Background()
+	h := harness.New(t)
+	h.WaitWorkers(ctx, harness.EnvInt("MIN_WORKERS", 2))
+	h.WaitGolden(ctx)
+	h.SetPolicy(ctx, "semantic-score")
+	h.WaitGolden(ctx)
+
+	filled := fillAllWorkers(t, h, ctx)
+	if len(filled) < 2 {
+		t.Fatalf("need >=2 running sandboxes, got %d", len(filled))
+	}
+	protected := filled[0].ID
+	h.PostSemantic(ctx, protected, signals.PhaseToolLoop, true)
+	for _, sb := range filled[1:] {
+		h.PostSemantic(ctx, sb.ID, signals.PhaseLLMWait, false)
+	}
+
+	_ = resumeForcesEvict(t, h, ctx)
+	victim := findSuspendedVictim(t, h, ctx, candidateSet(filled))
+	if victim == protected {
+		t.Fatalf("semantic-score victim=%s should spare tool_loop %s", victim, protected)
+	}
+	t.Logf("semantic-score spared tool_loop=%s victim=%s", protected, victim)
+}
+
+// TestPolicySemanticScoreRejectsWhenAllLocked: override off + SEMANTIC_WAIT_SEC=0 → Resume fails.
+func TestPolicySemanticScoreRejectsWhenAllLocked(t *testing.T) {
+	ctx := context.Background()
+	h := harness.New(t)
+	h.WaitWorkers(ctx, harness.EnvInt("MIN_WORKERS", 2))
+	h.WaitGolden(ctx)
+	h.SetControlplaneEnv(ctx, "POLICY=semantic-score", "SEMANTIC_WAIT_SEC=0")
+	deadline := time.Now().Add(60 * time.Second)
+	for time.Now().Before(deadline) {
+		if h.Policy(ctx) == "semantic-score" {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if h.Policy(ctx) != "semantic-score" {
+		t.Fatalf("policy=%q want semantic-score", h.Policy(ctx))
+	}
+	h.CleanupSandboxes(ctx)
+	h.WaitGolden(ctx)
+
+	filled := fillAllWorkers(t, h, ctx)
+	for _, sb := range filled {
+		h.PostSemantic(ctx, sb.ID, signals.PhaseToolLoop, true)
+	}
+
+	sb := h.CreateSandbox(ctx)
+	code, body := h.TryResume(ctx, sb.ID)
+	if code < 400 {
+		t.Fatalf("resume with all tool_loop locked: status=%d body=%s want 4xx (wait=0)", code, body)
+	}
+	for _, f := range filled {
+		cur := h.GetSandbox(ctx, f.ID)
+		if cur.State != types.SandboxRunning {
+			t.Fatalf("locked sandbox %s state=%s want still running", f.ID, cur.State)
+		}
+	}
+	t.Logf("semantic-score rejected resume status=%d body=%s", code, body)
 }
