@@ -10,8 +10,10 @@ Baseline policies (random / resource-evict):
 
 semantic-score (+ l1 ablation):
   Create (suspended) → llm_wait locally (heartbeat, no slot) →
-  tool_loop: Resume (knock/queue) → run → keep slot (no proactive Suspend);
-  unlocked llm_wait may be stolen by outside knockers via CP scores → …
+  tool_loop: Resume (knock/queue) → run → keep slot (never self-Suspend);
+  unlocked llm_wait may be stolen by outside knockers via CP scores →
+  only eviction archives; final cleanup deletes leftovers
+
 
 
 Compares policies via /metrics deltas (mid_tool_suspend, starvation wait, resume_wait, …)
@@ -770,9 +772,9 @@ def drive_phases_semantic(
     """semantic-score path: llm_wait needs no slot until a Worker is held;
     tool_loop knocks via Resume.
 
-    After tool we do **not** Suspend. We stay on the Worker into later spans
-    (typically unlocked llm_wait) so outside knockers + CP keepScore can steal.
-    Session-end Suspend is only cleanup if still holding.
+    Never self-Suspend: after tool we keep the Worker; unlocked llm_wait is
+    how outside knockers steal (single archive on eviction). Leftovers are
+    removed by policy-end cleanup_sandboxes.
     """
     if not spans:
         spans = [{"phase": "idle", "lock": False, "t_start_ms": 0, "t_end_ms": 500}]
@@ -801,10 +803,9 @@ def drive_phases_semantic(
             )
             if dur > 0:
                 time.sleep(dur)
-            # Keep the slot; no proactive Suspend — waiters may steal on llm_wait.
         else:
-            # llm_wait / idle: if never took a slot, stay off-Worker.
-            # If still holding after tool, unlock + heartbeat; knockers may steal.
+            # llm_wait / idle: heartbeat only. If holding a slot, stay unlocked
+            # so knockers can preempt — do not Suspend ourselves.
             client.post_semantic(
                 sandbox_id,
                 {
@@ -820,8 +821,18 @@ def drive_phases_semantic(
                 st = _sandbox_state(client, sandbox_id)
                 if st != "running":
                     on_worker = False
+    # End of spans: still no Suspend. Leave unlocked so others can steal, or
+    # stay running until run_policy cleanup deletes the sandbox.
     if on_worker:
-        _try_suspend(client, sandbox_id, sandbox_locks, locks_mu)
+        client.post_semantic(
+            sandbox_id,
+            {
+                "version": "v1",
+                "phase": "idle",
+                "lock": False,
+                "workflowID": workflow_id,
+            },
+        )
     return resume_sec
 
 
@@ -900,6 +911,8 @@ def run_one_session(
                 l3,
             )
             job.resumed = True
+            # Eviction may have Suspended us; never self-Suspend.
+            job.suspended = _sandbox_state(client, job.sandbox_id) == "suspended"
         else:
             log(f"[session {index+1}/{total}] resume {job.sandbox_id[:8]}…")
             job.resume_sec = l3.resume_and_observe(client, job.sandbox_id)
@@ -914,13 +927,17 @@ def run_one_session(
                 sandbox_locks,
                 locks_mu,
             )
-        job.suspended = True
+            job.suspended = True
         log(f"[session {index+1}/{total}] done {sid_label}")
     except Exception as e:  # noqa: BLE001 — per-session errors collected in report
         job.error = f"{sid_label}: {e}"
         log(f"[session] FAIL {job.error}")
-        if job.sandbox_id:
-            _try_suspend(client, job.sandbox_id, sandbox_locks, locks_mu)
+        # Baseline may still try a best-effort Suspend; semantic never self-Suspends.
+        if job.sandbox_id and not semantic_slots:
+            try:
+                _try_suspend(client, job.sandbox_id, sandbox_locks, locks_mu)
+            except RuntimeError:
+                pass
     finally:
         if held:
             inflight.release()

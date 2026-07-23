@@ -520,13 +520,20 @@ func (s *Scheduler) ensureKnockerTurn(sb types.Sandbox) error {
 }
 
 func (s *Scheduler) Pause(ctx context.Context, id string) (types.Sandbox, error) {
+	s.knockMu.Lock()
+	defer s.knockMu.Unlock()
 	return s.pauseOrSuspend(ctx, id, false)
 }
 
 func (s *Scheduler) Suspend(ctx context.Context, id string) (types.Sandbox, error) {
-	return s.suspendLocked(ctx, id)
+	// Serialize with Resume eviction so the same sandbox is checkpointed once.
+	s.knockMu.Lock()
+	defer s.knockMu.Unlock()
+	return s.pauseOrSuspend(ctx, id, true)
 }
 
+// suspendLocked checkpoints a running sandbox. Caller must hold knockMu
+// (Resume knocker path) so voluntary Suspend and eviction cannot race.
 func (s *Scheduler) suspendLocked(ctx context.Context, id string) (types.Sandbox, error) {
 	return s.pauseOrSuspend(ctx, id, true)
 }
