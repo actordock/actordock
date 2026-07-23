@@ -40,13 +40,13 @@ type Scheduler struct {
 
 	goldenMu sync.Mutex
 
-	// resumeWaiters tracks sandboxes blocked in Resume (continuous knockers).
-	// Used by semantic-score to admit only the highest-score waiter.
-	resumeWaitMu sync.Mutex
+	// resumeWaiters tracks sandboxes blocked in Resume (candidates to knock).
+	// Under semantic-score only the highest keepScore waiter may knock at a time.
+	resumeWaitMu  sync.Mutex
 	resumeWaiters map[string]types.Sandbox
 
-	// decideMu serializes one Place/Resume admission decision at a time.
-	decideMu sync.Mutex
+	// knockMu serializes the single active knocker's Place/Evict/Restore.
+	knockMu sync.Mutex
 }
 
 func New(st store.Store, pol policy.Policy, snapRoot string, log *slog.Logger, m *metrics.Metrics, sig *signals.Store) *Scheduler {
@@ -279,6 +279,11 @@ func (s *Scheduler) EnsureGolden(ctx context.Context) (string, error) {
 }
 
 // Resume restores from Latest (external/local) or Golden onto an idle Worker.
+//
+// Under semantic-score, all callers register as waiters and periodically re-rank;
+// only the highest keepScore waiter holds knockMu and keeps knocking (Place/Evict)
+// until admitted or timed out. Other policies share knockMu so only one checkpoint
+// runs at a time, but any waiter may become the knocker (arrival order / lock).
 func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error) {
 	resumeStart := time.Now()
 	sb, err := s.store.GetSandbox(ctx, id)
@@ -293,98 +298,225 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 	s.addResumeWaiter(sb)
 	defer s.removeResumeWaiter(id)
 
+	wait := semanticWaitDuration()
+	deadline := time.Now().Add(wait)
+	var lastErr error
+	enteredSemanticWait := false
 	decStart := time.Now()
-	res, err := s.resumePolicyDecide(ctx, sb)
-	s.metrics.RecordDecisionLatency(ctx, time.Since(decStart))
-	if err != nil {
-		s.metrics.RecordDecision(ctx, "resume", "error", err.Error())
-		return types.Sandbox{}, err
-	}
-	if res.VictimID != "" {
-		evictStart := time.Now()
-		phase, lock := s.victimPhaseLock(res.VictimID)
-		if s.signals != nil {
-			s.signals.OnEvict(res.VictimID)
-		}
-		if _, err := s.suspendLocked(ctx, res.VictimID); err != nil {
-			s.metrics.RecordDecision(ctx, "evict", "error", err.Error())
-			return types.Sandbox{}, fmt.Errorf("evict %s: %w", res.VictimID, err)
-		}
-		s.metrics.RecordEviction(ctx, res.Reason, phase, lock)
-		s.metrics.RecordPreemptCost(ctx, time.Since(evictStart))
-		s.metrics.RecordDecision(ctx, "evict", "ok", res.Reason)
-	}
-	w, err := s.store.GetWorker(ctx, res.WorkerID)
-	if err != nil {
-		return types.Sandbox{}, err
-	}
 
-	objectKey := sb.ObjectKey
-	localPath := sb.LocalSnapshotPath
-	localOnly := false
-	usedGolden := false
-	switch {
-	case sb.State == types.SandboxPaused || sb.SnapshotSource == types.SnapshotLocal:
-		if localPath == "" {
-			localPath = s.localPath(w.ID, id)
+	for {
+		if cur, err := s.store.GetSandbox(ctx, id); err == nil {
+			sb = cur
+			s.addResumeWaiter(sb)
 		}
-		objectKey = "" // local only
-		localOnly = true
-	case sb.SnapshotSource == types.SnapshotExternal && objectKey != "":
-		if localPath == "" || w.ID != sb.WorkerID {
-			localPath = s.localPath(w.ID, id)
-		}
-	default:
-		// First resume (or no latest): Golden.
-		g, err := s.EnsureGolden(ctx)
-		if err != nil {
+
+		// semantic-score: sit in the lobby until we are the top-ranked waiter.
+		if err := s.awaitKnockerTurn(ctx, sb, deadline); err != nil {
+			s.metrics.RecordDecision(ctx, "resume", "error", err.Error())
 			return types.Sandbox{}, err
 		}
-		objectKey = g
-		localPath = s.localPath(w.ID, id)
-		usedGolden = true
-	}
 
-	path := metrics.ClassifyResumePath(prevWorkerID, w.ID, localOnly, objectKey, usedGolden)
-	action := "migrate"
-	switch path {
-	case metrics.PathStickyLocal:
-		action = "sticky"
-	case metrics.PathGoldenCold:
-		action = "place"
-	}
-	s.metrics.RecordDecision(ctx, action, "ok", res.Reason)
-	s.metrics.RecordResumeWait(ctx, time.Since(resumeStart))
+		// Single knocker: hold through decide + evict + restore.
+		s.knockMu.Lock()
+		if cur, err := s.store.GetSandbox(ctx, id); err == nil {
+			sb = cur
+			s.addResumeWaiter(sb)
+		}
+		if err := s.ensureKnockerTurn(sb); err != nil {
+			s.knockMu.Unlock()
+			if errors.Is(err, policy.ErrNotBestWaiter) {
+				select {
+				case <-ctx.Done():
+					return types.Sandbox{}, ctx.Err()
+				case <-time.After(200 * time.Millisecond):
+				}
+				continue
+			}
+			s.metrics.RecordDecision(ctx, "resume", "error", err.Error())
+			return types.Sandbox{}, err
+		}
 
-	opts := workerclient.RestoreOpts{ImagePath: localPath, ObjectKey: objectKey}
-	restoreStart := time.Now()
-	if err := s.workers.Restore(ctx, w.Address, id, opts); err != nil {
-		return types.Sandbox{}, err
-	}
-	s.metrics.RecordRestoreLatency(ctx, path, time.Since(restoreStart))
-	if s.signals != nil {
-		s.signals.RecordRestore(id, time.Now().UTC(), time.Since(restoreStart), time.Now().UTC())
-	}
+		workers, running, err := s.resumeCandidates(ctx, sb)
+		if err != nil {
+			s.knockMu.Unlock()
+			s.metrics.RecordDecision(ctx, "resume", "error", err.Error())
+			return types.Sandbox{}, err
+		}
+		now := time.Now().UTC()
+		sandboxSig, workerSig := s.signalViews(now)
+		res, err := s.policy.Resume(ctx, policy.ResumeRequest{
+			Sandbox: sb, Workers: workers, Running: running,
+			SandboxSignals: sandboxSig, WorkerSignals: workerSig,
+			Waiting: s.listResumeWaiters(),
+		})
+		if err != nil {
+			lastErr = err
+			s.knockMu.Unlock()
+			if !resumeRetryable(err) || wait <= 0 {
+				s.metrics.RecordDecision(ctx, "resume", "error", err.Error())
+				return types.Sandbox{}, err
+			}
+			if errors.Is(err, policy.ErrAllSemanticLocked) && !enteredSemanticWait {
+				enteredSemanticWait = true
+				s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationEnter)
+			}
+			if time.Now().After(deadline) {
+				if enteredSemanticWait {
+					s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationTimeout)
+				}
+				out := fmt.Errorf("%w (waited %s)", lastErr, wait)
+				s.metrics.RecordDecision(ctx, "resume", "error", out.Error())
+				return types.Sandbox{}, out
+			}
+			s.log.Info("resume knocker retrying",
+				"sandboxID", sb.ID,
+				"err", err.Error(),
+				"running", len(running),
+				"workers", len(workers),
+				"waiters", len(s.listResumeWaiters()),
+			)
+			select {
+			case <-ctx.Done():
+				return types.Sandbox{}, ctx.Err()
+			case <-time.After(200 * time.Millisecond):
+			}
+			continue // still the knocker if top-ranked — keep knocking
+		}
 
+		if enteredSemanticWait {
+			s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationResolved)
+		}
+		s.metrics.RecordDecisionLatency(ctx, time.Since(decStart))
+
+		if res.VictimID != "" {
+			evictStart := time.Now()
+			phase, lock := s.victimPhaseLock(res.VictimID)
+			if s.signals != nil {
+				s.signals.OnEvict(res.VictimID)
+			}
+			if _, err := s.suspendLocked(ctx, res.VictimID); err != nil {
+				s.knockMu.Unlock()
+				s.metrics.RecordDecision(ctx, "evict", "error", err.Error())
+				return types.Sandbox{}, fmt.Errorf("evict %s: %w", res.VictimID, err)
+			}
+			s.metrics.RecordEviction(ctx, res.Reason, phase, lock)
+			s.metrics.RecordPreemptCost(ctx, time.Since(evictStart))
+			s.metrics.RecordDecision(ctx, "evict", "ok", res.Reason)
+		}
+		w, err := s.store.GetWorker(ctx, res.WorkerID)
+		if err != nil {
+			s.knockMu.Unlock()
+			return types.Sandbox{}, err
+		}
+
+		objectKey := sb.ObjectKey
+		localPath := sb.LocalSnapshotPath
+		localOnly := false
+		usedGolden := false
+		switch {
+		case sb.State == types.SandboxPaused || sb.SnapshotSource == types.SnapshotLocal:
+			if localPath == "" {
+				localPath = s.localPath(w.ID, id)
+			}
+			objectKey = ""
+			localOnly = true
+		case sb.SnapshotSource == types.SnapshotExternal && objectKey != "":
+			if localPath == "" || w.ID != sb.WorkerID {
+				localPath = s.localPath(w.ID, id)
+			}
+		default:
+			g, err := s.EnsureGolden(ctx)
+			if err != nil {
+				s.knockMu.Unlock()
+				return types.Sandbox{}, err
+			}
+			objectKey = g
+			localPath = s.localPath(w.ID, id)
+			usedGolden = true
+		}
+
+		path := metrics.ClassifyResumePath(prevWorkerID, w.ID, localOnly, objectKey, usedGolden)
+		action := "migrate"
+		switch path {
+		case metrics.PathStickyLocal:
+			action = "sticky"
+		case metrics.PathGoldenCold:
+			action = "place"
+		}
+		s.metrics.RecordDecision(ctx, action, "ok", res.Reason)
+		s.metrics.RecordResumeWait(ctx, time.Since(resumeStart))
+
+		opts := workerclient.RestoreOpts{ImagePath: localPath, ObjectKey: objectKey}
+		restoreStart := time.Now()
+		if err := s.workers.Restore(ctx, w.Address, id, opts); err != nil {
+			s.knockMu.Unlock()
+			return types.Sandbox{}, err
+		}
+		s.metrics.RecordRestoreLatency(ctx, path, time.Since(restoreStart))
+		if s.signals != nil {
+			s.signals.RecordRestore(id, time.Now().UTC(), time.Since(restoreStart), time.Now().UTC())
+		}
+
+		now = time.Now().UTC()
+		sb.State = types.SandboxRunning
+		sb.WorkerID = w.ID
+		sb.LocalSnapshotPath = localPath
+		sb.UpdatedAt = now
+		if err := s.store.PutSandbox(ctx, sb); err != nil {
+			s.knockMu.Unlock()
+			return types.Sandbox{}, err
+		}
+		s.metrics.MarkRunning(ctx, id, w.ID, now)
+		if s.signals != nil {
+			s.signals.MarkRunning(id, now)
+		}
+		s.metrics.RecordResumePath(ctx, path)
+		s.metrics.RecordResumeLatency(ctx, path, time.Since(resumeStart))
+		s.logDecision(types.Decision{
+			Policy: s.policy.Name(), Action: "resume",
+			SandboxID: id, WorkerID: w.ID, VictimID: res.VictimID, Reason: res.Reason,
+		})
+		s.knockMu.Unlock()
+		return sb, nil
+	}
+}
+
+// awaitKnockerTurn blocks until this sandbox should be the single knocker
+// (always immediate for non-semantic policies).
+func (s *Scheduler) awaitKnockerTurn(ctx context.Context, sb types.Sandbox, deadline time.Time) error {
+	for {
+		if err := s.ensureKnockerTurn(sb); err == nil {
+			return nil
+		} else if !errors.Is(err, policy.ErrNotBestWaiter) {
+			return err
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%w (waited %s)", policy.ErrNotBestWaiter, semanticWaitDuration())
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+		if cur, err := s.store.GetSandbox(ctx, sb.ID); err == nil {
+			sb = cur
+			s.addResumeWaiter(sb)
+		}
+	}
+}
+
+func (s *Scheduler) ensureKnockerTurn(sb types.Sandbox) error {
+	ss, ok := s.policy.(*policy.SemanticScore)
+	if !ok {
+		return nil
+	}
 	now := time.Now().UTC()
-	sb.State = types.SandboxRunning
-	sb.WorkerID = w.ID
-	sb.LocalSnapshotPath = localPath
-	sb.UpdatedAt = now
-	if err := s.store.PutSandbox(ctx, sb); err != nil {
-		return types.Sandbox{}, err
-	}
-	s.metrics.MarkRunning(ctx, id, w.ID, now)
-	if s.signals != nil {
-		s.signals.MarkRunning(id, now)
-	}
-	s.metrics.RecordResumePath(ctx, path)
-	s.metrics.RecordResumeLatency(ctx, path, time.Since(resumeStart))
-	s.logDecision(types.Decision{
-		Policy: s.policy.Name(), Action: "resume",
-		SandboxID: id, WorkerID: w.ID, VictimID: res.VictimID, Reason: res.Reason,
+	sandboxSig, _ := s.signalViews(now)
+	return ss.RequireBestWaiter(policy.ResumeRequest{
+		Sandbox:        sb,
+		SandboxSignals: sandboxSig,
+		Waiting:        s.listResumeWaiters(),
 	})
-	return sb, nil
 }
 
 func (s *Scheduler) Pause(ctx context.Context, id string) (types.Sandbox, error) {
@@ -515,113 +647,7 @@ func filterRunningOn(running []types.Sandbox, workerID string) []types.Sandbox {
 	return out
 }
 
-// resumePolicyDecide asks POLICY for a Worker (and optional victim).
-// Retryable Place/Resume failures wait up to SEMANTIC_WAIT_SEC (default 120s; 0 = no wait):
-//   - ErrAllSemanticLocked (all tool_loop/lock)
-//   - ErrNotBestWaiter (another knocker has higher semantic score)
-//   - "nothing to suspend" (slots held but no Running victim yet, e.g. mid-restore)
-//   - "busy (checkpoint)" (all victims checkpointing)
-//
-// All policies share this wait; only the Place decision differs per policy.
-func (s *Scheduler) resumePolicyDecide(ctx context.Context, sb types.Sandbox) (policy.PlaceResult, error) {
-	wait := semanticWaitDuration()
-	deadline := time.Now().Add(wait)
-	var lastErr error
-	enteredSemanticWait := false
-	for {
-		s.decideMu.Lock()
-		// Refresh waiter snapshot (CreatedAt / signals may matter for ranking).
-		if cur, err := s.store.GetSandbox(ctx, sb.ID); err == nil {
-			sb = cur
-			s.addResumeWaiter(sb)
-		}
-		workers, running, err := s.resumeCandidates(ctx, sb)
-		if err != nil {
-			s.decideMu.Unlock()
-			return policy.PlaceResult{}, err
-		}
-		now := time.Now().UTC()
-		sandboxSig, workerSig := s.signalViews(now)
-		res, err := s.policy.Resume(ctx, policy.ResumeRequest{
-			Sandbox: sb, Workers: workers, Running: running,
-			SandboxSignals: sandboxSig, WorkerSignals: workerSig,
-			Waiting: s.listResumeWaiters(),
-		})
-		s.decideMu.Unlock()
-		if err == nil {
-			if enteredSemanticWait {
-				s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationResolved)
-			}
-			return res, nil
-		}
-		lastErr = err
-		if !resumeRetryable(err) || wait <= 0 {
-			return policy.PlaceResult{}, err
-		}
-		if errors.Is(err, policy.ErrAllSemanticLocked) && !enteredSemanticWait {
-			enteredSemanticWait = true
-			s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationEnter)
-		}
-		if time.Now().After(deadline) {
-			if enteredSemanticWait {
-				s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationTimeout)
-			}
-			return policy.PlaceResult{}, fmt.Errorf("%w (waited %s)", lastErr, wait)
-		}
-		s.log.Info("resume waiting for capacity",
-			"sandboxID", sb.ID,
-			"err", err.Error(),
-			"running", len(running),
-			"workers", len(workers),
-			"waiters", len(s.listResumeWaiters()),
-		)
-		select {
-		case <-ctx.Done():
-			return policy.PlaceResult{}, ctx.Err()
-		case <-time.After(200 * time.Millisecond):
-		}
-	}
-}
-
-func (s *Scheduler) addResumeWaiter(sb types.Sandbox) {
-	s.resumeWaitMu.Lock()
-	defer s.resumeWaitMu.Unlock()
-	if s.resumeWaiters == nil {
-		s.resumeWaiters = make(map[string]types.Sandbox)
-	}
-	s.resumeWaiters[sb.ID] = sb
-}
-
-func (s *Scheduler) removeResumeWaiter(id string) {
-	s.resumeWaitMu.Lock()
-	defer s.resumeWaitMu.Unlock()
-	delete(s.resumeWaiters, id)
-}
-
-func (s *Scheduler) listResumeWaiters() []types.Sandbox {
-	s.resumeWaitMu.Lock()
-	defer s.resumeWaitMu.Unlock()
-	out := make([]types.Sandbox, 0, len(s.resumeWaiters))
-	for _, sb := range s.resumeWaiters {
-		out = append(out, sb)
-	}
-	return out
-}
-
-// resumeRetryable reports Place/Resume errors that should block Resume until
-// a slot frees or a victim becomes eligible (shared across policies).
-func resumeRetryable(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, policy.ErrAllSemanticLocked) || errors.Is(err, policy.ErrNotBestWaiter) {
-		return true
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "nothing to suspend") ||
-		strings.Contains(msg, "busy (checkpoint)")
-}
-
+// resumeCandidates builds the Worker/Running views for a Resume decision.
 func (s *Scheduler) resumeCandidates(ctx context.Context, sb types.Sandbox) ([]types.Worker, []types.Sandbox, error) {
 	workers, err := s.healthyWorkers(ctx)
 	if err != nil {
@@ -653,6 +679,44 @@ func (s *Scheduler) resumeCandidates(ctx context.Context, sb types.Sandbox) ([]t
 		}
 	}
 	return workers, running, nil
+}
+
+func (s *Scheduler) addResumeWaiter(sb types.Sandbox) {
+	s.resumeWaitMu.Lock()
+	defer s.resumeWaitMu.Unlock()
+	if s.resumeWaiters == nil {
+		s.resumeWaiters = make(map[string]types.Sandbox)
+	}
+	s.resumeWaiters[sb.ID] = sb
+}
+
+func (s *Scheduler) removeResumeWaiter(id string) {
+	s.resumeWaitMu.Lock()
+	defer s.resumeWaitMu.Unlock()
+	delete(s.resumeWaiters, id)
+}
+
+func (s *Scheduler) listResumeWaiters() []types.Sandbox {
+	s.resumeWaitMu.Lock()
+	defer s.resumeWaitMu.Unlock()
+	out := make([]types.Sandbox, 0, len(s.resumeWaiters))
+	for _, sb := range s.resumeWaiters {
+		out = append(out, sb)
+	}
+	return out
+}
+
+// resumeRetryable reports Place/Resume errors that should keep the knocker retrying.
+func resumeRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, policy.ErrAllSemanticLocked) || errors.Is(err, policy.ErrNotBestWaiter) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "nothing to suspend") ||
+		strings.Contains(msg, "busy (checkpoint)")
 }
 
 func semanticWaitDuration() time.Duration {

@@ -20,8 +20,8 @@ import (
 // The scheduler may wait and retry Resume until a slot frees.
 var ErrAllSemanticLocked = errors.New("semantic-score: all candidates locked and override disabled")
 
-// ErrNotBestWaiter means another Resume knocker has a higher admit keepScore.
-// The scheduler retries until this sandbox becomes the best waiter (continuous knock).
+// ErrNotBestWaiter means another Resume waiter has a higher admit keepScore.
+// The caller stays in the lobby (does not Place/Evict) until it becomes top-ranked.
 var ErrNotBestWaiter = errors.New("semantic-score: not highest-score Resume waiter")
 
 // SemanticScore places onto the least-loaded idle Worker; when full, suspends the
@@ -76,18 +76,19 @@ func (p *SemanticScore) Place(_ context.Context, req PlaceRequest) (PlaceResult,
 }
 
 func (p *SemanticScore) Resume(ctx context.Context, req ResumeRequest) (PlaceResult, error) {
+	// Rank waiters first: only the top score may sticky-place or preempt.
+	if err := p.RequireBestWaiter(req); err != nil {
+		return PlaceResult{}, err
+	}
 	if res, ok := tryStickyResume(req, "semantic-score: sticky resume to last idle worker"); ok {
 		return res, nil
-	}
-	// Among concurrent knockers, only the highest keepScore may take an idle
-	// slot or preempt (typically llm_wait). Others keep knocking.
-	if err := p.requireBestWaiter(req); err != nil {
-		return PlaceResult{}, err
 	}
 	return p.Place(ctx, placeFromResume(req))
 }
 
-func (p *SemanticScore) requireBestWaiter(req ResumeRequest) error {
+// RequireBestWaiter returns ErrNotBestWaiter unless req.Sandbox has the highest
+// admit keepScore among Waiting (continuous single-knocker ranking).
+func (p *SemanticScore) RequireBestWaiter(req ResumeRequest) error {
 	if len(req.Waiting) == 0 {
 		return nil
 	}
