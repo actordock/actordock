@@ -99,7 +99,7 @@ jobs:
           KIND_CLUSTER_NAME: actordock-eval-${{ matrix.policy }}
           E2E_SUITE: eval
           E2E_TIMEOUT: 30m
-          MIN_WORKERS: "4"
+          MIN_WORKERS: "2"
           EVAL_POLICY: ${{ matrix.policy }}
           EVAL_OUT_DIR: docs/eval/results
         run: |
