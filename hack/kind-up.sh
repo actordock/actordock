@@ -33,7 +33,7 @@ echo "==> load into kind"
 kind load docker-image actordock/controlplane:dev --name "${CLUSTER_NAME}"
 kind load docker-image actordock/worker:dev --name "${CLUSTER_NAME}"
 
-echo "==> deploy rustfs + actordock (POLICY=${POLICY})"
+echo "==> deploy rustfs + actordock (POLICY=${POLICY}${SEMANTIC_PRIOR_MIX:+ PRIOR_MIX=${SEMANTIC_PRIOR_MIX}})"
 kubectl apply -f "${ROOT}/manifests/kind/rustfs.yaml"
 kubectl -n actordock rollout status deploy/rustfs --timeout=180s
 # Recreate bucket-init job so re-runs are idempotent.
@@ -42,7 +42,11 @@ kubectl apply -f "${ROOT}/manifests/kind/rustfs.yaml"
 kubectl -n actordock wait --for=condition=complete job/rustfs-bucket-init --timeout=180s
 
 kubectl apply -f "${ROOT}/manifests/kind/actordock.yaml"
-kubectl -n actordock set env deployment/controlplane POLICY="${POLICY}"
+CP_ENV=(POLICY="${POLICY}")
+if [[ -n "${SEMANTIC_PRIOR_MIX:-}" ]]; then
+  CP_ENV+=("SEMANTIC_PRIOR_MIX=${SEMANTIC_PRIOR_MIX}")
+fi
+kubectl -n actordock set env deployment/controlplane "${CP_ENV[@]}"
 # Ensure pods pick up freshly loaded images.
 kubectl -n actordock rollout restart deployment/controlplane deployment/redis
 kubectl -n actordock rollout restart statefulset/worker

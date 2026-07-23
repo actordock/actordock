@@ -32,9 +32,9 @@ Each dataset version directory should include:
 - Metrics table aligned with `docs/research/metrics.md`
 - Optional: raw decision logs for debugging
 
-CI job `e2e-eval` runs `E2E_SUITE=agent-semantic`: 8 agents / 2 workers on
-`datasets/agent-semantic@v2`; policies
-`random,resource-evict,semantic-score-l1,semantic-score` (L3 ablation);
-artifact `agent-semantic-policy-compare`.
+CI job `e2e-eval` runs `E2E_SUITE=agent-semantic` in a **matrix** (one Kind cluster per
+policy: `random`, `resource-evict`, `semantic-score-l1`, `semantic-score`);
+Primary view: GitHub Actions **Summary** tab (full compare table + per-policy metrics).
+Artifacts remain as optional archive.
 
 Do not commit huge binary checkpoints here; link or use Git LFS if needed.

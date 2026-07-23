@@ -198,7 +198,7 @@ Refuse to publish the package if:
 |------|------|-----|
 | **A. Live Kind replay** | Primary claim for Actordock | Port-forward CP; for each policy, Create/Resume sandboxes on `arrival_ts` schedule; drive agent (or phase-faithful stub) from `tool_trace`; POST L1/L3 signals; collect `/metrics` + victim logs |
 | **B. Offline decision replay** | Fast ablation of keepScore | Feed cached signals + arrivals into a Place/Evict simulator that embeds `semantic-score` / baselines; no gVisor | 
-| **C. CI agent-semantic** | PR / main Kind job | `E2E_SUITE=agent-semantic`: 8 agents / 2 workers; ablation matrix (random, resource-evict, semantic-score-l1, semantic-score) |
+| **C. CI agent-semantic** | PR / main Kind job | Matrix: one cluster per policy (`random`, `resource-evict`, `semantic-score-l1`, `semantic-score`); merge job builds compare table |
 
 Primary paper/demo numbers should come from **Mode A** (or A+B agreement).
 

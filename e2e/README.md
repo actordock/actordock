@@ -23,7 +23,7 @@ E2E_SUITE=agent-semantic ./hack/verify-local.sh  # dataset policy compare
 E2E_SUITE=all ./hack/verify-local.sh             # both
 ```
 
-CI: **functional** + **e2e-eval** (`random` / `resource-evict` / `semantic-score-l1` / `semantic-score`).
+CI: **functional** + **e2e-eval** matrix (`random` / `resource-evict` / `semantic-score-l1` / `semantic-score` in parallel) + merge compare.
 
 ## Functional suite
 
@@ -54,5 +54,5 @@ CI: **functional** + **e2e-eval** (`random` / `resource-evict` / `semantic-score
 
 `semantic-score-l1` = L1 lock only (`SEMANTIC_PRIOR_MIX=0`); `semantic-score` = L1+L3 (`0.3`).
 
-Outputs `docs/eval/results/agent_semantic_v2__*.json` + `policy_compare_agent_semantic_v2.md`.
+Outputs also appear on the Actions **Summary** tab (Job Summary); artifacts are optional archive only.
 Gate: every policy `sessions_failed=0`.

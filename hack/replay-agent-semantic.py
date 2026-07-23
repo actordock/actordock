@@ -37,7 +37,7 @@ import urllib.error
 import urllib.request
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dc_fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -923,6 +923,42 @@ def run_policy(
     return result
 
 
+def load_policy_result(path: Path) -> PolicyResult:
+    raw = json.loads(path.read_text())
+    allowed = {f.name for f in dc_fields(PolicyResult)}
+    return PolicyResult(**{k: v for k, v in raw.items() if k in allowed})
+
+
+COMPARE_ORDER = (
+    "random",
+    "resource-evict",
+    "semantic-score-l1",
+    "semantic-score",
+    "fifo",
+    "lru-idle",
+)
+
+
+def merge_results_dir(out: Path) -> Path:
+    """Load agent_semantic_v2__*.json under out and write policy_compare markdown."""
+    files = sorted(out.glob("agent_semantic_v2__*.json"))
+    if not files:
+        raise SystemExit(f"no agent_semantic_v2__*.json under {out}")
+    by_label = {p.stem.replace("agent_semantic_v2__", "", 1): load_policy_result(p) for p in files}
+    ordered: list[PolicyResult] = []
+    seen: set[str] = set()
+    for label in COMPARE_ORDER:
+        if label in by_label:
+            ordered.append(by_label[label])
+            seen.add(label)
+    for label, res in sorted(by_label.items()):
+        if label not in seen:
+            ordered.append(res)
+    compare = out / "policy_compare_agent_semantic_v2.md"
+    write_compare(ordered, compare)
+    return compare
+
+
 def write_compare(results: list[PolicyResult], path: Path) -> None:
     lines = [
         "# agent-semantic policy compare",
@@ -1018,7 +1054,19 @@ def main() -> None:
     ap.add_argument("--resume-timeout", type=float, default=300.0)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
     ap.add_argument("--dry-run", action="store_true", help="Load dataset only")
+    ap.add_argument(
+        "--merge-only",
+        action="store_true",
+        help="Only merge agent_semantic_v2__*.json under --out into policy_compare markdown",
+    )
     args = ap.parse_args()
+
+    if args.merge_only:
+        args.out.mkdir(parents=True, exist_ok=True)
+        compare = merge_results_dir(args.out)
+        log(f"[merge] {compare}")
+        sys.stdout.write(compare.read_text())
+        return
 
     sessions_path = args.dataset / "sessions.jsonl"
     if not sessions_path.exists():

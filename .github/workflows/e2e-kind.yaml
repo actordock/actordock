@@ -67,10 +67,31 @@ jobs:
           KIND_CLUSTER_NAME: actordock-functional
         run: ./hack/kind-down.sh || true
 
-  # agent-semantic@v2 ablation: random | resource-evict | semantic L1 | semantic L1+L3
+  # Parallel ablation: one Kind cluster per policy variant (no mid-run POLICY switch).
   e2e-eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: random
+            policy: random
+            prior_mix: ""
+            cluster: actordock-eval-random
+          - label: resource-evict
+            policy: resource-evict
+            prior_mix: ""
+            cluster: actordock-eval-re
+          - label: semantic-score-l1
+            policy: semantic-score
+            prior_mix: "0"
+            cluster: actordock-eval-l1
+          - label: semantic-score
+            policy: semantic-score
+            prior_mix: "0.3"
+            cluster: actordock-eval-full
+    name: e2e-eval (${{ matrix.label }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -88,15 +109,16 @@ jobs:
 
       - name: Create cluster and deploy
         env:
-          KIND_CLUSTER_NAME: actordock-eval
-          POLICY: fifo
+          KIND_CLUSTER_NAME: ${{ matrix.cluster }}
+          POLICY: ${{ matrix.policy }}
+          SEMANTIC_PRIOR_MIX: ${{ matrix.prior_mix }}
         run: |
           chmod +x hack/*.sh hack/replay-agent-semantic.py
           ./hack/kind-up.sh
 
-      - name: Agent-semantic ablation (8 agents / 2 workers)
+      - name: Agent-semantic replay (8 agents / 2 workers)
         env:
-          KIND_CLUSTER_NAME: actordock-eval
+          KIND_CLUSTER_NAME: ${{ matrix.cluster }}
           E2E_SUITE: agent-semantic
           ACTORDOCK_API: http://127.0.0.1:18080
           EVAL_OUT_DIR: docs/eval/results
@@ -105,10 +127,135 @@ jobs:
           AGENT_SEMANTIC_MIN_WORKERS: "2"
           AGENT_SEMANTIC_SPEED: "60"
           AGENT_SEMANTIC_MIN_LOCK: "0.25"
-          AGENT_SEMANTIC_POLICIES: "random,resource-evict,semantic-score-l1,semantic-score"
+          AGENT_SEMANTIC_POLICIES: ${{ matrix.label }}
+          AGENT_SEMANTIC_SWITCH_POLICY: "0"
         run: ./hack/verify-local.sh
 
-      - name: Upload agent-semantic results
+      - name: Publish policy summary on Actions page
+        if: success() || failure()
+        env:
+          LABEL: ${{ matrix.label }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          label = os.environ["LABEL"]
+          out = Path(os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null"))
+          p = Path(f"docs/eval/results/agent_semantic_v2__{label}.json")
+          lines = [f"## agent-semantic `{label}`", ""]
+          if not p.exists():
+              lines += [f"_missing {p}_", ""]
+          else:
+              r = json.loads(p.read_text())
+              lines += [
+                  "| metric | value |",
+                  "|--------|------:|",
+                  f"| sessions ok/fail | {r.get('sessions_ok')}/{r.get('sessions_failed')} |",
+                  f"| mid_tool | {r.get('mid_tool_suspend', 0)} |",
+                  f"| mid_tool_rate | {float(r.get('mid_tool_rate') or 0):.2f} |",
+                  f"| suspend | {r.get('suspend_total', 0)} |",
+                  f"| hard_rate | {float(r.get('victim_l3_hard_rate') or 0):.2f} |",
+                  f"| vic_hard / vic_easy | {r.get('victim_l3_hard', 0)} / {r.get('victim_l3_easy', 0)} |",
+                  f"| resume_hard_s / resume_easy_s | {float(r.get('resume_sec_l3_hard') or 0):.3f} / {float(r.get('resume_sec_l3_easy') or 0):.3f} |",
+                  f"| victim_cx | {float(r.get('victim_complexity_mean') or 0):.3f} |",
+                  f"| resume_wait_s | {float(r.get('resume_wait_mean_s') or 0):.3f} |",
+                  f"| wall_s | {float(r.get('wall_sec') or 0):.1f} |",
+                  "",
+                  f"victims=`{r.get('victim_by_cohort')}`",
+                  "",
+              ]
+          out.write_text("\n".join(lines) + "\n")
+          print("".join(line + "\n" for line in lines))
+          PY
+
+      - name: Upload policy result
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-semantic-${{ matrix.label }}
+          path: docs/eval/results/agent_semantic_v2__${{ matrix.label }}.json
+          if-no-files-found: warn
+
+      - name: Dump on failure
+        if: failure()
+        run: |
+          kubectl --context kind-${{ matrix.cluster }} -n actordock get pods -o wide || true
+          kubectl --context kind-${{ matrix.cluster }} -n actordock describe pods || true
+          kubectl --context kind-${{ matrix.cluster }} -n actordock logs deploy/controlplane --all-containers=true || true
+          kubectl --context kind-${{ matrix.cluster }} -n actordock logs statefulset/worker --all-containers=true || true
+
+      - name: Teardown
+        if: always()
+        env:
+          KIND_CLUSTER_NAME: ${{ matrix.cluster }}
+        run: ./hack/kind-down.sh || true
+
+  e2e-eval-merge:
+    runs-on: ubuntu-latest
+    needs: e2e-eval
+    if: always() && !cancelled()
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download policy artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: agent-semantic-*
+          path: docs/eval/results/parts
+          merge-multiple: true
+
+      - name: Merge compare table + gate
+        env:
+          EVAL_OUT_DIR: docs/eval/results
+        run: |
+          chmod +x hack/replay-agent-semantic.py
+          mkdir -p docs/eval/results
+          # Flatten downloaded JSONs into results/
+          find docs/eval/results/parts -name 'agent_semantic_v2__*.json' -exec cp -f {} docs/eval/results/ \;
+          ls -la docs/eval/results/agent_semantic_v2__*.json
+          python3 hack/replay-agent-semantic.py --merge-only --out docs/eval/results
+          python3 - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          out = Path("docs/eval/results")
+          want = ["random", "resource-evict", "semantic-score-l1", "semantic-score"]
+          failed = []
+          missing = []
+          for label in want:
+              p = out / f"agent_semantic_v2__{label}.json"
+              if not p.exists():
+                  missing.append(label)
+                  continue
+              r = json.loads(p.read_text())
+              if int(r.get("sessions_failed") or 0) != 0 or int(r.get("sessions_ok") or 0) <= 0:
+                  failed.append(f"{p.name}: ok={r.get('sessions_ok')} fail={r.get('sessions_failed')}")
+          compare = out / "policy_compare_agent_semantic_v2.md"
+          if not compare.exists():
+              sys.exit("missing policy_compare_agent_semantic_v2.md")
+          body = compare.read_text()
+          print(body)
+          # Show full compare on the Actions run Summary tab (no artifact download needed).
+          summary = Path(os.environ.get("GITHUB_STEP_SUMMARY", ""))
+          if str(summary):
+              with summary.open("a", encoding="utf-8") as f:
+                  f.write(body)
+                  if missing:
+                      f.write("\n\n**MISSING:** " + ", ".join(missing) + "\n")
+                  if failed:
+                      f.write("\n\n**FAILED:**\n\n- " + "\n- ".join(failed) + "\n")
+          if missing:
+              print("MISSING:", ", ".join(missing))
+              sys.exit(1)
+          if failed:
+              print("FAILED:", *failed, sep="\n  ")
+              sys.exit(1)
+          print(f"ok: {len(want)} policy report(s)")
+          PY
+
+      - name: Upload merged compare (optional archive)
         if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
@@ -117,17 +264,3 @@ jobs:
             docs/eval/results/policy_compare_agent_semantic_v2.md
             docs/eval/results/agent_semantic_v2__*.json
           if-no-files-found: warn
-
-      - name: Dump on failure
-        if: failure()
-        run: |
-          kubectl --context kind-actordock-eval -n actordock get pods -o wide || true
-          kubectl --context kind-actordock-eval -n actordock describe pods || true
-          kubectl --context kind-actordock-eval -n actordock logs deploy/controlplane --all-containers=true || true
-          kubectl --context kind-actordock-eval -n actordock logs statefulset/worker --all-containers=true || true
-
-      - name: Teardown
-        if: always()
-        env:
-          KIND_CLUSTER_NAME: actordock-eval
-        run: ./hack/kind-down.sh || true

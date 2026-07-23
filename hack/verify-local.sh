@@ -58,12 +58,26 @@ run_agent_semantic() {
   ensure_api_pf
   mkdir -p "${EVAL_OUT_DIR}"
   chmod +x "${ROOT}/hack/replay-agent-semantic.py"
-  echo "==> agent-semantic replay limit=${AGENT_SEMANTIC_LIMIT} inflight=${AGENT_SEMANTIC_INFLIGHT} policies=${AGENT_SEMANTIC_POLICIES}"
+  SWITCH_ARGS=()
+  # Default: switch when multiple policies; CI matrix sets AGENT_SEMANTIC_SWITCH_POLICY=0.
+  switch="${AGENT_SEMANTIC_SWITCH_POLICY:-}"
+  if [[ -z "${switch}" ]]; then
+    IFS=',' read -r -a _pols <<< "${AGENT_SEMANTIC_POLICIES}"
+    if ((${#_pols[@]} > 1)); then
+      switch=1
+    else
+      switch=0
+    fi
+  fi
+  if [[ "${switch}" == "1" || "${switch}" == "true" ]]; then
+    SWITCH_ARGS=(--switch-policy)
+  fi
+  echo "==> agent-semantic replay limit=${AGENT_SEMANTIC_LIMIT} inflight=${AGENT_SEMANTIC_INFLIGHT} policies=${AGENT_SEMANTIC_POLICIES} switch=${switch}"
   python3 "${ROOT}/hack/replay-agent-semantic.py" \
     --api "${ACTORDOCK_API}" \
     --dataset "${AGENT_SEMANTIC_DATASET}" \
     --policies "${AGENT_SEMANTIC_POLICIES}" \
-    --switch-policy \
+    "${SWITCH_ARGS[@]}" \
     --namespace "${ACTORDOCK_NAMESPACE}" \
     --min-workers "${AGENT_SEMANTIC_MIN_WORKERS}" \
     --max-inflight "${AGENT_SEMANTIC_INFLIGHT}" \
