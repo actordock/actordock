@@ -196,10 +196,11 @@ func urgency(sem signals.SemanticResource, priorMix, embedAlpha float64, now tim
 func urgencyOnline(sem signals.SemanticResource, now time.Time) float64 {
 	if sem.Deadline != nil && !sem.Deadline.IsZero() {
 		sec := sem.Deadline.Sub(now).Seconds()
-		if sec < 1e-3 {
-			sec = 1e-3
+		if sec < 0 {
+			sec = 0
 		}
-		return 1.0 / sec
+		// Maps remaining time → [0,1]: due now ⇒ 1, far ⇒ ~0.
+		return 1.0 / (1.0 + sec)
 	}
 	return 0
 }
@@ -209,32 +210,17 @@ func urgencyPrior(sem signals.SemanticResource, embedAlpha float64) float64 {
 		return 0
 	}
 	tp := sem.TaskProfile
-	// SR continuous signal → [0,1] contribution: clamp(0.5 + signal).
+	// SR continuous signal → [0,1]: clamp(0.5 + signal).
 	complexity := 0.0
 	if tp.ComplexitySignal != nil {
-		complexity = 0.5 + *tp.ComplexitySignal
-		if complexity < 0 {
-			complexity = 0
-		}
-		if complexity > 1 {
-			complexity = 1
-		}
+		complexity = clamp01(0.5 + *tp.ComplexitySignal)
 	}
-	sim := tp.EmbeddingSim
-	if sim < 0 {
-		sim = 0
-	}
-	if sim > 1 {
-		sim = 1
-	}
+	sim := clamp01(tp.EmbeddingSim)
 	if embedAlpha < 0 {
 		embedAlpha = 0
 	}
-	prior := complexity + embedAlpha*sim
-	if prior <= 0 {
-		return 0
-	}
-	return prior
+	// Keep prior on the same [0,1] scale as other keepScore terms.
+	return clamp01(complexity + embedAlpha*sim)
 }
 
 func fairness(sem signals.SemanticResource) float64 {
@@ -246,15 +232,33 @@ func fairness(sem signals.SemanticResource) float64 {
 	if wait < 0 {
 		wait = 0
 	}
-	return wait / (1 + att)
+	r := wait / (1 + att) // raw ratio, unbounded
+	// Soft map [0,∞) → [0,1): 0→0, 1→0.5, ∞→1.
+	return 1.0 - 1.0/(1.0+r)
 }
 
+// preemptHRef is the KeepAliveH / snapshot-cost scale that maps to ~1.0 after normalize.
+const preemptHRef = 1e6
+
 func normalizePreempt(h float64) float64 {
-	if h <= 0 || math.IsInf(h, 1) {
+	if h <= 0 {
+		return 0
+	}
+	if math.IsInf(h, 1) {
 		return 1
 	}
-	// Soft compress so large H does not dominate phase/urgency weights.
-	return math.Log1p(h)
+	// log1p(H) / log1p(H_ref) ∈ (0,1] for H ≤ H_ref; clamp above.
+	return clamp01(math.Log1p(h) / math.Log1p(preemptHRef))
+}
+
+func clamp01(x float64) float64 {
+	if x < 0 {
+		return 0
+	}
+	if x > 1 {
+		return 1
+	}
+	return x
 }
 
 func envFloat(k string, def float64) float64 {

@@ -177,3 +177,65 @@ func TestSemanticScorePrefersKickLowWaitHighAttained(t *testing.T) {
 		t.Fatalf("victim=%q want hog (low fairness)", res.VictimID)
 	}
 }
+
+func TestSemanticScoreKeepsNearDeadlineOverFar(t *testing.T) {
+	p := policy.NewSemanticScore()
+	now := time.Now()
+	p.Now = func() time.Time { return now }
+	near := now.Add(2 * time.Second)
+	far := now.Add(2 * time.Hour)
+	workers := []types.Worker{
+		{ID: "w1", MaxSlots: 1, UsedSlots: 1, Healthy: true, RegisteredAt: now},
+	}
+	running := []types.Sandbox{
+		{ID: "far", WorkerID: "w1", State: types.SandboxRunning, CreatedAt: now.Add(-time.Hour)},
+		{ID: "near", WorkerID: "w1", State: types.SandboxRunning, CreatedAt: now},
+	}
+	sandboxSig := map[string]signals.SandboxSignals{
+		"far": {SandboxID: "far", Semantic: signals.SemanticResource{
+			Phase: signals.PhaseLLMWait, Deadline: &far,
+		}},
+		"near": {SandboxID: "near", Semantic: signals.SemanticResource{
+			Phase: signals.PhaseLLMWait, Deadline: &near,
+		}},
+	}
+	res, err := p.Place(context.Background(), policy.PlaceRequest{
+		SandboxID: "new", Workers: workers, Running: running, SandboxSignals: sandboxSig,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.VictimID != "far" {
+		t.Fatalf("victim=%q want far (lower urgency_online)", res.VictimID)
+	}
+}
+
+func TestSemanticScoreHugePreemptCostDoesNotBeatToolLoopFilter(t *testing.T) {
+	// Unlocked idle with tiny H vs locked tool_loop with huge H: still kick idle.
+	p := policy.NewSemanticScore()
+	now := time.Now()
+	workers := []types.Worker{
+		{ID: "w1", MaxSlots: 1, UsedSlots: 1, Healthy: true, RegisteredAt: now},
+	}
+	running := []types.Sandbox{
+		{ID: "tool", WorkerID: "w1", State: types.SandboxRunning, CreatedAt: now.Add(-time.Hour)},
+		{ID: "idle", WorkerID: "w1", State: types.SandboxRunning, CreatedAt: now},
+	}
+	sandboxSig := map[string]signals.SandboxSignals{
+		"tool": {SandboxID: "tool", KeepAliveH: 1e18, Semantic: signals.SemanticResource{
+			Phase: signals.PhaseToolLoop, Lock: true,
+		}},
+		"idle": {SandboxID: "idle", KeepAliveH: 1, Semantic: signals.SemanticResource{
+			Phase: signals.PhaseIdle,
+		}},
+	}
+	res, err := p.Place(context.Background(), policy.PlaceRequest{
+		SandboxID: "new", Workers: workers, Running: running, SandboxSignals: sandboxSig,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.VictimID != "idle" {
+		t.Fatalf("victim=%q want idle (lock filter before cost)", res.VictimID)
+	}
+}

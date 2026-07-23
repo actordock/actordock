@@ -134,37 +134,40 @@ keepScore(s) =
   + w_C * normalize(preemptCost(s))
 ```
 
-| Term | Definition | If missing |
-|------|------------|------------|
+| Term | Definition (all ≈ `[0,1]`) | If missing |
+|------|----------------------------|------------|
 | `phaseProtect` | `tool_loop`/`lock` → 1.0; `llm_wait` → 0.2; `idle` → 0.0 | 0.5 |
-| `urgency` | See §5.4 | 0 |
-| `fairness` | `waitSec / (1 + attainedServiceSec)` | 0 |
-| `preemptCost` | Snapshot cost/size or `KeepAliveH` | 1 |
+| `urgency` | See §5.4 (online + prior, both scaled to `[0,1]`) | 0 |
+| `fairness` | Soft map of `r=wait/(1+attained)`: `1 − 1/(1+r)` ∈ `[0,1)` | 0 |
+| `preemptCost` | `clamp(log1p(H) / log1p(H_ref), 0, 1)` with `H_ref=1e6` | H=1 → small |
 
-Default weights: `w_L=3`, `w_U=2`, `w_F=2`, `w_C=1` (env-tunable).
+Default weights: `w_L=3`, `w_U=2`, `w_F=2`, `w_C=1` (env-tunable).  
+Terms share a common scale so weights stay meaningful (no raw `1/sec` or unbounded wait).
 
 Low score ⇒ yieldable phase, low urgency, already well-served, cheap to restore → kick first.
 
 ### 5.4 `urgency` (online + optional L3 prior)
 
 ```text
-urgency_online:
+urgency_online:                         # ∈ [0,1]
   if deadline:
-      1 / max(ε, seconds_until(deadline))     # deadline pressure (no step count)
+      1 / (1 + max(0, seconds_until(deadline)))
   else if API priority:
-      map(priority)
+      map(priority) into [0,1]
   else:
       0
 
-urgency_prior:   # from taskProfile — §6 (vLLM-SR traits, not expectedSteps)
-  clamp(0.5 + complexitySignal, 0, 1)        # continuous SR hard−easy signal
-  + α * embeddingSim                         # optional affinity boost
+urgency_prior:   # ∈ [0,1] — §6 (vLLM-SR traits, not expectedSteps)
+  clamp(
+    clamp(0.5 + complexitySignal, 0, 1)  # continuous SR hard−easy signal
+    + α * clamp(embeddingSim, 0, 1),
+    0, 1)
   # domain: affinity / pool filter when Worker pools exist; else unused in score
   # difficultyTier (if present) is debug-only; not used in keepScore
 
 urgency =
   if taskProfile.confidence high:
-      mix(urgency_online, urgency_prior)     # online dominates when present
+      mix(urgency_online, urgency_prior)     # both already on [0,1]
   else:
       urgency_online
 ```
@@ -306,7 +309,7 @@ demos/.../driver  ──classify(taskText)──► taskProfile
 | Path | Change |
 |------|--------|
 | `internal/signals/types.go` | `TaskProfile`: `ComplexitySignal`, `Domain`, `EmbeddingSim`, `Confidence`, `ModelID`, `ScoredAt`; `DifficultyTier` debug-only; stop using `ExpectedSteps*` in policy |
-| `internal/policy/semantic_score.go` | `urgencyPrior` = `clamp(0.5+complexitySignal) + α·embeddingSim`; ignore prior if `confidence < 0.3`; `urgency_online` from `deadline` only |
+| `internal/policy/semantic_score.go` | `urgencyPrior` / online / fairness / preempt all scaled to ≈`[0,1]`; ignore prior if `confidence < 0.3` |
 | `internal/policy/semantic_score_test.go` | Cases: higher `complexitySignal` outranks lower among unlocked peers; low confidence ignores prior |
 | CP / Kind env | `SEMANTIC_PRIOR_MIX`, `SEMANTIC_EMBED_ALPHA` (see §8); **no** HF model load in `controlplane` |
 
