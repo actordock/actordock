@@ -45,8 +45,14 @@ type Scheduler struct {
 	resumeWaitMu  sync.Mutex
 	resumeWaiters map[string]resumeWaiter
 
-	// knockMu serializes the single active knocker's Place/Evict/Restore.
+	// knockMu serializes the active knocker's Place/Evict (checkpoint) only.
+	// Restore runs outside so voluntary Suspend is not blocked by long restores.
 	knockMu sync.Mutex
+
+	// restoreReserve marks workers claimed for an in-flight Restore after knockMu
+	// is released, so another Place cannot double-book the same slot.
+	restoreReserveMu sync.Mutex
+	restoreReserve   map[string]string // workerID -> sandboxID
 }
 
 type resumeWaiter struct {
@@ -69,7 +75,8 @@ func New(st store.Store, pol policy.Policy, snapRoot string, log *slog.Logger, m
 		log:           log,
 		metrics:       m,
 		signals:       sig,
-		resumeWaiters: make(map[string]resumeWaiter),
+		resumeWaiters:  make(map[string]resumeWaiter),
+		restoreReserve: make(map[string]string),
 	}
 	if m != nil {
 		m.SetPoolStats(s)
@@ -289,6 +296,8 @@ func (s *Scheduler) EnsureGolden(ctx context.Context) (string, error) {
 // only the highest keepScore waiter holds knockMu and keeps knocking (Place/Evict)
 // until admitted or timed out. Other policies share knockMu so only one checkpoint
 // runs at a time, but any waiter may become the knocker (arrival order / lock).
+// Restore runs outside knockMu (with a short-lived worker reservation) so voluntary
+// Suspend is not stuck behind long restores.
 func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error) {
 	resumeStart := time.Now()
 	sb, err := s.store.GetSandbox(ctx, id)
@@ -321,15 +330,117 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 			return types.Sandbox{}, err
 		}
 
-		// Single knocker: hold through decide + evict + restore.
-		s.knockMu.Lock()
-		if cur, err := s.store.GetSandbox(ctx, id); err == nil {
-			sb = cur
-			s.addResumeWaiter(sb)
-		}
-		if err := s.ensureKnockerTurn(sb); err != nil {
-			s.knockMu.Unlock()
-			if errors.Is(err, policy.ErrNotBestWaiter) {
+		// Decide + optional Evict under knockMu; Restore happens after unlock.
+		var (
+			res        policy.PlaceResult
+			w          types.Worker
+			objectKey  string
+			localPath  string
+			localOnly  bool
+			usedGolden bool
+		)
+		admitted := false
+		func() {
+			s.knockMu.Lock()
+			defer s.knockMu.Unlock()
+
+			if cur, err := s.store.GetSandbox(ctx, id); err == nil {
+				sb = cur
+				s.addResumeWaiter(sb)
+			}
+			if err := s.ensureKnockerTurn(sb); err != nil {
+				lastErr = err
+				return
+			}
+
+			workers, running, err := s.resumeCandidates(ctx, sb)
+			if err != nil {
+				lastErr = err
+				return
+			}
+			now := time.Now().UTC()
+			sandboxSig, workerSig := s.signalViews(now)
+			waiting, waitingSince := s.listResumeWaitState()
+			res, err = s.policy.Resume(ctx, policy.ResumeRequest{
+				Sandbox: sb, Workers: workers, Running: running,
+				SandboxSignals: sandboxSig, WorkerSignals: workerSig,
+				Waiting: waiting, WaitingSince: waitingSince,
+			})
+			if err != nil {
+				lastErr = err
+				if resumeRetryable(err) && wait > 0 {
+					s.log.Info("resume knocker retrying",
+						"sandboxID", sb.ID,
+						"err", err.Error(),
+						"running", len(running),
+						"workers", len(workers),
+						"waiters", len(waiting),
+					)
+				}
+				return
+			}
+
+			if enteredSemanticWait {
+				s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationResolved)
+			}
+			s.metrics.RecordDecisionLatency(ctx, time.Since(decStart))
+
+			if res.VictimID != "" {
+				evictStart := time.Now()
+				phase, lock := s.victimPhaseLock(res.VictimID)
+				if s.signals != nil {
+					s.signals.OnEvict(res.VictimID)
+				}
+				if _, err := s.suspendLocked(ctx, res.VictimID); err != nil {
+					lastErr = fmt.Errorf("evict %s: %w", res.VictimID, err)
+					s.metrics.RecordDecision(ctx, "evict", "error", err.Error())
+					return
+				}
+				s.metrics.RecordEviction(ctx, res.Reason, phase, lock)
+				s.metrics.RecordPreemptCost(ctx, time.Since(evictStart))
+				s.metrics.RecordDecision(ctx, "evict", "ok", res.Reason)
+			}
+			w, err = s.store.GetWorker(ctx, res.WorkerID)
+			if err != nil {
+				lastErr = err
+				return
+			}
+
+			objectKey = sb.ObjectKey
+			localPath = sb.LocalSnapshotPath
+			switch {
+			case sb.State == types.SandboxPaused || sb.SnapshotSource == types.SnapshotLocal:
+				if localPath == "" {
+					localPath = s.localPath(w.ID, id)
+				}
+				objectKey = ""
+				localOnly = true
+			case sb.SnapshotSource == types.SnapshotExternal && objectKey != "":
+				if localPath == "" || w.ID != sb.WorkerID {
+					localPath = s.localPath(w.ID, id)
+				}
+			default:
+				g, err := s.EnsureGolden(ctx)
+				if err != nil {
+					lastErr = err
+					return
+				}
+				objectKey = g
+				localPath = s.localPath(w.ID, id)
+				usedGolden = true
+			}
+
+			// Claim the worker before releasing knockMu so Restore is exclusive.
+			s.reserveRestore(w.ID, id)
+			admitted = true
+			lastErr = nil
+		}()
+
+		if !admitted {
+			if lastErr == nil {
+				lastErr = fmt.Errorf("resume: not admitted")
+			}
+			if errors.Is(lastErr, policy.ErrNotBestWaiter) {
 				select {
 				case <-ctx.Done():
 					return types.Sandbox{}, ctx.Err()
@@ -337,32 +448,11 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 				}
 				continue
 			}
-			s.metrics.RecordDecision(ctx, "resume", "error", err.Error())
-			return types.Sandbox{}, err
-		}
-
-		workers, running, err := s.resumeCandidates(ctx, sb)
-		if err != nil {
-			s.knockMu.Unlock()
-			s.metrics.RecordDecision(ctx, "resume", "error", err.Error())
-			return types.Sandbox{}, err
-		}
-		now := time.Now().UTC()
-		sandboxSig, workerSig := s.signalViews(now)
-		waiting, waitingSince := s.listResumeWaitState()
-		res, err := s.policy.Resume(ctx, policy.ResumeRequest{
-			Sandbox: sb, Workers: workers, Running: running,
-			SandboxSignals: sandboxSig, WorkerSignals: workerSig,
-			Waiting: waiting, WaitingSince: waitingSince,
-		})
-		if err != nil {
-			lastErr = err
-			s.knockMu.Unlock()
-			if !resumeRetryable(err) || wait <= 0 {
-				s.metrics.RecordDecision(ctx, "resume", "error", err.Error())
-				return types.Sandbox{}, err
+			if !resumeRetryable(lastErr) || wait <= 0 {
+				s.metrics.RecordDecision(ctx, "resume", "error", lastErr.Error())
+				return types.Sandbox{}, lastErr
 			}
-			if errors.Is(err, policy.ErrAllSemanticLocked) && !enteredSemanticWait {
+			if errors.Is(lastErr, policy.ErrAllSemanticLocked) && !enteredSemanticWait {
 				enteredSemanticWait = true
 				s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationEnter)
 			}
@@ -374,71 +464,12 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 				s.metrics.RecordDecision(ctx, "resume", "error", out.Error())
 				return types.Sandbox{}, out
 			}
-			s.log.Info("resume knocker retrying",
-				"sandboxID", sb.ID,
-				"err", err.Error(),
-				"running", len(running),
-				"workers", len(workers),
-				"waiters", len(waiting),
-			)
 			select {
 			case <-ctx.Done():
 				return types.Sandbox{}, ctx.Err()
 			case <-time.After(200 * time.Millisecond):
 			}
-			continue // still the knocker if top-ranked — keep knocking
-		}
-
-		if enteredSemanticWait {
-			s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationResolved)
-		}
-		s.metrics.RecordDecisionLatency(ctx, time.Since(decStart))
-
-		if res.VictimID != "" {
-			evictStart := time.Now()
-			phase, lock := s.victimPhaseLock(res.VictimID)
-			if s.signals != nil {
-				s.signals.OnEvict(res.VictimID)
-			}
-			if _, err := s.suspendLocked(ctx, res.VictimID); err != nil {
-				s.knockMu.Unlock()
-				s.metrics.RecordDecision(ctx, "evict", "error", err.Error())
-				return types.Sandbox{}, fmt.Errorf("evict %s: %w", res.VictimID, err)
-			}
-			s.metrics.RecordEviction(ctx, res.Reason, phase, lock)
-			s.metrics.RecordPreemptCost(ctx, time.Since(evictStart))
-			s.metrics.RecordDecision(ctx, "evict", "ok", res.Reason)
-		}
-		w, err := s.store.GetWorker(ctx, res.WorkerID)
-		if err != nil {
-			s.knockMu.Unlock()
-			return types.Sandbox{}, err
-		}
-
-		objectKey := sb.ObjectKey
-		localPath := sb.LocalSnapshotPath
-		localOnly := false
-		usedGolden := false
-		switch {
-		case sb.State == types.SandboxPaused || sb.SnapshotSource == types.SnapshotLocal:
-			if localPath == "" {
-				localPath = s.localPath(w.ID, id)
-			}
-			objectKey = ""
-			localOnly = true
-		case sb.SnapshotSource == types.SnapshotExternal && objectKey != "":
-			if localPath == "" || w.ID != sb.WorkerID {
-				localPath = s.localPath(w.ID, id)
-			}
-		default:
-			g, err := s.EnsureGolden(ctx)
-			if err != nil {
-				s.knockMu.Unlock()
-				return types.Sandbox{}, err
-			}
-			objectKey = g
-			localPath = s.localPath(w.ID, id)
-			usedGolden = true
+			continue
 		}
 
 		path := metrics.ClassifyResumePath(prevWorkerID, w.ID, localOnly, objectKey, usedGolden)
@@ -455,7 +486,7 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 		opts := workerclient.RestoreOpts{ImagePath: localPath, ObjectKey: objectKey}
 		restoreStart := time.Now()
 		if err := s.workers.Restore(ctx, w.Address, id, opts); err != nil {
-			s.knockMu.Unlock()
+			s.clearRestoreReserve(w.ID, id)
 			return types.Sandbox{}, err
 		}
 		s.metrics.RecordRestoreLatency(ctx, path, time.Since(restoreStart))
@@ -463,15 +494,16 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 			s.signals.RecordRestore(id, time.Now().UTC(), time.Since(restoreStart), time.Now().UTC())
 		}
 
-		now = time.Now().UTC()
+		now := time.Now().UTC()
 		sb.State = types.SandboxRunning
 		sb.WorkerID = w.ID
 		sb.LocalSnapshotPath = localPath
 		sb.UpdatedAt = now
 		if err := s.store.PutSandbox(ctx, sb); err != nil {
-			s.knockMu.Unlock()
+			s.clearRestoreReserve(w.ID, id)
 			return types.Sandbox{}, err
 		}
+		s.clearRestoreReserve(w.ID, id)
 		s.metrics.MarkRunning(ctx, id, w.ID, now)
 		if s.signals != nil {
 			s.signals.MarkRunning(id, now)
@@ -482,7 +514,6 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 			Policy: s.policy.Name(), Action: "resume",
 			SandboxID: id, WorkerID: w.ID, VictimID: res.VictimID, Reason: res.Reason,
 		})
-		s.knockMu.Unlock()
 		return sb, nil
 	}
 }
@@ -541,7 +572,7 @@ func (s *Scheduler) Suspend(ctx context.Context, id string) (types.Sandbox, erro
 }
 
 // suspendLocked checkpoints a running sandbox. Caller must hold knockMu
-// (Resume knocker path) so voluntary Suspend and eviction cannot race.
+// (Resume knocker Evict path) so voluntary Suspend and eviction cannot race.
 func (s *Scheduler) suspendLocked(ctx context.Context, id string) (types.Sandbox, error) {
 	return s.pauseOrSuspend(ctx, id, true)
 }
@@ -668,6 +699,7 @@ func (s *Scheduler) resumeCandidates(ctx context.Context, sb types.Sandbox) ([]t
 	if err != nil {
 		return nil, nil, err
 	}
+	workers = s.applyRestoreReserves(workers, sb.ID)
 	running, err := s.running(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -694,6 +726,43 @@ func (s *Scheduler) resumeCandidates(ctx context.Context, sb types.Sandbox) ([]t
 		}
 	}
 	return workers, running, nil
+}
+
+func (s *Scheduler) reserveRestore(workerID, sandboxID string) {
+	s.restoreReserveMu.Lock()
+	defer s.restoreReserveMu.Unlock()
+	if s.restoreReserve == nil {
+		s.restoreReserve = make(map[string]string)
+	}
+	s.restoreReserve[workerID] = sandboxID
+}
+
+func (s *Scheduler) clearRestoreReserve(workerID, sandboxID string) {
+	s.restoreReserveMu.Lock()
+	defer s.restoreReserveMu.Unlock()
+	if cur, ok := s.restoreReserve[workerID]; ok && cur == sandboxID {
+		delete(s.restoreReserve, workerID)
+	}
+}
+
+// applyRestoreReserves marks workers held by another sandbox's in-flight Restore
+// as full so Place/Resume cannot double-book them.
+func (s *Scheduler) applyRestoreReserves(workers []types.Worker, selfID string) []types.Worker {
+	s.restoreReserveMu.Lock()
+	defer s.restoreReserveMu.Unlock()
+	if len(s.restoreReserve) == 0 {
+		return workers
+	}
+	out := append([]types.Worker(nil), workers...)
+	for i := range out {
+		if holder, ok := s.restoreReserve[out[i].ID]; ok && holder != selfID {
+			out[i].UsedSlots = out[i].MaxSlots
+			if out[i].UsedSlots < 1 {
+				out[i].UsedSlots = 1
+			}
+		}
+	}
+	return out
 }
 
 func (s *Scheduler) addResumeWaiter(sb types.Sandbox) {
