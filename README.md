@@ -1,16 +1,23 @@
-# actordock
+# Actordock
 
-Hundreds of agents, a handful of sandbox Pods—plus research on **how to prioritize and allocate** those sandboxes under scarce Workers.
+> **IMPORTANT:** Experimental research project. Not production-ready.
 
-Actordock multiplexes idle agent sandboxes onto a warm Worker pool (gVisor suspend/resume) and treats scheduling policy as a first-class, measurable concern.
+Actordock studies **sandbox multiplexing under scarce Workers**:
 
-## Quickstart (Kind)
+- **Worker reuse** — many sandboxes share a small Worker pool via Pause / Suspend / Resume (N:M), not one Pod per sandbox.
+- **Agent-semantic policy plugin** — on the same reuse hooks, decide who yields the slot using agent phase/lock and session score, not arrival order alone.
+
+## Components
+
+- **controlplane** — scheduling / Place·Suspend·Resume, signals, and policy
+- **worker** — gVisor runtime + local snapshots + upload/download
+- **policy** — pluggable strategies (including `semantic-score`)
+- **snapshotstore** — rustfs / object-store snapshots
+
+## Run
 
 ```bash
-./hack/kind-up.sh        # start cluster + deploy
-./hack/verify-local.sh   # e2e/functional (default); E2E_SUITE=agent-semantic for policy replay
+./hack/kind-up.sh
+./hack/verify-local.sh   # functional e2e (default)
 ```
 
-Design & research docs: [docs/](./docs/). E2E: [e2e/](./e2e/).
-
-DeepSeek agent demo (sandbox `run_code` + semantic traces): [demos/agent-llm-multiplex/](./demos/agent-llm-multiplex/).

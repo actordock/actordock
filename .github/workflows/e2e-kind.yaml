@@ -122,7 +122,7 @@ jobs:
           E2E_SUITE: agent-semantic
           ACTORDOCK_API: http://127.0.0.1:18080
           EVAL_OUT_DIR: docs/eval/results
-          AGENT_SEMANTIC_LIMIT: "0"
+          AGENT_SEMANTIC_LIMIT: "10"
           AGENT_SEMANTIC_INFLIGHT: "8"
           AGENT_SEMANTIC_MIN_WORKERS: "2"
           AGENT_SEMANTIC_SPEED: "60"
