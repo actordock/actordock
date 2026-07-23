@@ -41,12 +41,17 @@ type Scheduler struct {
 	goldenMu sync.Mutex
 
 	// resumeWaiters tracks sandboxes blocked in Resume (candidates to knock).
-	// Under semantic-score only the highest keepScore waiter may knock at a time.
+	// Under semantic-score only the highest admit-score waiter may knock at a time.
 	resumeWaitMu  sync.Mutex
-	resumeWaiters map[string]types.Sandbox
+	resumeWaiters map[string]resumeWaiter
 
 	// knockMu serializes the single active knocker's Place/Evict/Restore.
 	knockMu sync.Mutex
+}
+
+type resumeWaiter struct {
+	Sandbox types.Sandbox
+	Since   time.Time
 }
 
 func New(st store.Store, pol policy.Policy, snapRoot string, log *slog.Logger, m *metrics.Metrics, sig *signals.Store) *Scheduler {
@@ -64,7 +69,7 @@ func New(st store.Store, pol policy.Policy, snapRoot string, log *slog.Logger, m
 		log:           log,
 		metrics:       m,
 		signals:       sig,
-		resumeWaiters: make(map[string]types.Sandbox),
+		resumeWaiters: make(map[string]resumeWaiter),
 	}
 	if m != nil {
 		m.SetPoolStats(s)
@@ -344,10 +349,11 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 		}
 		now := time.Now().UTC()
 		sandboxSig, workerSig := s.signalViews(now)
+		waiting, waitingSince := s.listResumeWaitState()
 		res, err := s.policy.Resume(ctx, policy.ResumeRequest{
 			Sandbox: sb, Workers: workers, Running: running,
 			SandboxSignals: sandboxSig, WorkerSignals: workerSig,
-			Waiting: s.listResumeWaiters(),
+			Waiting: waiting, WaitingSince: waitingSince,
 		})
 		if err != nil {
 			lastErr = err
@@ -373,7 +379,7 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 				"err", err.Error(),
 				"running", len(running),
 				"workers", len(workers),
-				"waiters", len(s.listResumeWaiters()),
+				"waiters", len(waiting),
 			)
 			select {
 			case <-ctx.Done():
@@ -512,10 +518,12 @@ func (s *Scheduler) ensureKnockerTurn(sb types.Sandbox) error {
 	}
 	now := time.Now().UTC()
 	sandboxSig, _ := s.signalViews(now)
+	waiting, waitingSince := s.listResumeWaitState()
 	return ss.RequireBestWaiter(policy.ResumeRequest{
 		Sandbox:        sb,
 		SandboxSignals: sandboxSig,
-		Waiting:        s.listResumeWaiters(),
+		Waiting:        waiting,
+		WaitingSince:   waitingSince,
 	})
 }
 
@@ -692,9 +700,14 @@ func (s *Scheduler) addResumeWaiter(sb types.Sandbox) {
 	s.resumeWaitMu.Lock()
 	defer s.resumeWaitMu.Unlock()
 	if s.resumeWaiters == nil {
-		s.resumeWaiters = make(map[string]types.Sandbox)
+		s.resumeWaiters = make(map[string]resumeWaiter)
 	}
-	s.resumeWaiters[sb.ID] = sb
+	if w, ok := s.resumeWaiters[sb.ID]; ok {
+		w.Sandbox = sb
+		s.resumeWaiters[sb.ID] = w
+		return
+	}
+	s.resumeWaiters[sb.ID] = resumeWaiter{Sandbox: sb, Since: time.Now()}
 }
 
 func (s *Scheduler) removeResumeWaiter(id string) {
@@ -703,14 +716,16 @@ func (s *Scheduler) removeResumeWaiter(id string) {
 	delete(s.resumeWaiters, id)
 }
 
-func (s *Scheduler) listResumeWaiters() []types.Sandbox {
+func (s *Scheduler) listResumeWaitState() ([]types.Sandbox, map[string]time.Time) {
 	s.resumeWaitMu.Lock()
 	defer s.resumeWaitMu.Unlock()
 	out := make([]types.Sandbox, 0, len(s.resumeWaiters))
-	for _, sb := range s.resumeWaiters {
-		out = append(out, sb)
+	since := make(map[string]time.Time, len(s.resumeWaiters))
+	for id, w := range s.resumeWaiters {
+		out = append(out, w.Sandbox)
+		since[id] = w.Since
 	}
-	return out
+	return out, since
 }
 
 // resumeRetryable reports Place/Resume errors that should keep the knocker retrying.
@@ -729,11 +744,11 @@ func resumeRetryable(err error) bool {
 func semanticWaitDuration() time.Duration {
 	v := os.Getenv("SEMANTIC_WAIT_SEC")
 	if v == "" {
-		return 120 * time.Second
+		return 300 * time.Second
 	}
 	sec, err := strconv.Atoi(v)
 	if err != nil || sec < 0 {
-		return 120 * time.Second
+		return 300 * time.Second
 	}
 	return time.Duration(sec) * time.Second
 }

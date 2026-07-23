@@ -5,6 +5,7 @@ package policy
 
 import (
 	"context"
+	"time"
 
 	"github.com/actordock/actordock/internal/signals"
 	"github.com/actordock/actordock/internal/types"
@@ -37,6 +38,9 @@ type ResumeRequest struct {
 	// semantic-score uses this so only the highest-score knocker may Place/Evict;
 	// other policies ignore it.
 	Waiting []types.Sandbox
+	// WaitingSince maps sandbox ID → when it joined the Resume lobby.
+	// Used for queue-age boost so long waiters eventually become top-ranked.
+	WaitingSince map[string]time.Time
 }
 
 // Policy chooses placement, eviction, and resume targets.

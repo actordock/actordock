@@ -324,3 +324,69 @@ func TestSemanticScoreResumeBestWaiterCanPreemptLLMWait(t *testing.T) {
 		t.Fatalf("victim=%q want hold (llm_wait preempt)", res.VictimID)
 	}
 }
+
+func TestSemanticScoreQueueAgingPromotesLongWaiter(t *testing.T) {
+	p := policy.NewSemanticScore()
+	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+	p.Now = func() time.Time { return now }
+
+	low := -0.4
+	high := 0.4
+	longWait := types.Sandbox{ID: "long", State: types.SandboxSuspended, CreatedAt: now}
+	shortWait := types.Sandbox{ID: "short", State: types.SandboxSuspended, CreatedAt: now.Add(-time.Minute)}
+	sandboxSig := map[string]signals.SandboxSignals{
+		"long": {SandboxID: "long", Semantic: signals.SemanticResource{
+			Phase: signals.PhaseLLMWait,
+			TaskProfile: &signals.TaskProfile{
+				ComplexitySignal: &low, Confidence: 0.9,
+			},
+		}},
+		"short": {SandboxID: "short", Semantic: signals.SemanticResource{
+			Phase: signals.PhaseLLMWait,
+			TaskProfile: &signals.TaskProfile{
+				ComplexitySignal: &high, Confidence: 0.9,
+			},
+		}},
+	}
+	waiting := []types.Sandbox{longWait, shortWait}
+
+	// Fresh lobby: high static score still wins.
+	err := p.RequireBestWaiter(policy.ResumeRequest{
+		Sandbox:        longWait,
+		SandboxSignals: sandboxSig,
+		Waiting:        waiting,
+		WaitingSince: map[string]time.Time{
+			"long":  now,
+			"short": now,
+		},
+	})
+	if !errors.Is(err, policy.ErrNotBestWaiter) {
+		t.Fatalf("fresh long waiter err=%v want ErrNotBestWaiter", err)
+	}
+
+	// After ~3 minutes in lobby, queue aging should promote the low static score.
+	err = p.RequireBestWaiter(policy.ResumeRequest{
+		Sandbox:        longWait,
+		SandboxSignals: sandboxSig,
+		Waiting:        waiting,
+		WaitingSince: map[string]time.Time{
+			"long":  now.Add(-3 * time.Minute),
+			"short": now.Add(-10 * time.Second),
+		},
+	})
+	if err != nil {
+		t.Fatalf("aged long waiter err=%v want nil", err)
+	}
+	err = p.RequireBestWaiter(policy.ResumeRequest{
+		Sandbox:        shortWait,
+		SandboxSignals: sandboxSig,
+		Waiting:        waiting,
+		WaitingSince: map[string]time.Time{
+			"long":  now.Add(-3 * time.Minute),
+			"short": now.Add(-10 * time.Second),
+		},
+	})
+	if !errors.Is(err, policy.ErrNotBestWaiter) {
+		t.Fatalf("short waiter err=%v want ErrNotBestWaiter after aging", err)
+	}
+}

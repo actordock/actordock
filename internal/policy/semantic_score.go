@@ -28,11 +28,11 @@ var ErrNotBestWaiter = errors.New("semantic-score: not highest-score Resume wait
 // running sandbox with the lowest agent-semantic keepScore after a phase-lock filter.
 // See docs/architecture/semantic-score.md.
 type SemanticScore struct {
-	WL, WU, WF, WC float64
-	Override       bool
-	PriorMix       float64
-	EmbedAlpha     float64
-	Now            func() time.Time
+	WL, WU, WF, WC, WQ float64
+	Override           bool
+	PriorMix           float64
+	EmbedAlpha         float64
+	Now                func() time.Time
 }
 
 func NewSemanticScore() *SemanticScore {
@@ -41,6 +41,7 @@ func NewSemanticScore() *SemanticScore {
 		WU:         envFloat("SEMANTIC_W_U", 2),
 		WF:         envFloat("SEMANTIC_W_F", 2),
 		WC:         envFloat("SEMANTIC_W_C", 1),
+		WQ:         envFloat("SEMANTIC_W_Q", 2),
 		Override:   envBool("SEMANTIC_OVERRIDE", false),
 		PriorMix:   envFloat("SEMANTIC_PRIOR_MIX", 0.3),
 		EmbedAlpha: envFloat("SEMANTIC_EMBED_ALPHA", 0.2),
@@ -87,7 +88,7 @@ func (p *SemanticScore) Resume(ctx context.Context, req ResumeRequest) (PlaceRes
 }
 
 // RequireBestWaiter returns ErrNotBestWaiter unless req.Sandbox has the highest
-// admit keepScore among Waiting (continuous single-knocker ranking).
+// admit score among Waiting (keepScore + queue-age boost; single-knocker ranking).
 func (p *SemanticScore) RequireBestWaiter(req ResumeRequest) error {
 	if len(req.Waiting) == 0 {
 		return nil
@@ -96,12 +97,12 @@ func (p *SemanticScore) RequireBestWaiter(req ResumeRequest) error {
 	if p.Now != nil {
 		now = p.Now()
 	}
-	mine := keepScore(req.Sandbox, req.SandboxSignals, p, now)
+	mine := admitScore(req.Sandbox, req.SandboxSignals, p, now, req.WaitingSince)
 	for _, other := range req.Waiting {
 		if other.ID == "" || other.ID == req.Sandbox.ID {
 			continue
 		}
-		sc := keepScore(other, req.SandboxSignals, p, now)
+		sc := admitScore(other, req.SandboxSignals, p, now, req.WaitingSince)
 		if sc > mine {
 			return ErrNotBestWaiter
 		}
@@ -115,6 +116,26 @@ func (p *SemanticScore) RequireBestWaiter(req ResumeRequest) error {
 		}
 	}
 	return nil
+}
+
+// admitScore is keepScore plus lobby queue aging so long waiters eventually win.
+func admitScore(sb types.Sandbox, sandboxSig map[string]signals.SandboxSignals, p *SemanticScore, now time.Time, waitingSince map[string]time.Time) float64 {
+	base := keepScore(sb, sandboxSig, p, now)
+	queueSec := 0.0
+	if waitingSince != nil {
+		if t, ok := waitingSince[sb.ID]; ok && !t.IsZero() {
+			queueSec = now.Sub(t).Seconds()
+			if queueSec < 0 {
+				queueSec = 0
+			}
+		}
+	}
+	return base + p.WQ*queueAging(queueSec)
+}
+
+// queueAging maps lobby wait seconds → unscaled score units (per minute of wait).
+func queueAging(sec float64) float64 {
+	return sec / 60.0
 }
 
 func pickSemanticVictim(running []types.Sandbox, sandboxSig map[string]signals.SandboxSignals, p *SemanticScore, now time.Time) (types.Sandbox, string, error) {
