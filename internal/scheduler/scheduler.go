@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,6 +70,22 @@ func (s *Scheduler) signalViews(now time.Time) (map[string]signals.SandboxSignal
 		return nil, nil
 	}
 	return s.signals.ListSandboxes(now), s.signals.ListWorkers(now)
+}
+
+func (s *Scheduler) victimPhaseLock(victimID string) (phase string, lock bool) {
+	phase = metrics.VictimPhaseUnknown
+	if s.signals == nil || victimID == "" {
+		return phase, false
+	}
+	views, _ := s.signalViews(time.Now().UTC())
+	sig, ok := views[victimID]
+	if !ok {
+		return phase, false
+	}
+	if sig.Semantic.Phase != "" {
+		phase = sig.Semantic.Phase
+	}
+	return phase, sig.Semantic.Lock
 }
 
 func (s *Scheduler) localPath(workerID, sandboxID string) string {
@@ -210,6 +227,7 @@ func (s *Scheduler) EnsureGolden(ctx context.Context) (string, error) {
 	if res.VictimID != "" {
 		action = "evict"
 		evictStart := time.Now()
+		phase, lock := s.victimPhaseLock(res.VictimID)
 		if s.signals != nil {
 			s.signals.OnEvict(res.VictimID)
 		}
@@ -217,7 +235,7 @@ func (s *Scheduler) EnsureGolden(ctx context.Context) (string, error) {
 			s.metrics.RecordDecision(ctx, action, "error", err.Error())
 			return "", fmt.Errorf("ensure golden evict: %w", err)
 		}
-		s.metrics.RecordEviction(ctx, res.Reason)
+		s.metrics.RecordEviction(ctx, res.Reason, phase, lock)
 		s.metrics.RecordPreemptCost(ctx, time.Since(evictStart))
 	}
 	s.metrics.RecordDecision(ctx, action, "ok", res.Reason)
@@ -272,6 +290,7 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 	}
 	if res.VictimID != "" {
 		evictStart := time.Now()
+		phase, lock := s.victimPhaseLock(res.VictimID)
 		if s.signals != nil {
 			s.signals.OnEvict(res.VictimID)
 		}
@@ -279,7 +298,7 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 			s.metrics.RecordDecision(ctx, "evict", "error", err.Error())
 			return types.Sandbox{}, fmt.Errorf("evict %s: %w", res.VictimID, err)
 		}
-		s.metrics.RecordEviction(ctx, res.Reason)
+		s.metrics.RecordEviction(ctx, res.Reason, phase, lock)
 		s.metrics.RecordPreemptCost(ctx, time.Since(evictStart))
 		s.metrics.RecordDecision(ctx, "evict", "ok", res.Reason)
 	}
@@ -484,13 +503,18 @@ func filterRunningOn(running []types.Sandbox, workerID string) []types.Sandbox {
 	return out
 }
 
-// resumePolicyDecide asks POLICY for a Worker (and optional victim). When every
-// running peer is tool_loop/lock and SEMANTIC_OVERRIDE is off, wait and retry
-// until a slot frees or SEMANTIC_WAIT_SEC elapses (default 120s; 0 = no wait).
+// resumePolicyDecide asks POLICY for a Worker (and optional victim).
+// Retryable Place/Resume failures wait up to SEMANTIC_WAIT_SEC (default 120s; 0 = no wait):
+//   - ErrAllSemanticLocked (all tool_loop/lock)
+//   - "nothing to suspend" (slots held but no Running victim yet, e.g. mid-restore)
+//   - "busy (checkpoint)" (all victims checkpointing)
+//
+// All policies share this wait; only the Place decision differs per policy.
 func (s *Scheduler) resumePolicyDecide(ctx context.Context, sb types.Sandbox) (policy.PlaceResult, error) {
 	wait := semanticWaitDuration()
 	deadline := time.Now().Add(wait)
 	var lastErr error
+	enteredSemanticWait := false
 	for {
 		workers, running, err := s.resumeCandidates(ctx, sb)
 		if err != nil {
@@ -503,22 +527,51 @@ func (s *Scheduler) resumePolicyDecide(ctx context.Context, sb types.Sandbox) (p
 			SandboxSignals: sandboxSig, WorkerSignals: workerSig,
 		})
 		if err == nil {
+			if enteredSemanticWait {
+				s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationResolved)
+			}
 			return res, nil
 		}
 		lastErr = err
-		if !errors.Is(err, policy.ErrAllSemanticLocked) || wait <= 0 {
+		if !resumeRetryable(err) || wait <= 0 {
 			return policy.PlaceResult{}, err
 		}
+		if errors.Is(err, policy.ErrAllSemanticLocked) && !enteredSemanticWait {
+			enteredSemanticWait = true
+			s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationEnter)
+		}
 		if time.Now().After(deadline) {
+			if enteredSemanticWait {
+				s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationTimeout)
+			}
 			return policy.PlaceResult{}, fmt.Errorf("%w (waited %s)", lastErr, wait)
 		}
-		s.log.Info("resume waiting: all peers tool_loop/lock", "sandboxID", sb.ID)
+		s.log.Info("resume waiting for capacity",
+			"sandboxID", sb.ID,
+			"err", err.Error(),
+			"running", len(running),
+			"workers", len(workers),
+		)
 		select {
 		case <-ctx.Done():
 			return policy.PlaceResult{}, ctx.Err()
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
+}
+
+// resumeRetryable reports Place/Resume errors that should block Resume until
+// a slot frees or a victim becomes eligible (shared across policies).
+func resumeRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, policy.ErrAllSemanticLocked) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "nothing to suspend") ||
+		strings.Contains(msg, "busy (checkpoint)")
 }
 
 func (s *Scheduler) resumeCandidates(ctx context.Context, sb types.Sandbox) ([]types.Worker, []types.Sandbox, error) {

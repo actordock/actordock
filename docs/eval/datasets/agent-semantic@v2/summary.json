@@ -1,0 +1,23 @@
+{
+  "session_count": 200,
+  "source_subset": "bfcl",
+  "l3_active": 45,
+  "cohorts": {
+    "l3_hard": 15,
+    "l3_easy": 15,
+    "l3_mid": 15,
+    "l3_inactive": 155
+  },
+  "tool_dense": 109,
+  "waves": 50,
+  "arrival_span_sec": 2955.0,
+  "signal_range_l3": {
+    "min": -0.1618,
+    "max": 0.0541
+  },
+  "how_to_use_for_semantic_score": [
+    "Within each wave, tool_dense (lock) should be spared vs llm_wait peers",
+    "Among unlocked peers, l3_hard should outrank l3_easy on urgency_prior",
+    "Compare policies on mid_tool_suspend and Resume latency by cohort"
+  ]
+}

@@ -16,7 +16,7 @@ Datasets are first-class: without shared traces, priority policies cannot be com
 |--------|--------|-------|
 | Synthetic generator | TBD | Controlled priority mixes and burstiness |
 | Replayed production-like traces | TBD | Anonymized if needed |
-| Public traces from related systems | TBD | After literature survey |
+| Public traces from related systems | **Available** | Prefer `agent-semantic@v2` (BFCL + cohorts); see [`../eval/datasets/agent-semantic@v2/`](../eval/datasets/agent-semantic@v2/) |
 
 Concrete files and schemas live under [`../eval/`](../eval/) once collected. This doc defines **requirements**; eval holds **artifacts**.
 

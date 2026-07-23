@@ -8,7 +8,7 @@ Actordock multiplexes idle agent sandboxes onto a warm Worker pool (gVisor suspe
 
 ```bash
 ./hack/kind-up.sh        # start cluster + deploy
-./hack/verify-local.sh   # go test ./e2e/functional/ -tags=e2e
+./hack/verify-local.sh   # e2e/functional (default); E2E_SUITE=agent-semantic for policy replay
 ```
 
 Design & research docs: [docs/](./docs/). E2E: [e2e/](./e2e/).

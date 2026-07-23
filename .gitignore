@@ -6,6 +6,7 @@ bin/
 /tmp/
 .DS_Store
 .buildstamp
+.cache/
 
 # Demo local artifacts
 demos/agent-llm-multiplex/traces/

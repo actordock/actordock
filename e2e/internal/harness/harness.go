@@ -378,27 +378,6 @@ func (h *Harness) SetControlplaneEnv(ctx context.Context, envPairs ...string) {
 	}
 }
 
-func (h *Harness) FetchMetrics(ctx context.Context) string {
-	h.t.Helper()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.API+"/metrics", nil)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	resp, err := h.Client.Do(req)
-	if err != nil {
-		h.t.Fatalf("GET /metrics: %v", err)
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	if resp.StatusCode >= 300 {
-		h.t.Fatalf("GET /metrics: %s: %s", resp.Status, bytes.TrimSpace(raw))
-	}
-	return string(raw)
-}
-
 func (h *Harness) ListSandboxSignals(ctx context.Context) []signals.SandboxSignals {
 	h.t.Helper()
 	var list []signals.SandboxSignals

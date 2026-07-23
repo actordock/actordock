@@ -25,23 +25,32 @@ const (
 	PathGoldenCold   = "golden_cold"
 )
 
+// Eviction / semantic-wait label values for agent-semantic eval.
+const (
+	VictimPhaseUnknown = "unknown"
+	StarvationEnter    = "enter"
+	StarvationResolved = "resolved"
+	StarvationTimeout  = "timeout"
+)
+
 // Metrics records scheduling and reuse signals for policy comparison.
 type Metrics struct {
 	policy string
 
-	decision        metric.Int64Counter
-	eviction        metric.Int64Counter
-	resumePath      metric.Int64Counter
-	decisionLatency metric.Float64Histogram
-	resumeLatency   metric.Float64Histogram
-	resumeWait      metric.Float64Histogram
-	checkpointLat   metric.Float64Histogram
-	restoreLat      metric.Float64Histogram
-	preemptCost     metric.Float64Histogram
-	slotHold        metric.Float64Histogram
-	idleGap         metric.Float64Histogram
-	transferLat     metric.Float64Histogram
-	transferBytes   metric.Int64Histogram
+	decision               metric.Int64Counter
+	eviction               metric.Int64Counter
+	semanticStarvationWait metric.Int64Counter
+	resumePath             metric.Int64Counter
+	decisionLatency        metric.Float64Histogram
+	resumeLatency          metric.Float64Histogram
+	resumeWait             metric.Float64Histogram
+	checkpointLat          metric.Float64Histogram
+	restoreLat             metric.Float64Histogram
+	preemptCost            metric.Float64Histogram
+	slotHold               metric.Float64Histogram
+	idleGap                metric.Float64Histogram
+	transferLat            metric.Float64Histogram
+	transferBytes          metric.Int64Histogram
 
 	mu          sync.Mutex
 	runningAt   map[string]time.Time // sandboxID -> became running
@@ -73,7 +82,11 @@ func NewWithMeter(meter metric.Meter, policy string) (*Metrics, error) {
 		return nil, err
 	}
 	if m.eviction, err = meter.Int64Counter("actordock.schedule.eviction",
-		metric.WithDescription("Evictions that suspend a victim to free a Worker")); err != nil {
+		metric.WithDescription("Evictions that suspend a victim to free a Worker; labels include victim_phase and victim_lock")); err != nil {
+		return nil, err
+	}
+	if m.semanticStarvationWait, err = meter.Int64Counter("actordock.schedule.semantic_starvation_wait",
+		metric.WithDescription("Resume wait when all peers are tool_loop/lock (SEMANTIC_WAIT); outcome=enter|resolved|timeout")); err != nil {
 		return nil, err
 	}
 	if m.resumePath, err = meter.Int64Counter("actordock.resume.path",
@@ -180,11 +193,41 @@ func (m *Metrics) RecordDecisionLatency(ctx context.Context, d time.Duration) {
 	m.decisionLatency.Record(ctx, d.Seconds(), metric.WithAttributes(m.policyAttr()))
 }
 
-func (m *Metrics) RecordEviction(ctx context.Context, reason string) {
+// RecordEviction increments eviction with victim L1 snapshot labels.
+// victimPhase empty → "unknown"; victimLock serialized as "true"|"false".
+// mid_tool_suspend ≈ count where victim_phase=tool_loop OR victim_lock=true.
+func (m *Metrics) RecordEviction(ctx context.Context, reason, victimPhase string, victimLock bool) {
 	if m == nil {
 		return
 	}
-	m.eviction.Add(ctx, 1, metric.WithAttributes(m.policyAttr(), attribute.String("reason", reason)))
+	if victimPhase == "" {
+		victimPhase = VictimPhaseUnknown
+	}
+	lock := "false"
+	if victimLock {
+		lock = "true"
+	}
+	m.eviction.Add(ctx, 1, metric.WithAttributes(
+		m.policyAttr(),
+		attribute.String("reason", reason),
+		attribute.String("victim_phase", victimPhase),
+		attribute.String("victim_lock", lock),
+	))
+}
+
+// RecordSemanticStarvationWait records Resume all-locked wait lifecycle.
+// outcome: enter | resolved | timeout.
+func (m *Metrics) RecordSemanticStarvationWait(ctx context.Context, outcome string) {
+	if m == nil {
+		return
+	}
+	if outcome == "" {
+		outcome = StarvationEnter
+	}
+	m.semanticStarvationWait.Add(ctx, 1, metric.WithAttributes(
+		m.policyAttr(),
+		attribute.String("outcome", outcome),
+	))
 }
 
 func (m *Metrics) RecordResumePath(ctx context.Context, path string) {

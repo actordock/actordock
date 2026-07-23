@@ -67,18 +67,18 @@ jobs:
           KIND_CLUSTER_NAME: actordock-functional
         run: ./hack/kind-down.sh || true
 
+  # agent-semantic@v2 ablation: random | resource-evict | semantic L1 | semantic L1+L3
   e2e-eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        policy: [fifo, random, lru-idle, resource-evict, semantic-score]
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24.x"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Install kind
         run: |
@@ -88,76 +88,46 @@ jobs:
 
       - name: Create cluster and deploy
         env:
-          KIND_CLUSTER_NAME: actordock-eval-${{ matrix.policy }}
-          POLICY: ${{ matrix.policy }}
+          KIND_CLUSTER_NAME: actordock-eval
+          POLICY: fifo
         run: |
-          chmod +x hack/*.sh
+          chmod +x hack/*.sh hack/replay-agent-semantic.py
           ./hack/kind-up.sh
 
-      - name: Eval e2e (S1–S5 for ${{ matrix.policy }})
+      - name: Agent-semantic ablation (8 agents / 2 workers)
         env:
-          KIND_CLUSTER_NAME: actordock-eval-${{ matrix.policy }}
-          E2E_SUITE: eval
-          E2E_TIMEOUT: 30m
-          MIN_WORKERS: "2"
-          EVAL_POLICY: ${{ matrix.policy }}
+          KIND_CLUSTER_NAME: actordock-eval
+          E2E_SUITE: agent-semantic
+          ACTORDOCK_API: http://127.0.0.1:18080
           EVAL_OUT_DIR: docs/eval/results
-        run: |
-          mkdir -p docs/eval/results
-          ./hack/verify-local.sh
-          test -f "docs/eval/results/policy_report_${{ matrix.policy }}.json"
-          ls -la docs/eval/results/
+          AGENT_SEMANTIC_LIMIT: "8"
+          AGENT_SEMANTIC_INFLIGHT: "8"
+          AGENT_SEMANTIC_MIN_WORKERS: "2"
+          AGENT_SEMANTIC_SPEED: "60"
+          AGENT_SEMANTIC_MIN_LOCK: "0.25"
+          AGENT_SEMANTIC_POLICIES: "random,resource-evict,semantic-score-l1,semantic-score"
+        run: ./hack/verify-local.sh
 
-      - name: Upload policy report
-        if: success()
+      - name: Upload agent-semantic results
+        if: success() || failure()
         uses: actions/upload-artifact@v4
         with:
-          name: policy-compare-${{ matrix.policy }}
-          path: docs/eval/results/policy_report_${{ matrix.policy }}.json
-          if-no-files-found: error
+          name: agent-semantic-policy-compare
+          path: |
+            docs/eval/results/policy_compare_agent_semantic_v2.md
+            docs/eval/results/agent_semantic_v2__*.json
+          if-no-files-found: warn
 
       - name: Dump on failure
         if: failure()
         run: |
-          kubectl --context kind-actordock-eval-${{ matrix.policy }} -n actordock get pods -o wide || true
-          kubectl --context kind-actordock-eval-${{ matrix.policy }} -n actordock describe pods || true
-          kubectl --context kind-actordock-eval-${{ matrix.policy }} -n actordock logs deploy/controlplane --all-containers=true || true
-          kubectl --context kind-actordock-eval-${{ matrix.policy }} -n actordock logs statefulset/worker --all-containers=true || true
+          kubectl --context kind-actordock-eval -n actordock get pods -o wide || true
+          kubectl --context kind-actordock-eval -n actordock describe pods || true
+          kubectl --context kind-actordock-eval -n actordock logs deploy/controlplane --all-containers=true || true
+          kubectl --context kind-actordock-eval -n actordock logs statefulset/worker --all-containers=true || true
 
       - name: Teardown
         if: always()
         env:
-          KIND_CLUSTER_NAME: actordock-eval-${{ matrix.policy }}
+          KIND_CLUSTER_NAME: actordock-eval
         run: ./hack/kind-down.sh || true
-
-  e2e-eval-summary:
-    runs-on: ubuntu-latest
-    needs: e2e-eval
-    if: always() && needs.e2e-eval.result != 'cancelled'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24.x"
-
-      - name: Download per-policy eval artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: policy-compare-*
-          path: docs/eval/results/parts
-          merge-multiple: true
-
-      - name: Merge policy comparison table
-        run: |
-          mkdir -p docs/eval/results
-          echo "==> downloaded reports:"
-          find docs/eval/results/parts -type f -name 'policy_report_*.json' -print
-          go run ./hack/merge-eval-results docs/eval/results/parts docs/eval/results/policy_compare.md
-          cat docs/eval/results/policy_compare.md
-
-      - name: Upload merged comparison
-        uses: actions/upload-artifact@v4
-        with:
-          name: policy-compare-all
-          path: docs/eval/results/policy_compare.md
-          if-no-files-found: error

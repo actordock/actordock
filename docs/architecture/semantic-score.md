@@ -361,7 +361,9 @@ POLICY=semantic-score
 SEMANTIC_TTL=20s
 SEMANTIC_W_L=3 SEMANTIC_W_U=2 SEMANTIC_W_F=2 SEMANTIC_W_C=1
 SEMANTIC_OVERRIDE=false
-SEMANTIC_WAIT_SEC=120            # Resume waits when all peers are tool_loop/lock; 0 = fail immediately
+SEMANTIC_WAIT_SEC=120            # Resume waits when Place is retryable (all tool_loop/lock,
+                                 # nothing-to-suspend mid-restore, or all busy checkpoint);
+                                 # 0 = fail immediately. Shared by all policies.
 # L3 optional (HF weights from llm-semantic-router; not full SR)
 SEMANTIC_CLASSIFIER=stub         # stub | local-hf
 SEMANTIC_HF_DOMAIN=              # e.g. llm-semantic-router/<domain-classifier>
@@ -382,12 +384,23 @@ SEMANTIC_EMBED_ALPHA=0.2         # weight of embeddingSim inside urgency_prior
 
 ## 10. Metrics
 
-- Mid-`tool_loop` interrupt / Suspend rate (↓ vs `fifo` under load)
-- Resume latency by urgency / wait cohort
-- Starvation override count
+CP OTel (`GET /metrics`) for agent-semantic claims:
+
+| Instrument | Labels | Eval use |
+|------------|--------|----------|
+| `actordock.schedule.eviction` | `policy`, `reason`, **`victim_phase`**, **`victim_lock`** | `mid_tool_suspend` ≈ sum where `victim_phase=tool_loop` or `victim_lock=true` |
+| `actordock.schedule.semantic_starvation_wait` | `policy`, `outcome`=`enter`\|`resolved`\|`timeout` | All-locked Resume wait hits |
+| `actordock.sandbox.resume_latency` / `resume_wait` | `policy`, path | Resume latency under contention |
+| `actordock.resume.path` | sticky / cross / cold | Migration tax |
+
+Also report:
+
+- Resume latency by urgency / wait cohort (post-process from results + session `eval.cohort`)
 - Cross-Worker resume rate
 - Fallback rate (no semantic / L0)
 - (L3) prior coverage, confidence histogram, lift by `complexitySignal` / `domain` when prior enabled
+
+**Agent workload eval (public corpora splice):** see [`../eval/agent-semantic-workload.md`](../eval/agent-semantic-workload.md).
 
 ## 11. Non-goals
 

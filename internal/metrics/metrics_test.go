@@ -24,7 +24,10 @@ func TestRecordResumePathAndLatency(t *testing.T) {
 	m.RecordResumePath(ctx, PathStickyLocal)
 	m.RecordResumeLatency(ctx, PathStickyLocal, 150*time.Millisecond)
 	m.RecordDecision(ctx, "sticky", "ok", "local snapshot")
-	m.RecordEviction(ctx, "pool full")
+	m.RecordEviction(ctx, "pool full", "llm_wait", false)
+	m.RecordEviction(ctx, "semantic-score", "tool_loop", true)
+	m.RecordSemanticStarvationWait(ctx, StarvationEnter)
+	m.RecordSemanticStarvationWait(ctx, StarvationResolved)
 
 	var rm metricdata.ResourceMetrics
 	if err := reader.Collect(ctx, &rm); err != nil {
@@ -35,6 +38,8 @@ func TestRecordResumePathAndLatency(t *testing.T) {
 	gotLatency := false
 	gotDecision := false
 	gotEviction := false
+	gotStarvation := false
+	var evictionPoints []metricdata.DataPoint[int64]
 	for _, sm := range rm.ScopeMetrics {
 		for _, met := range sm.Metrics {
 			switch met.Name {
@@ -54,11 +59,41 @@ func TestRecordResumePathAndLatency(t *testing.T) {
 				gotDecision = true
 			case "actordock.schedule.eviction":
 				gotEviction = true
+				evictionPoints = met.Data.(metricdata.Sum[int64]).DataPoints
+			case "actordock.schedule.semantic_starvation_wait":
+				gotStarvation = true
+				sum := met.Data.(metricdata.Sum[int64])
+				if len(sum.DataPoints) < 2 {
+					t.Fatalf("starvation_wait points=%+v", sum.DataPoints)
+				}
 			}
 		}
 	}
-	if !gotPath || !gotLatency || !gotDecision || !gotEviction {
-		t.Fatalf("missing metrics path=%v latency=%v decision=%v eviction=%v", gotPath, gotLatency, gotDecision, gotEviction)
+	if !gotPath || !gotLatency || !gotDecision || !gotEviction || !gotStarvation {
+		t.Fatalf("missing metrics path=%v latency=%v decision=%v eviction=%v starvation=%v",
+			gotPath, gotLatency, gotDecision, gotEviction, gotStarvation)
+	}
+	if len(evictionPoints) < 2 {
+		t.Fatalf("want ≥2 eviction series (phase/lock labels), got %+v", evictionPoints)
+	}
+	sawToolLock := false
+	for _, dp := range evictionPoints {
+		attrs := dp.Attributes.ToSlice()
+		phase, lock := "", ""
+		for _, a := range attrs {
+			switch string(a.Key) {
+			case "victim_phase":
+				phase = a.Value.AsString()
+			case "victim_lock":
+				lock = a.Value.AsString()
+			}
+		}
+		if phase == "tool_loop" && lock == "true" {
+			sawToolLock = true
+		}
+	}
+	if !sawToolLock {
+		t.Fatalf("missing mid-tool eviction labels in %+v", evictionPoints)
 	}
 }
 

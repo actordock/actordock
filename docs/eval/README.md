@@ -2,18 +2,21 @@
 
 Home for **datasets**, experiment configs, and comparison results. Docs under `research/` define what to measure; this tree holds artifacts.
 
-## Layout (intended)
+## Agent semantic-score workload
+
+How to splice public agent + Azure arrival traces and evaluate policies (no hand-written tasks):
+
+→ **[`agent-semantic-workload.md`](./agent-semantic-workload.md)**
+
+## Layout
 
 ```
 eval/
-  README.md           # this file
-  datasets/           # versioned traces + schema
-    README.md
-  configs/            # experiment configs pinning dataset + policy
-  results/            # metric outputs (csv/json); large blobs via LFS or external store
+  README.md
+  agent-semantic-workload.md
+  datasets/agent-semantic@v2/   # BFCL splice package
+  results/                      # replay outputs (gitignored except README)
 ```
-
-Directories may stay empty until the first dataset lands.
 
 ## Dataset package (minimum)
 
@@ -29,7 +32,9 @@ Each dataset version directory should include:
 - Metrics table aligned with `docs/research/metrics.md`
 - Optional: raw decision logs for debugging
 
-CI job `e2e-eval` is a **matrix over four policies**; each writes `policy_report_<policy>.json`.
-Job `e2e-eval-summary` merges them into `results/policy_compare.md` (artifact `policy-compare-all`).
+CI job `e2e-eval` runs `E2E_SUITE=agent-semantic`: 8 agents / 2 workers on
+`datasets/agent-semantic@v2`; policies
+`random,resource-evict,semantic-score-l1,semantic-score` (L3 ablation);
+artifact `agent-semantic-policy-compare`.
 
 Do not commit huge binary checkpoints here; link or use Git LFS if needed.
