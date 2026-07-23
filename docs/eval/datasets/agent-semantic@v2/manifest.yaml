@@ -3,20 +3,40 @@ id: "agent-semantic@v2"
 schema_version: "agent-semantic.session.v2"
 session_count: 200
 arrival_ts_unit: "unix_seconds"
-subset: "bfcl"
+subsets:
+  - "bfcl"
+  - "tau2"
+min_tools: 3
+seed: 42
 max_samples: 5
 target: 200
 classify_mode: "hf"
 min_confidence: 0.3
 wave_size: 4
 in_wave_gap_sec: 5.0
+phase_duration_ms:
+  llm_wait_range:
+    - 2000
+    - 8000
+  tool_loop_range:
+    - 100
+    - 1500
+  idle_tail_range:
+    - 200
+    - 800
+  note: "tool_loop sampled shorter than same-turn llm_wait"
 sources:
   agent_process_bench:
     dataset: "LulaCola/AgentProcessBench"
-    subset: "bfcl"
+    subsets:
+      bfcl:
+        url: "https://huggingface.co/datasets/LulaCola/AgentProcessBench/resolve/main/bfcl/test.jsonl"
+        sha256: "6aee0b71eff7feb872c6b54d962f8831b56f7bebf770cba9cb657f219afb6fe5"
+      tau2:
+        url: "https://huggingface.co/datasets/LulaCola/AgentProcessBench/resolve/main/tau2/test.jsonl"
+        sha256: "6f22818ff88822512767fe735f56e7b78bed4b9aaf26959144feb92f127e1e95"
     license: "MIT"
-    url: "https://huggingface.co/datasets/LulaCola/AgentProcessBench/resolve/main/bfcl/test.jsonl"
-    sha256: "6aee0b71eff7feb872c6b54d962f8831b56f7bebf770cba9cb657f219afb6fe5"
+    selection: "prefer bfcl, pad tau2; n_tools\u22653"
   azure_functions_2019:
     release: "dataset-functions-2019"
     file: "invocations_per_function_md.anon.d01.csv"
@@ -25,4 +45,4 @@ sources:
     sha256: "f9613ae91224d87b201ce8c7c618e80c94d6bf041992effb34c5aa710b3c20fa"
     day_epoch_unix: 1561939200
     note: "Busy minutes as wave bases only (spacing); in-wave offset 5.0s."
-built_at: "2026-07-23T02:53:30.588273Z"
+built_at: "2026-07-23T07:35:23.752513Z"

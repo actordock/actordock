@@ -46,7 +46,7 @@ CI: **functional** + **e2e-eval** matrix (`random` / `resource-evict` / `semanti
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `AGENT_SEMANTIC_LIMIT` | 8 | Sessions from `@v2` |
+| `AGENT_SEMANTIC_LIMIT` | 0 (all) | Sessions from `@v2` (`0` = entire package) |
 | `AGENT_SEMANTIC_INFLIGHT` | 8 | Concurrent agents (2 workers → contention) |
 | `AGENT_SEMANTIC_MIN_WORKERS` | 2 | Healthy workers required |
 | `AGENT_SEMANTIC_SPEED` | 60 | Arrival/phase time compression |

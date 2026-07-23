@@ -7,7 +7,7 @@ Related:
 - Policy algorithm: [`../architecture/semantic-score.md`](../architecture/semantic-score.md)
 - Dataset requirements: [`../research/datasets.md`](../research/datasets.md)
 - Metrics vocabulary: [`../research/metrics.md`](../research/metrics.md)
-- CI: `E2E_SUITE=agent-semantic` (8 agents / 2 workers; random / resource-evict / semantic-score-l1 / semantic-score)
+- CI: `E2E_SUITE=agent-semantic` (full `@v2` / 2 workers; random / resource-evict / semantic-score-l1 / semantic-score)
 
 ## 1. Goal
 
@@ -28,7 +28,7 @@ There is **no public “sandbox-slot scheduling” benchmark**. We therefore **s
 |---------------------------------------------|----------------------------------|
 | Use AgentProcessBench task text and tool traces as-is | Hand-write or LLM-write prompts |
 | Use Azure Functions 2019 timestamps as-is | Sample Poisson / Zipf arrivals |
-| Derive `phase_spans` from tool timestamps with fixed rules | Invent phase labels |
+| Derive `phase_spans` from tool turns with **seeded random** durations (llm_wait > tool) | Invent phase labels |
 | Run existing HF `classify(task_text)` → `task_profile` | Invent difficulty tiers |
 | Pin `worker_pool` in experiment config | Claim pool size is “from the dataset” |
 
@@ -42,7 +42,7 @@ The splice script only **joins and renames fields**. Classifier output is a **de
 - Paper: [arXiv:2603.14465](https://arxiv.org/abs/2603.14465)
 - Contents: 1000 trajectories (250 each: `bfcl`, `gaia_dev`, `hotpotqa`, `tau2`) with multi-turn messages, tools, and tool-use traces
 
-**v2 default (single source):** only APB **`bfcl`** (≤250 trajectories = 50 queries × 5 samples). Select **all `l3_active` first**, then pad to `--target` (default **200**) with tool_dense / other. Tag `eval.cohort` ∈ {`l3_hard`,`l3_mid`,`l3_easy`,`l3_inactive`}.
+**v2 default:** APB **`bfcl`** primary + **`tau2`** pad to `--target` (default **200**). Keep only `n_tools≥3` (default `--min-tools 3`). Prefer `l3_active`, tag `eval.cohort` ∈ {`l3_hard`,`l3_mid`,`l3_easy`,`l3_inactive`}. Phase durations: llm_wait ~2–8s, tool_loop ~0.1–1.5s (always shorter; `--seed`).
 
 ### 3.2 Arrivals / concurrency — Azure Functions 2019
 
@@ -113,14 +113,14 @@ Schema version: `agent-semantic.session.v2`.
 Pinned by CI / `hack/verify-local.sh` env (example):
 
 ```bash
-AGENT_SEMANTIC_LIMIT=8
+AGENT_SEMANTIC_LIMIT=0
 AGENT_SEMANTIC_INFLIGHT=8
 AGENT_SEMANTIC_MIN_WORKERS=2
 AGENT_SEMANTIC_SPEED=60
 AGENT_SEMANTIC_POLICIES=random,resource-evict,semantic-score-l1,semantic-score
 ```
 
-`semantic-score-l1` sets `SEMANTIC_PRIOR_MIX=0` (L1 lock only); `semantic-score` sets `0.3` (L1+L3).
+`semantic-score-l1` sets `SEMANTIC_PRIOR_MIX=0` (L1 lock only); `semantic-score` sets `0.3` (L1+L3). `LIMIT=0` means all `@v2` sessions.
 
 ### 5.3 Output — per-policy result records
 
@@ -198,7 +198,7 @@ Refuse to publish the package if:
 |------|------|-----|
 | **A. Live Kind replay** | Primary claim for Actordock | Port-forward CP; for each policy, Create/Resume sandboxes on `arrival_ts` schedule; drive agent (or phase-faithful stub) from `tool_trace`; POST L1/L3 signals; collect `/metrics` + victim logs |
 | **B. Offline decision replay** | Fast ablation of keepScore | Feed cached signals + arrivals into a Place/Evict simulator that embeds `semantic-score` / baselines; no gVisor | 
-| **C. CI agent-semantic** | PR / main Kind job | Matrix: one cluster per policy (`random`, `resource-evict`, `semantic-score-l1`, `semantic-score`); merge job builds compare table |
+| **C. CI agent-semantic** | PR / main Kind job | Matrix: full `@v2` (200) per policy (`random`, `resource-evict`, `semantic-score-l1`, `semantic-score`); merge job builds compare table |
 
 Primary paper/demo numbers should come from **Mode A** (or A+B agreement).
 

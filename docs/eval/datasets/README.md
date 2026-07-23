@@ -6,4 +6,4 @@ Place versioned dataset packages here (`<name>@v<N>/...`). Requirements: [../../
 
 | Package | Builder | Notes |
 |---------|---------|-------|
-| [`agent-semantic@v2`](./agent-semantic@v2/) | `./hack/build-agent-semantic-dataset.py --target 200` | **Preferred.** Single-source BFCL; L3 cohorts + spaced waves |
+| [`agent-semantic@v2`](./agent-semantic@v2/) | `./hack/build-agent-semantic-dataset.py --target 200 --min-tools 3` | **Preferred.** BFCL+tau2; all `n_tools≥3`; L3 cohorts + spaced waves |

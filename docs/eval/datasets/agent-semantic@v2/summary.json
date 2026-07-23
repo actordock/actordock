@@ -1,14 +1,36 @@
 {
   "session_count": 200,
-  "source_subset": "bfcl",
-  "l3_active": 45,
-  "cohorts": {
-    "l3_hard": 15,
-    "l3_easy": 15,
-    "l3_mid": 15,
-    "l3_inactive": 155
+  "subsets": {
+    "bfcl": 181,
+    "tau2": 19
   },
-  "tool_dense": 109,
+  "min_tools": 3,
+  "seed": 42,
+  "l3_active": 55,
+  "cohorts": {
+    "l3_hard": 18,
+    "l3_easy": 18,
+    "l3_mid": 19,
+    "l3_inactive": 145
+  },
+  "tool_dense": 100,
+  "n_tools": {
+    "min": 3,
+    "median": 8,
+    "max": 66
+  },
+  "phase_duration_ms": {
+    "llm_wait": {
+      "min": 2000.0,
+      "median": 4989.0,
+      "max": 8000.0
+    },
+    "tool_loop": {
+      "min": 100.0,
+      "median": 764.0,
+      "max": 1500.0
+    }
+  },
   "waves": 50,
   "arrival_span_sec": 2955.0,
   "signal_range_l3": {

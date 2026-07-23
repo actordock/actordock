@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
 # Copyright 2026 The Actordock Authors.
 # SPDX-License-Identifier: Apache-2.0
-"""Build agent-semantic@v2 from a single agent-trajectory source: APB BFCL.
+"""Build agent-semantic@v2 from AgentProcessBench trajectories + Azure arrivals.
 
 Sources (public, not synthesized):
-  - LulaCola/AgentProcessBench / bfcl/test.jsonl
+  - LulaCola/AgentProcessBench: prefer **bfcl**, pad with **tau2** to hit --target
   - Azure Functions 2019 invocations_per_function_md.anon.d01.csv (arrival spacing)
 
 Design:
-  - BFCL only (tool-dense, CS-friendly for L3 complexitySignal)
-  - Keep up to 5 trajectories per query (sample_index 0..4) for path diversity
-  - Prefer l3_active (confidence≥0.3), pad to --target with tool_dense / others
+  - Keep only sessions with n_tools >= --min-tools (default 3)
+  - Randomize phase durations (seeded): llm_wait longer than tool_loop
+  - Prefer l3_active (confidence≥0.3), pad to --target
   - Tag cohorts l3_hard/mid/easy; wave arrivals for contention
+
+Phase duration priors (agent-like):
+  - llm_wait ≈ 2–8s (model generate / tool-decision latency)
+  - tool_loop ≈ 0.1–1.5s and always < that turn's llm_wait (local tool exec)
+  - idle tail ≈ 0.2–0.8s
 
 Contract: docs/eval/agent-semantic-workload.md
 """
@@ -23,6 +28,7 @@ import csv
 import hashlib
 import json
 import os
+import random
 import sys
 import urllib.request
 from collections import Counter
@@ -32,23 +38,31 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / ".cache" / "agent-semantic"
-SUBSET = "bfcl"
-APB_URL = (
-    "https://huggingface.co/datasets/LulaCola/AgentProcessBench/"
-    f"resolve/main/{SUBSET}/test.jsonl"
-)
+PRIMARY_SUBSET = "bfcl"
+PAD_SUBSET = "tau2"
+ALLOWED_SUBSETS = (PRIMARY_SUBSET, PAD_SUBSET)
+
+def apb_url(subset: str) -> str:
+    return (
+        "https://huggingface.co/datasets/LulaCola/AgentProcessBench/"
+        f"resolve/main/{subset}/test.jsonl"
+    )
+
+
 AZURE_CSV = "invocations_per_function_md.anon.d01.csv"
 AZURE_DAY_EPOCH = 1561939200  # 2019-07-01T00:00:00Z
 AZURE_DAY = "01"
 
-LLM_WAIT_MS = 800
-TOOL_LOOP_MS = 1125
-IDLE_TAIL_MS = 500
+# Inclusive ms ranges; tool is further capped below the same-turn llm_wait.
+LLM_WAIT_MS_RANGE = (2000, 8000)
+TOOL_LOOP_MS_RANGE = (100, 1500)
+IDLE_TAIL_MS_RANGE = (200, 800)
 
 SCHEMA = "agent-semantic.session.v2"
 CONF_ACTIVE_DEFAULT = 0.3
 WAVE_SIZE = 4
 IN_WAVE_GAP_SEC = 5.0
+MIN_TOOLS_DEFAULT = 3
 
 
 def sha256_file(path: Path) -> str:
@@ -134,30 +148,28 @@ def azure_busy_minute_starts(csv_path: Path) -> list[int]:
     return [mi for mi, t in enumerate(totals) if t > 0]
 
 
-def extract_tool_trace(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def sample_llm_wait_ms(rng: random.Random) -> int:
+    return rng.randint(LLM_WAIT_MS_RANGE[0], LLM_WAIT_MS_RANGE[1])
+
+
+def sample_tool_loop_ms(rng: random.Random, llm_wait_ms: int) -> int:
+    """Local tool exec; always shorter than the preceding llm_wait."""
+    hi = min(TOOL_LOOP_MS_RANGE[1], max(TOOL_LOOP_MS_RANGE[0], llm_wait_ms // 2))
+    lo = TOOL_LOOP_MS_RANGE[0]
+    if hi < lo:
+        return lo
+    return rng.randint(lo, hi)
+
+
+def sample_idle_ms(rng: random.Random) -> int:
+    return rng.randint(IDLE_TAIL_MS_RANGE[0], IDLE_TAIL_MS_RANGE[1])
+
+
+def derive_trace_and_spans(
+    messages: list[dict[str, Any]], rng: random.Random
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build tool_trace + phase_spans with shared randomized durations."""
     trace: list[dict[str, Any]] = []
-    t = 0
-    for msg in messages:
-        if msg.get("role") != "assistant":
-            continue
-        tcs = msg.get("tool_calls") or []
-        if not tcs:
-            continue
-        t += LLM_WAIT_MS
-        for tc in tcs:
-            fn = (tc.get("function") or {}) if isinstance(tc, dict) else {}
-            trace.append(
-                {
-                    "name": fn.get("name") or "unknown",
-                    "args_digest": args_digest(fn.get("arguments")),
-                    "t_rel_ms": t,
-                }
-            )
-            t += TOOL_LOOP_MS
-    return trace
-
-
-def derive_phase_spans(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     spans: list[dict[str, Any]] = []
     t = 0
     for msg in messages:
@@ -165,32 +177,43 @@ def derive_phase_spans(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         tcs = msg.get("tool_calls") or []
         if tcs:
+            llm_ms = sample_llm_wait_ms(rng)
             spans.append(
-                {"phase": "llm_wait", "lock": False, "t_start_ms": t, "t_end_ms": t + LLM_WAIT_MS}
+                {"phase": "llm_wait", "lock": False, "t_start_ms": t, "t_end_ms": t + llm_ms}
             )
-            t += LLM_WAIT_MS
-            for _ in tcs:
+            t += llm_ms
+            for tc in tcs:
+                fn = (tc.get("function") or {}) if isinstance(tc, dict) else {}
+                trace.append(
+                    {
+                        "name": fn.get("name") or "unknown",
+                        "args_digest": args_digest(fn.get("arguments")),
+                        "t_rel_ms": t,
+                    }
+                )
+                tool_ms = sample_tool_loop_ms(rng, llm_ms)
                 spans.append(
                     {
                         "phase": "tool_loop",
                         "lock": True,
                         "t_start_ms": t,
-                        "t_end_ms": t + TOOL_LOOP_MS,
+                        "t_end_ms": t + tool_ms,
                     }
                 )
-                t += TOOL_LOOP_MS
+                t += tool_ms
         else:
+            llm_ms = sample_llm_wait_ms(rng)
             spans.append(
-                {"phase": "llm_wait", "lock": False, "t_start_ms": t, "t_end_ms": t + LLM_WAIT_MS}
+                {"phase": "llm_wait", "lock": False, "t_start_ms": t, "t_end_ms": t + llm_ms}
             )
-            t += LLM_WAIT_MS
+            t += llm_ms
     if not spans:
-        spans = [
-            {"phase": "llm_wait", "lock": False, "t_start_ms": 0, "t_end_ms": LLM_WAIT_MS},
-        ]
-        t = LLM_WAIT_MS
-    spans.append({"phase": "idle", "lock": False, "t_start_ms": t, "t_end_ms": t + IDLE_TAIL_MS})
-    return spans
+        llm_ms = sample_llm_wait_ms(rng)
+        spans = [{"phase": "llm_wait", "lock": False, "t_start_ms": 0, "t_end_ms": llm_ms}]
+        t = llm_ms
+    idle_ms = sample_idle_ms(rng)
+    spans.append({"phase": "idle", "lock": False, "t_start_ms": t, "t_end_ms": t + idle_ms})
+    return trace, spans
 
 
 def stub_profile(_task_text: str) -> dict[str, Any]:
@@ -236,7 +259,7 @@ def make_hf_classifier():
     return classify_cached
 
 
-def load_bfcl_rows(path: Path, max_samples: int) -> list[dict[str, Any]]:
+def load_apb_rows(path: Path, max_samples: int) -> list[dict[str, Any]]:
     rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
     out: list[dict[str, Any]] = []
     for r in rows:
@@ -280,28 +303,26 @@ def select_to_target(
     items: list[dict[str, Any]], target: int, min_confidence: float
 ) -> list[dict[str, Any]]:
     assign_cohorts(items, min_confidence)
-    active = [x for x in items if x["l3_active"]]
-    inactive_dense = [
-        x for x in items if (not x["l3_active"]) and x["phase_role"] == "tool_dense"
-    ]
-    inactive_rest = [
-        x for x in items if (not x["l3_active"]) and x["phase_role"] != "tool_dense"
-    ]
+    primary = [x for x in items if x["source"]["subset"] == PRIMARY_SUBSET]
+    pad = [x for x in items if x["source"]["subset"] == PAD_SUBSET]
 
-    def key(x: dict[str, Any]) -> tuple:
+    def rank_key(x: dict[str, Any]) -> tuple:
+        # Prefer l3_active, then tool_dense, then stable source order.
         src = x["source"]
-        return (src["query_index"], src["sample_index"])
+        return (
+            0 if x["l3_active"] else 1,
+            0 if x["phase_role"] == "tool_dense" else 1,
+            src["subset"],
+            src["query_index"],
+            src["sample_index"],
+        )
 
-    active.sort(key=key)
-    inactive_dense.sort(key=key)
-    inactive_rest.sort(key=key)
+    primary.sort(key=rank_key)
+    pad.sort(key=rank_key)
 
     picked: list[dict[str, Any]] = []
     seen: set[int] = set()
-    for x in active:
-        seen.add(id(x))
-        picked.append(x)
-    for bucket in (inactive_dense, inactive_rest):
+    for bucket in (primary, pad):
         for x in bucket:
             if len(picked) >= target:
                 break
@@ -314,13 +335,16 @@ def select_to_target(
 
     if len(picked) < target:
         raise SystemExit(
-            f"only {len(picked)} BFCL sessions available, need target={target}. "
-            "Lower --target or raise --max-samples (max pool is 250)."
+            f"only {len(picked)} sessions with enough tools "
+            f"(primary={PRIMARY_SUBSET} pad={PAD_SUBSET}); need target={target}. "
+            "Lower --min-tools or --target."
         )
     assign_cohorts(picked, min_confidence)
     print(
         f"[select] pool={len(items)} → {len(picked)} "
-        f"(l3_active={sum(1 for x in picked if x['l3_active'])}, target={target})"
+        f"(bfcl={sum(1 for x in picked if x['source']['subset']==PRIMARY_SUBSET)}, "
+        f"tau2={sum(1 for x in picked if x['source']['subset']==PAD_SUBSET)}, "
+        f"l3_active={sum(1 for x in picked if x['l3_active'])}, target={target})"
     )
     return picked
 
@@ -446,89 +470,120 @@ def validate(sessions: list[dict[str, Any]], allow_incomplete: bool) -> None:
             raise SystemExit("stub profiles not allowed without --allow-incomplete")
         if s.get("eval", {}).get("l3_active"):
             l3 += 1
-        if s["source"].get("subset") != SUBSET:
-            raise SystemExit(f"non-BFCL subset at {i}: {s['source'].get('subset')}")
+        n_tools = int(s.get("eval", {}).get("n_tools") or 0)
+        if n_tools < 1:
+            raise SystemExit(f"session {i} has n_tools={n_tools}")
+        if not any(sp.get("phase") == "tool_loop" for sp in s.get("phase_spans") or []):
+            raise SystemExit(f"session {i} missing tool_loop spans")
+        subset = s["source"].get("subset")
+        if subset not in ALLOWED_SUBSETS:
+            raise SystemExit(f"unexpected subset at {i}: {subset}")
     if not allow_incomplete and l3 < 6:
         raise SystemExit(f"too few l3_active sessions ({l3}); need ≥6 for contrast")
     gaps = [sessions[i + 1]["arrival_ts"] - sessions[i]["arrival_ts"] for i in range(len(sessions) - 1)]
     gaps_pos = [g for g in gaps if g > 0]
     if gaps_pos and sorted(gaps_pos)[len(gaps_pos) // 2] < 0.5:
         raise SystemExit("median positive inter-arrival < 0.5s")
-    print(f"[ok] validated n={len(sessions)} l3_active={l3} subset={SUBSET}")
+    print(f"[ok] validated n={len(sessions)} l3_active={l3} subsets={ALLOWED_SUBSETS}")
+
+
+def row_to_item(
+    r: dict[str, Any],
+    subset: str,
+    classify_fn,
+    rng: random.Random,
+) -> dict[str, Any] | None:
+    task_text = (r.get("question") or "").strip()
+    if not task_text:
+        for msg in r.get("messages") or []:
+            if msg.get("role") == "user" and msg.get("content"):
+                task_text = str(msg["content"]).strip()
+                break
+    if not task_text:
+        return None
+    messages = r.get("messages") or []
+    tool_trace, phase_spans = derive_trace_and_spans(messages, rng)
+    profile = classify_fn(task_text)
+    q = int(r["query_index"])
+    sidx = int(r["sample_index"])
+    sid = f"apb/{subset}/q{q:03d}_s{sidx}"
+    return {
+        "schema_version": SCHEMA,
+        "session_id": sid,
+        "source": {
+            "dataset": "LulaCola/AgentProcessBench",
+            "subset": subset,
+            "query_index": q,
+            "sample_index": sidx,
+            "license": "MIT",
+            "azure_invocations": AZURE_CSV,
+            "azure_day": AZURE_DAY,
+        },
+        "task_text": task_text,
+        "tool_trace": tool_trace,
+        "phase_spans": phase_spans,
+        "task_profile": profile,
+    }
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--version", default="v2", choices=["v2"])
-    ap.add_argument("--limit", type=int, default=0)
-    ap.add_argument("--max-samples", type=int, default=5, help="sample_index in [0, max); BFCL has 5")
-    ap.add_argument("--target", type=int, default=200, help="Minimum sessions (BFCL pool ≤250)")
+    ap.add_argument("--limit", type=int, default=0, help="Debug: cap rows per subset before filter")
+    ap.add_argument("--max-samples", type=int, default=5, help="sample_index in [0, max)")
+    ap.add_argument("--target", type=int, default=200, help="Sessions to emit (≥200 recommended)")
+    ap.add_argument("--min-tools", type=int, default=MIN_TOOLS_DEFAULT, help="Keep n_tools ≥ this")
+    ap.add_argument("--seed", type=int, default=42, help="RNG seed for phase durations")
     ap.add_argument("--classify", choices=["hf", "none"], default="hf")
     ap.add_argument("--allow-incomplete", action="store_true")
     ap.add_argument("--min-confidence", type=float, default=CONF_ACTIVE_DEFAULT)
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
 
-    if args.target > 250:
-        raise SystemExit("BFCL has at most 250 trajectories; --target must be ≤250")
+    if args.min_tools < 1:
+        raise SystemExit("--min-tools must be ≥1")
+    if args.target < 1:
+        raise SystemExit("--target must be ≥1")
 
     min_conf = args.min_confidence
     out_dir = args.out or (ROOT / "docs" / "eval" / "datasets" / f"agent-semantic@{args.version}")
+    rng = random.Random(args.seed)
 
-    apb_path = CACHE / "apb" / f"{SUBSET}_test.jsonl"
-    download(APB_URL, apb_path)
     azure_csv = ensure_azure_csv(CACHE)
     busy = azure_busy_minute_starts(azure_csv)
-
-    rows = load_bfcl_rows(apb_path, args.max_samples)
-    if args.limit > 0:
-        rows = rows[: args.limit]
-    if not rows:
-        raise SystemExit("no BFCL rows")
-
     classify_fn = stub_profile if args.classify == "none" else make_hf_classifier()
 
     items: list[dict[str, Any]] = []
-    for r in rows:
-        task_text = (r.get("question") or "").strip()
-        if not task_text:
-            for msg in r.get("messages") or []:
-                if msg.get("role") == "user" and msg.get("content"):
-                    task_text = str(msg["content"]).strip()
-                    break
-        if not task_text:
-            raise SystemExit(f"empty task_text q={r.get('query_index')}")
-        messages = r.get("messages") or []
-        tool_trace = extract_tool_trace(messages)
-        phase_spans = derive_phase_spans(messages)
-        profile = classify_fn(task_text)
-        q = int(r["query_index"])
-        sidx = int(r["sample_index"])
-        sid = f"apb/{SUBSET}/q{q:03d}_s{sidx}"
-        items.append(
-            {
-                "schema_version": SCHEMA,
-                "session_id": sid,
-                "source": {
-                    "dataset": "LulaCola/AgentProcessBench",
-                    "subset": SUBSET,
-                    "query_index": q,
-                    "sample_index": sidx,
-                    "license": "MIT",
-                    "azure_invocations": AZURE_CSV,
-                    "azure_day": AZURE_DAY,
-                },
-                "task_text": task_text,
-                "tool_trace": tool_trace,
-                "phase_spans": phase_spans,
-                "task_profile": profile,
-            }
-        )
-        if len(items) % 50 == 0 or len(items) == 1:
-            print(
-                f"[classify] {len(items)}/{len(rows)} {sid} "
-                f"conf={profile.get('confidence')} sig={profile.get('complexitySignal')}"
-            )
+    source_paths: dict[str, Path] = {}
+    for subset in ALLOWED_SUBSETS:
+        path = CACHE / "apb" / f"{subset}_test.jsonl"
+        download(apb_url(subset), path)
+        source_paths[subset] = path
+        rows = load_apb_rows(path, args.max_samples)
+        if args.limit > 0:
+            rows = rows[: args.limit]
+        kept = 0
+        for r in rows:
+            # Per-row RNG fork so order/filter changes don't reshuffle all timings.
+            row_rng = random.Random(f"{args.seed}:{subset}:{r.get('query_index')}:{r.get('sample_index')}")
+            item = row_to_item(r, subset, classify_fn, row_rng)
+            if item is None:
+                continue
+            n_tools = len(item["tool_trace"])
+            if n_tools < args.min_tools:
+                continue
+            items.append(item)
+            kept += 1
+            if kept % 40 == 0 or kept == 1:
+                print(
+                    f"[classify] {subset} kept={kept} {item['session_id']} "
+                    f"n_tools={n_tools} conf={item['task_profile'].get('confidence')} "
+                    f"sig={item['task_profile'].get('complexitySignal')}"
+                )
+        print(f"[filter] {subset}: rows={len(rows)} kept_ge{args.min_tools}={kept}")
+
+    if not items:
+        raise SystemExit(f"no sessions with n_tools≥{args.min_tools}")
 
     items = select_to_target(items, args.target, min_conf)
     if len(items) < args.target and not args.allow_incomplete:
@@ -563,7 +618,9 @@ def main() -> None:
                     "n_tools": len(x["tool_trace"]),
                 },
                 "notes": (
-                    f"Single-source BFCL; Azure busy-minute waves + {IN_WAVE_GAP_SEC}s in-wave gap."
+                    f"APB {x['source']['subset']}; n_tools≥{args.min_tools}; "
+                    f"seeded phase durations (llm_wait>{TOOL_LOOP_MS_RANGE[0]}ms tool); "
+                    f"Azure waves + {IN_WAVE_GAP_SEC}s in-wave gap; seed={args.seed}."
                 ),
             }
         )
@@ -580,6 +637,10 @@ def main() -> None:
         )
 
     validate(sessions, allow_incomplete=args.allow_incomplete or args.classify == "none")
+    # Extra gate: every session meets min_tools.
+    bad = [s["session_id"] for s in sessions if int(s["eval"]["n_tools"]) < args.min_tools]
+    if bad:
+        raise SystemExit(f"{len(bad)} sessions below min_tools={args.min_tools}: {bad[:5]}")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     with (out_dir / "sessions.jsonl").open("w") as fs, (out_dir / "arrivals.jsonl").open("w") as fa:
@@ -590,12 +651,40 @@ def main() -> None:
     l3_sigs = [
         s["task_profile"]["complexitySignal"] for s in sessions if s["eval"]["l3_active"]
     ]
+    llm_durs = []
+    tool_durs = []
+    for s in sessions:
+        for sp in s["phase_spans"]:
+            dur = float(sp["t_end_ms"]) - float(sp["t_start_ms"])
+            if sp["phase"] == "llm_wait":
+                llm_durs.append(dur)
+            elif sp["phase"] == "tool_loop":
+                tool_durs.append(dur)
     summary = {
         "session_count": len(sessions),
-        "source_subset": SUBSET,
+        "subsets": dict(Counter(s["source"]["subset"] for s in sessions)),
+        "min_tools": args.min_tools,
+        "seed": args.seed,
         "l3_active": sum(1 for s in sessions if s["eval"]["l3_active"]),
         "cohorts": dict(Counter(s["eval"]["cohort"] for s in sessions)),
         "tool_dense": sum(1 for s in sessions if s["eval"]["phase_role"] == "tool_dense"),
+        "n_tools": {
+            "min": min(s["eval"]["n_tools"] for s in sessions),
+            "median": sorted(s["eval"]["n_tools"] for s in sessions)[len(sessions) // 2],
+            "max": max(s["eval"]["n_tools"] for s in sessions),
+        },
+        "phase_duration_ms": {
+            "llm_wait": {
+                "min": min(llm_durs) if llm_durs else 0,
+                "median": sorted(llm_durs)[len(llm_durs) // 2] if llm_durs else 0,
+                "max": max(llm_durs) if llm_durs else 0,
+            },
+            "tool_loop": {
+                "min": min(tool_durs) if tool_durs else 0,
+                "median": sorted(tool_durs)[len(tool_durs) // 2] if tool_durs else 0,
+                "max": max(tool_durs) if tool_durs else 0,
+            },
+        },
         "waves": max((s["eval"]["wave_id"] for s in sessions), default=-1) + 1,
         "arrival_span_sec": sessions[-1]["arrival_ts"] - sessions[0]["arrival_ts"],
         "signal_range_l3": {
@@ -615,20 +704,33 @@ def main() -> None:
         "schema_version": SCHEMA,
         "session_count": len(sessions),
         "arrival_ts_unit": "unix_seconds",
-        "subset": SUBSET,
+        "subsets": list(ALLOWED_SUBSETS),
+        "min_tools": args.min_tools,
+        "seed": args.seed,
         "max_samples": args.max_samples,
         "target": args.target,
         "classify_mode": args.classify,
         "min_confidence": min_conf,
         "wave_size": WAVE_SIZE,
         "in_wave_gap_sec": IN_WAVE_GAP_SEC,
+        "phase_duration_ms": {
+            "llm_wait_range": list(LLM_WAIT_MS_RANGE),
+            "tool_loop_range": list(TOOL_LOOP_MS_RANGE),
+            "idle_tail_range": list(IDLE_TAIL_MS_RANGE),
+            "note": "tool_loop sampled shorter than same-turn llm_wait",
+        },
         "sources": {
             "agent_process_bench": {
                 "dataset": "LulaCola/AgentProcessBench",
-                "subset": SUBSET,
+                "subsets": {
+                    subset: {
+                        "url": apb_url(subset),
+                        "sha256": sha256_file(source_paths[subset]),
+                    }
+                    for subset in ALLOWED_SUBSETS
+                },
                 "license": "MIT",
-                "url": APB_URL,
-                "sha256": sha256_file(apb_path),
+                "selection": f"prefer {PRIMARY_SUBSET}, pad {PAD_SUBSET}; n_tools≥{args.min_tools}",
             },
             "azure_functions_2019": {
                 "release": "dataset-functions-2019",
@@ -652,15 +754,17 @@ def main() -> None:
     (out_dir / "README.md").write_text(
         f"""# agent-semantic@{args.version}
 
-Single-source agent workload for **semantic-score**.
+Agent workload for **semantic-score** (all sessions have `n_tools≥{args.min_tools}`).
 
 | Source | Role |
 |--------|------|
-| AgentProcessBench **BFCL** | Task text + tool trajectories |
+| AgentProcessBench **{PRIMARY_SUBSET}** (primary) + **{PAD_SUBSET}** (pad) | Task text + tool trajectories |
 | Azure Functions 2019 day01 | Arrival wave spacing only |
 
+Phase spans use seeded random durations: llm_wait 2–8s, tool_loop 0.1–1.5s (always shorter).
+
 ```bash
-./hack/build-agent-semantic-dataset.py --target 200 --classify hf
+./hack/build-agent-semantic-dataset.py --target 200 --min-tools {args.min_tools} --seed {args.seed} --classify hf
 ```
 
 See `summary.json`. Contract: [`../../agent-semantic-workload.md`](../../agent-semantic-workload.md).

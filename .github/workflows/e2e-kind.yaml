@@ -70,7 +70,7 @@ jobs:
   # Parallel ablation: one Kind cluster per policy variant (no mid-run POLICY switch).
   e2e-eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 240
     strategy:
       fail-fast: false
       matrix:
@@ -116,13 +116,13 @@ jobs:
           chmod +x hack/*.sh hack/replay-agent-semantic.py
           ./hack/kind-up.sh
 
-      - name: Agent-semantic replay (8 agents / 2 workers)
+      - name: Agent-semantic replay (full @v2 / 2 workers)
         env:
           KIND_CLUSTER_NAME: ${{ matrix.cluster }}
           E2E_SUITE: agent-semantic
           ACTORDOCK_API: http://127.0.0.1:18080
           EVAL_OUT_DIR: docs/eval/results
-          AGENT_SEMANTIC_LIMIT: "8"
+          AGENT_SEMANTIC_LIMIT: "0"
           AGENT_SEMANTIC_INFLIGHT: "8"
           AGENT_SEMANTIC_MIN_WORKERS: "2"
           AGENT_SEMANTIC_SPEED: "60"
