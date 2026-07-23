@@ -125,7 +125,7 @@ jobs:
           AGENT_SEMANTIC_LIMIT: "10"
           AGENT_SEMANTIC_INFLIGHT: "8"
           AGENT_SEMANTIC_MIN_WORKERS: "2"
-          AGENT_SEMANTIC_SPEED: "60"
+          AGENT_SEMANTIC_SPEED: "1"
           AGENT_SEMANTIC_MIN_LOCK: "0.25"
           AGENT_SEMANTIC_POLICIES: ${{ matrix.label }}
           AGENT_SEMANTIC_SWITCH_POLICY: "0"
