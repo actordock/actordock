@@ -20,6 +20,10 @@ import (
 // The scheduler may wait and retry Resume until a slot frees.
 var ErrAllSemanticLocked = errors.New("semantic-score: all candidates locked and override disabled")
 
+// ErrNotBestWaiter means another Resume knocker has a higher admit keepScore.
+// The scheduler retries until this sandbox becomes the best waiter (continuous knock).
+var ErrNotBestWaiter = errors.New("semantic-score: not highest-score Resume waiter")
+
 // SemanticScore places onto the least-loaded idle Worker; when full, suspends the
 // running sandbox with the lowest agent-semantic keepScore after a phase-lock filter.
 // See docs/architecture/semantic-score.md.
@@ -75,7 +79,41 @@ func (p *SemanticScore) Resume(ctx context.Context, req ResumeRequest) (PlaceRes
 	if res, ok := tryStickyResume(req, "semantic-score: sticky resume to last idle worker"); ok {
 		return res, nil
 	}
+	// Among concurrent knockers, only the highest keepScore may take an idle
+	// slot or preempt (typically llm_wait). Others keep knocking.
+	if err := p.requireBestWaiter(req); err != nil {
+		return PlaceResult{}, err
+	}
 	return p.Place(ctx, placeFromResume(req))
+}
+
+func (p *SemanticScore) requireBestWaiter(req ResumeRequest) error {
+	if len(req.Waiting) == 0 {
+		return nil
+	}
+	now := time.Now()
+	if p.Now != nil {
+		now = p.Now()
+	}
+	mine := keepScore(req.Sandbox, req.SandboxSignals, p, now)
+	for _, other := range req.Waiting {
+		if other.ID == "" || other.ID == req.Sandbox.ID {
+			continue
+		}
+		sc := keepScore(other, req.SandboxSignals, p, now)
+		if sc > mine {
+			return ErrNotBestWaiter
+		}
+		if sc == mine {
+			if other.CreatedAt.Before(req.Sandbox.CreatedAt) {
+				return ErrNotBestWaiter
+			}
+			if other.CreatedAt.Equal(req.Sandbox.CreatedAt) && other.ID < req.Sandbox.ID {
+				return ErrNotBestWaiter
+			}
+		}
+	}
+	return nil
 }
 
 func pickSemanticVictim(running []types.Sandbox, sandboxSig map[string]signals.SandboxSignals, p *SemanticScore, now time.Time) (types.Sandbox, string, error) {

@@ -39,6 +39,14 @@ type Scheduler struct {
 	signals  *signals.Store
 
 	goldenMu sync.Mutex
+
+	// resumeWaiters tracks sandboxes blocked in Resume (continuous knockers).
+	// Used by semantic-score to admit only the highest-score waiter.
+	resumeWaitMu sync.Mutex
+	resumeWaiters map[string]types.Sandbox
+
+	// decideMu serializes one Place/Resume admission decision at a time.
+	decideMu sync.Mutex
 }
 
 func New(st store.Store, pol policy.Policy, snapRoot string, log *slog.Logger, m *metrics.Metrics, sig *signals.Store) *Scheduler {
@@ -49,13 +57,14 @@ func New(st store.Store, pol policy.Policy, snapRoot string, log *slog.Logger, m
 		snapRoot = "/var/lib/actordock/snapshots"
 	}
 	s := &Scheduler{
-		store:    st,
-		policy:   pol,
-		workers:  workerclient.New(),
-		snapRoot: snapRoot,
-		log:      log,
-		metrics:  m,
-		signals:  sig,
+		store:         st,
+		policy:        pol,
+		workers:       workerclient.New(),
+		snapRoot:      snapRoot,
+		log:           log,
+		metrics:       m,
+		signals:       sig,
+		resumeWaiters: make(map[string]types.Sandbox),
 	}
 	if m != nil {
 		m.SetPoolStats(s)
@@ -280,6 +289,9 @@ func (s *Scheduler) Resume(ctx context.Context, id string) (types.Sandbox, error
 		return types.Sandbox{}, fmt.Errorf("sandbox %s is %s, want suspended|paused", id, sb.State)
 	}
 	prevWorkerID := sb.WorkerID
+
+	s.addResumeWaiter(sb)
+	defer s.removeResumeWaiter(id)
 
 	decStart := time.Now()
 	res, err := s.resumePolicyDecide(ctx, sb)
@@ -506,6 +518,7 @@ func filterRunningOn(running []types.Sandbox, workerID string) []types.Sandbox {
 // resumePolicyDecide asks POLICY for a Worker (and optional victim).
 // Retryable Place/Resume failures wait up to SEMANTIC_WAIT_SEC (default 120s; 0 = no wait):
 //   - ErrAllSemanticLocked (all tool_loop/lock)
+//   - ErrNotBestWaiter (another knocker has higher semantic score)
 //   - "nothing to suspend" (slots held but no Running victim yet, e.g. mid-restore)
 //   - "busy (checkpoint)" (all victims checkpointing)
 //
@@ -516,8 +529,15 @@ func (s *Scheduler) resumePolicyDecide(ctx context.Context, sb types.Sandbox) (p
 	var lastErr error
 	enteredSemanticWait := false
 	for {
+		s.decideMu.Lock()
+		// Refresh waiter snapshot (CreatedAt / signals may matter for ranking).
+		if cur, err := s.store.GetSandbox(ctx, sb.ID); err == nil {
+			sb = cur
+			s.addResumeWaiter(sb)
+		}
 		workers, running, err := s.resumeCandidates(ctx, sb)
 		if err != nil {
+			s.decideMu.Unlock()
 			return policy.PlaceResult{}, err
 		}
 		now := time.Now().UTC()
@@ -525,7 +545,9 @@ func (s *Scheduler) resumePolicyDecide(ctx context.Context, sb types.Sandbox) (p
 		res, err := s.policy.Resume(ctx, policy.ResumeRequest{
 			Sandbox: sb, Workers: workers, Running: running,
 			SandboxSignals: sandboxSig, WorkerSignals: workerSig,
+			Waiting: s.listResumeWaiters(),
 		})
+		s.decideMu.Unlock()
 		if err == nil {
 			if enteredSemanticWait {
 				s.metrics.RecordSemanticStarvationWait(ctx, metrics.StarvationResolved)
@@ -551,6 +573,7 @@ func (s *Scheduler) resumePolicyDecide(ctx context.Context, sb types.Sandbox) (p
 			"err", err.Error(),
 			"running", len(running),
 			"workers", len(workers),
+			"waiters", len(s.listResumeWaiters()),
 		)
 		select {
 		case <-ctx.Done():
@@ -560,13 +583,38 @@ func (s *Scheduler) resumePolicyDecide(ctx context.Context, sb types.Sandbox) (p
 	}
 }
 
+func (s *Scheduler) addResumeWaiter(sb types.Sandbox) {
+	s.resumeWaitMu.Lock()
+	defer s.resumeWaitMu.Unlock()
+	if s.resumeWaiters == nil {
+		s.resumeWaiters = make(map[string]types.Sandbox)
+	}
+	s.resumeWaiters[sb.ID] = sb
+}
+
+func (s *Scheduler) removeResumeWaiter(id string) {
+	s.resumeWaitMu.Lock()
+	defer s.resumeWaitMu.Unlock()
+	delete(s.resumeWaiters, id)
+}
+
+func (s *Scheduler) listResumeWaiters() []types.Sandbox {
+	s.resumeWaitMu.Lock()
+	defer s.resumeWaitMu.Unlock()
+	out := make([]types.Sandbox, 0, len(s.resumeWaiters))
+	for _, sb := range s.resumeWaiters {
+		out = append(out, sb)
+	}
+	return out
+}
+
 // resumeRetryable reports Place/Resume errors that should block Resume until
 // a slot frees or a victim becomes eligible (shared across policies).
 func resumeRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, policy.ErrAllSemanticLocked) {
+	if errors.Is(err, policy.ErrAllSemanticLocked) || errors.Is(err, policy.ErrNotBestWaiter) {
 		return true
 	}
 	msg := err.Error()

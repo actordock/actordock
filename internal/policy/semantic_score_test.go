@@ -239,3 +239,88 @@ func TestSemanticScoreHugePreemptCostDoesNotBeatToolLoopFilter(t *testing.T) {
 		t.Fatalf("victim=%q want idle (lock filter before cost)", res.VictimID)
 	}
 }
+
+func TestSemanticScoreResumeDefersToHigherScoreWaiter(t *testing.T) {
+	p := policy.NewSemanticScore()
+	now := time.Now()
+	workers := []types.Worker{
+		{ID: "w1", MaxSlots: 1, UsedSlots: 0, Healthy: true, RegisteredAt: now},
+	}
+	low := -0.4
+	high := 0.4
+	me := types.Sandbox{ID: "low", State: types.SandboxSuspended, CreatedAt: now}
+	other := types.Sandbox{ID: "high", State: types.SandboxSuspended, CreatedAt: now.Add(-time.Minute)}
+	sandboxSig := map[string]signals.SandboxSignals{
+		"low": {SandboxID: "low", Semantic: signals.SemanticResource{
+			Phase: signals.PhaseLLMWait,
+			TaskProfile: &signals.TaskProfile{
+				ComplexitySignal: &low, Confidence: 0.9,
+			},
+		}},
+		"high": {SandboxID: "high", Semantic: signals.SemanticResource{
+			Phase: signals.PhaseLLMWait,
+			TaskProfile: &signals.TaskProfile{
+				ComplexitySignal: &high, Confidence: 0.9,
+			},
+		}},
+	}
+	_, err := p.Resume(context.Background(), policy.ResumeRequest{
+		Sandbox:        me,
+		Workers:        workers,
+		SandboxSignals: sandboxSig,
+		Waiting:        []types.Sandbox{me, other},
+	})
+	if !errors.Is(err, policy.ErrNotBestWaiter) {
+		t.Fatalf("err=%v want ErrNotBestWaiter", err)
+	}
+
+	res, err := p.Resume(context.Background(), policy.ResumeRequest{
+		Sandbox:        other,
+		Workers:        workers,
+		SandboxSignals: sandboxSig,
+		Waiting:        []types.Sandbox{me, other},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.WorkerID != "w1" || res.VictimID != "" {
+		t.Fatalf("got %+v want idle place on w1", res)
+	}
+}
+
+func TestSemanticScoreResumeBestWaiterCanPreemptLLMWait(t *testing.T) {
+	p := policy.NewSemanticScore()
+	now := time.Now()
+	workers := []types.Worker{
+		{ID: "w1", MaxSlots: 1, UsedSlots: 1, Healthy: true, RegisteredAt: now},
+	}
+	running := []types.Sandbox{
+		{ID: "hold", WorkerID: "w1", State: types.SandboxRunning, CreatedAt: now.Add(-time.Hour)},
+	}
+	high := 0.4
+	knocker := types.Sandbox{ID: "in", State: types.SandboxSuspended, CreatedAt: now}
+	sandboxSig := map[string]signals.SandboxSignals{
+		"hold": {SandboxID: "hold", Semantic: signals.SemanticResource{
+			Phase: signals.PhaseLLMWait,
+		}},
+		"in": {SandboxID: "in", Semantic: signals.SemanticResource{
+			Phase: signals.PhaseLLMWait,
+			TaskProfile: &signals.TaskProfile{
+				ComplexitySignal: &high, Confidence: 0.9,
+			},
+		}},
+	}
+	res, err := p.Resume(context.Background(), policy.ResumeRequest{
+		Sandbox:        knocker,
+		Workers:        workers,
+		Running:        running,
+		SandboxSignals: sandboxSig,
+		Waiting:        []types.Sandbox{knocker},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.VictimID != "hold" {
+		t.Fatalf("victim=%q want hold (llm_wait preempt)", res.VictimID)
+	}
+}

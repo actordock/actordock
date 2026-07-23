@@ -20,6 +20,8 @@ func TestResumeRetryable(t *testing.T) {
 		{errors.New("boom"), false},
 		{policy.ErrAllSemanticLocked, true},
 		{fmt.Errorf("wrap: %w", policy.ErrAllSemanticLocked), true},
+		{policy.ErrNotBestWaiter, true},
+		{fmt.Errorf("wrap: %w", policy.ErrNotBestWaiter), true},
 		{fmt.Errorf("fifo: no capacity and nothing to suspend"), true},
 		{fmt.Errorf("semantic-score: all running sandboxes busy (checkpoint)"), true},
 		{fmt.Errorf("evict x: checkpoint failed"), false},

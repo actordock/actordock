@@ -33,6 +33,10 @@ type ResumeRequest struct {
 	Running        []types.Sandbox
 	SandboxSignals map[string]signals.SandboxSignals
 	WorkerSignals  map[string]signals.WorkerResource
+	// Waiting is the set of sandboxes currently blocked in Resume (including Sandbox).
+	// semantic-score uses this so only the highest-score knocker may Place/Evict;
+	// other policies ignore it.
+	Waiting []types.Sandbox
 }
 
 // Policy chooses placement, eviction, and resume targets.

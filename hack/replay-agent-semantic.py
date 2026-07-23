@@ -3,8 +3,16 @@
 # SPDX-License-Identifier: Apache-2.0
 """Mode A replay: drive agent-semantic@v2 against a live Actordock CP (no LLM).
 
-Uses dataset arrivals + phase_spans + task_profile only:
-  Create → POST L3 taskProfile → Resume → POST L1 phase/lock along spans → Suspend
+Uses dataset arrivals + phase_spans + task_profile only.
+
+Baseline policies (random / resource-evict):
+  Create → Resume once → hold Worker through all phases → Suspend
+
+semantic-score (+ l1 ablation):
+  Create (suspended) → llm_wait locally (heartbeat, no slot) →
+  tool_loop: Resume (knock/queue) → run → keep slot (no proactive Suspend);
+  unlocked llm_wait may be stolen by outside knockers via CP scores → …
+
 
 Compares policies via /metrics deltas (mid_tool_suspend, starvation wait, resume_wait, …)
 plus L3 cohort stats: eviction victims and client Resume RTT by eval.cohort.
@@ -19,8 +27,9 @@ Example:
 
 Ablation aliases: `semantic-score-l1` → PRIOR_MIX=0; `semantic-score` → PRIOR_MIX=0.3.
 
-Concurrency: max_inflight defaults to workers+1 (slot contention); Resume/Suspend
-are serialized to avoid concurrent checkpoint of the same sandbox.
+Concurrency: max_inflight defaults to workers+1 (slot contention). Concurrent
+Resume knockers are allowed so semantic-score can rank waiters; Suspend is
+serialized per sandbox id only (avoid double-checkpoint of the same id).
 """
 
 from __future__ import annotations
@@ -138,7 +147,7 @@ class L3Tracker:
         return meta
 
     def resume_and_observe(self, client: CPClient, sandbox_id: str) -> float:
-        """Resume under caller lock; detect running→suspended peers as eviction victims."""
+        """Resume (may block while knocking); detect running→suspended peers as victims."""
         before = {
             str(sb.get("id")): str(sb.get("state") or "")
             for sb in client.list_sandboxes()
@@ -676,16 +685,53 @@ def git_commit() -> str:
         return ""
 
 
-def drive_phases(
+def _phase_needs_worker(phase: str, lock: bool) -> bool:
+    """Only tool_loop (or explicit lock) needs a Worker slot under semantic-score."""
+    return lock or phase == "tool_loop"
+
+
+def _try_suspend(
+    client: CPClient,
+    sandbox_id: str,
+    sandbox_locks: dict[str, threading.Lock],
+    locks_mu: threading.Lock,
+) -> bool:
+    """Suspend if running. Returns False if already off-worker / not running."""
+    with _sandbox_lock(sandbox_locks, locks_mu, sandbox_id):
+        try:
+            client.suspend(sandbox_id)
+            return True
+        except RuntimeError as e:
+            msg = str(e).lower()
+            if "suspended" in msg or "want running" in msg or "want suspended" in msg:
+                return False
+            raise
+
+
+def _sandbox_lock(
+    sandbox_locks: dict[str, threading.Lock],
+    locks_mu: threading.Lock,
+    sandbox_id: str,
+) -> threading.Lock:
+    with locks_mu:
+        lk = sandbox_locks.get(sandbox_id)
+        if lk is None:
+            lk = threading.Lock()
+            sandbox_locks[sandbox_id] = lk
+        return lk
+
+
+def drive_phases_hold(
     client: CPClient,
     sandbox_id: str,
     spans: list[dict[str, Any]],
     speed: float,
     workflow_id: str,
     min_lock_sec: float,
-    resume_lock: threading.Lock,
+    sandbox_locks: dict[str, threading.Lock],
+    locks_mu: threading.Lock,
 ) -> None:
-    """Walk phase_spans in order; POST L1; Suspend when done to free the Worker."""
+    """Baseline: already Running; hold the Worker through all spans, then Suspend."""
     if not spans:
         spans = [{"phase": "idle", "lock": False, "t_start_ms": 0, "t_end_ms": 500}]
     for span in spans:
@@ -694,7 +740,6 @@ def drive_phases(
         t0 = float(span.get("t_start_ms") or 0)
         t1 = float(span.get("t_end_ms") or t0)
         dur = max(0.0, (t1 - t0) / 1000.0 / max(speed, 1e-6))
-        # Keep tool_loop/lock visible long enough for concurrent Resume eviction.
         if lock or phase == "tool_loop":
             dur = max(dur, min_lock_sec)
         client.post_semantic(
@@ -708,15 +753,83 @@ def drive_phases(
         )
         if dur > 0:
             time.sleep(dur)
-    # Serialize Suspend with Resume so we never checkpoint the same id concurrently.
-    with resume_lock:
-        try:
-            client.suspend(sandbox_id)
-        except RuntimeError as e:
-            msg = str(e).lower()
-            if "suspended" in msg or "want running" in msg or "want suspended" in msg:
-                return
-            raise
+    _try_suspend(client, sandbox_id, sandbox_locks, locks_mu)
+
+
+def drive_phases_semantic(
+    client: CPClient,
+    sandbox_id: str,
+    spans: list[dict[str, Any]],
+    speed: float,
+    workflow_id: str,
+    min_lock_sec: float,
+    sandbox_locks: dict[str, threading.Lock],
+    locks_mu: threading.Lock,
+    l3: L3Tracker,
+) -> float:
+    """semantic-score path: llm_wait needs no slot until a Worker is held;
+    tool_loop knocks via Resume.
+
+    After tool we do **not** Suspend. We stay on the Worker into later spans
+    (typically unlocked llm_wait) so outside knockers + CP keepScore can steal.
+    Session-end Suspend is only cleanup if still holding.
+    """
+    if not spans:
+        spans = [{"phase": "idle", "lock": False, "t_start_ms": 0, "t_end_ms": 500}]
+    on_worker = False
+    resume_sec = 0.0
+    for span in spans:
+        phase = span.get("phase") or "idle"
+        lock = bool(span.get("lock"))
+        t0 = float(span.get("t_start_ms") or 0)
+        t1 = float(span.get("t_end_ms") or t0)
+        dur = max(0.0, (t1 - t0) / 1000.0 / max(speed, 1e-6))
+        need = _phase_needs_worker(phase, lock)
+        if need:
+            dur = max(dur, min_lock_sec)
+            if not on_worker:
+                resume_sec += l3.resume_and_observe(client, sandbox_id)
+                on_worker = True
+            client.post_semantic(
+                sandbox_id,
+                {
+                    "version": "v1",
+                    "phase": phase,
+                    "lock": True if phase == "tool_loop" else lock,
+                    "workflowID": workflow_id,
+                },
+            )
+            if dur > 0:
+                time.sleep(dur)
+            # Keep the slot; no proactive Suspend — waiters may steal on llm_wait.
+        else:
+            # llm_wait / idle: if never took a slot, stay off-Worker.
+            # If still holding after tool, unlock + heartbeat; knockers may steal.
+            client.post_semantic(
+                sandbox_id,
+                {
+                    "version": "v1",
+                    "phase": phase,
+                    "lock": False,
+                    "workflowID": workflow_id,
+                },
+            )
+            if dur > 0:
+                time.sleep(dur)
+            if on_worker:
+                st = _sandbox_state(client, sandbox_id)
+                if st != "running":
+                    on_worker = False
+    if on_worker:
+        _try_suspend(client, sandbox_id, sandbox_locks, locks_mu)
+    return resume_sec
+
+
+def _sandbox_state(client: CPClient, sandbox_id: str) -> str:
+    for sb in client.list_sandboxes():
+        if str(sb.get("id")) == sandbox_id:
+            return str(sb.get("state") or "")
+    return ""
 
 
 def run_one_session(
@@ -730,8 +843,10 @@ def run_one_session(
     index: int,
     total: int,
     inflight: threading.Semaphore,
-    resume_lock: threading.Lock,
+    sandbox_locks: dict[str, threading.Lock],
+    locks_mu: threading.Lock,
     l3: L3Tracker,
+    semantic_slots: bool,
 ) -> SessionJob:
     job = SessionJob(session=session, cohort=session_cohort(session))
     sid_label = session["session_id"]
@@ -742,7 +857,7 @@ def run_one_session(
         if delay > 0:
             time.sleep(delay)
 
-        # Slot contention: at most workers+1 sessions in create→resume→phases→suspend.
+        # Slot contention: at most max_inflight sessions in create→…→done.
         inflight.acquire()
         held = True
 
@@ -755,6 +870,7 @@ def run_one_session(
         deadline_iso = datetime.fromtimestamp(deadline, tz=timezone.utc).strftime(
             "%Y-%m-%dT%H:%M:%S.%fZ"
         )
+        # L3 + initial llm_wait while still suspended (no Worker).
         client.post_semantic(
             job.sandbox_id,
             {
@@ -766,30 +882,45 @@ def run_one_session(
                 "taskProfile": profile,
             },
         )
-        log(f"[session {index+1}/{total}] resume {job.sandbox_id[:8]}…")
-        with resume_lock:
+        spans = session.get("phase_spans") or []
+        if semantic_slots:
+            log(
+                f"[session {index+1}/{total}] semantic slots: "
+                f"llm_wait local, tool_loop knocks {job.sandbox_id[:8]}…"
+            )
+            job.resume_sec = drive_phases_semantic(
+                client,
+                job.sandbox_id,
+                spans,
+                speed,
+                sid_label,
+                min_lock_sec,
+                sandbox_locks,
+                locks_mu,
+                l3,
+            )
+            job.resumed = True
+        else:
+            log(f"[session {index+1}/{total}] resume {job.sandbox_id[:8]}…")
             job.resume_sec = l3.resume_and_observe(client, job.sandbox_id)
-        job.resumed = True
-        drive_phases(
-            client,
-            job.sandbox_id,
-            session.get("phase_spans") or [],
-            speed,
-            sid_label,
-            min_lock_sec,
-            resume_lock,
-        )
+            job.resumed = True
+            drive_phases_hold(
+                client,
+                job.sandbox_id,
+                spans,
+                speed,
+                sid_label,
+                min_lock_sec,
+                sandbox_locks,
+                locks_mu,
+            )
         job.suspended = True
         log(f"[session {index+1}/{total}] done {sid_label}")
     except Exception as e:  # noqa: BLE001 — per-session errors collected in report
         job.error = f"{sid_label}: {e}"
         log(f"[session] FAIL {job.error}")
         if job.sandbox_id:
-            with resume_lock:
-                try:
-                    client.suspend(job.sandbox_id)
-                except RuntimeError:
-                    pass
+            _try_suspend(client, job.sandbox_id, sandbox_locks, locks_mu)
     finally:
         if held:
             inflight.release()
@@ -808,6 +939,7 @@ def run_policy(
     max_inflight: int,
     min_lock_sec: float,
     label: str | None = None,
+    semantic_slots: bool = False,
 ) -> PolicyResult:
     """Run one policy. `policy` is CP /metrics label; `label` is report row name."""
     report_label = label or policy
@@ -824,17 +956,19 @@ def run_policy(
     total = len(sessions)
     l3 = L3Tracker()
 
-    # workers+1 keeps one waiter → Place/Evict contention, without Resume stampede.
+    # Oversubscribe so multiple Resume knockers contend for scarce slots.
     if max_inflight <= 0:
         max_inflight = max(2, worker_count + 1)
     inflight = threading.Semaphore(max_inflight)
-    resume_lock = threading.Lock()
+    sandbox_locks: dict[str, threading.Lock] = {}
+    locks_mu = threading.Lock()
     # Pool large enough that arrivals can block on the semaphore without starving.
     pool_n = min(total, max(max_inflight * 2, 8))
+    mode = "semantic tool-only slots" if semantic_slots else "hold-all-phases"
     log(
         f"[{report_label}] replaying n={total} workers={worker_count} "
         f"inflight={max_inflight} pool={pool_n} speed={speed} min_lock={min_lock_sec}s "
-        f"(resume serialized; metrics_policy={policy})"
+        f"mode={mode} (parallel Resume knock; metrics_policy={policy})"
     )
 
     with ThreadPoolExecutor(max_workers=pool_n) as pool:
@@ -857,8 +991,10 @@ def run_policy(
                     i,
                     total,
                     inflight,
-                    resume_lock,
+                    sandbox_locks,
+                    locks_mu,
                     l3,
+                    semantic_slots,
                 )
             )
         done = 0
@@ -1128,6 +1264,7 @@ def main() -> None:
             max_inflight=args.max_inflight,
             min_lock_sec=args.min_lock_sec,
             label=spec.label,
+            semantic_slots=(spec.cp_policy == "semantic-score"),
         )
         results.append(result)
         out_json = args.out / f"agent_semantic_v2__{spec.label}.json"
