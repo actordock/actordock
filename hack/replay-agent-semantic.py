@@ -6,7 +6,8 @@
 Uses dataset arrivals + phase_spans + task_profile only.
 
 Baseline policies (random / resource-evict):
-  Create → Resume once → hold Worker through all phases → Suspend
+  Create → Resume once → hold Worker through all phases (never self-Suspend);
+  unlocked peers may be stolen by knockers; leftovers cleaned up at policy end.
 
 semantic-score (+ l1 ablation):
   Create (suspended) → llm_wait locally (heartbeat, no slot) →
@@ -30,8 +31,8 @@ Example:
 Ablation aliases: `semantic-score-l1` → PRIOR_MIX=0; `semantic-score` → PRIOR_MIX=0.3.
 
 Concurrency: max_inflight defaults to workers+1 (slot contention). Concurrent
-Resume knockers are allowed so semantic-score can rank waiters; Suspend is
-serialized per sandbox id only (avoid double-checkpoint of the same id).
+Resume knockers are allowed so semantic-score can rank waiters. No client
+self-Suspend; only CP eviction archives running sandboxes.
 """
 
 from __future__ import annotations
@@ -692,37 +693,6 @@ def _phase_needs_worker(phase: str, lock: bool) -> bool:
     return lock or phase == "tool_loop"
 
 
-def _try_suspend(
-    client: CPClient,
-    sandbox_id: str,
-    sandbox_locks: dict[str, threading.Lock],
-    locks_mu: threading.Lock,
-) -> bool:
-    """Suspend if running. Returns False if already off-worker / not running."""
-    with _sandbox_lock(sandbox_locks, locks_mu, sandbox_id):
-        try:
-            client.suspend(sandbox_id)
-            return True
-        except RuntimeError as e:
-            msg = str(e).lower()
-            if "suspended" in msg or "want running" in msg or "want suspended" in msg:
-                return False
-            raise
-
-
-def _sandbox_lock(
-    sandbox_locks: dict[str, threading.Lock],
-    locks_mu: threading.Lock,
-    sandbox_id: str,
-) -> threading.Lock:
-    with locks_mu:
-        lk = sandbox_locks.get(sandbox_id)
-        if lk is None:
-            lk = threading.Lock()
-            sandbox_locks[sandbox_id] = lk
-        return lk
-
-
 def drive_phases_hold(
     client: CPClient,
     sandbox_id: str,
@@ -730,10 +700,12 @@ def drive_phases_hold(
     speed: float,
     workflow_id: str,
     min_lock_sec: float,
-    sandbox_locks: dict[str, threading.Lock],
-    locks_mu: threading.Lock,
 ) -> None:
-    """Baseline: already Running; hold the Worker through all spans, then Suspend."""
+    """Baseline: already Running; hold the Worker through all spans.
+
+    Never self-Suspend: leave unlocked idle so knockers can steal; leftovers
+    are removed by policy-end cleanup_sandboxes.
+    """
     if not spans:
         spans = [{"phase": "idle", "lock": False, "t_start_ms": 0, "t_end_ms": 500}]
     for span in spans:
@@ -755,7 +727,15 @@ def drive_phases_hold(
         )
         if dur > 0:
             time.sleep(dur)
-    _try_suspend(client, sandbox_id, sandbox_locks, locks_mu)
+    client.post_semantic(
+        sandbox_id,
+        {
+            "version": "v1",
+            "phase": "idle",
+            "lock": False,
+            "workflowID": workflow_id,
+        },
+    )
 
 
 def drive_phases_semantic(
@@ -765,8 +745,6 @@ def drive_phases_semantic(
     speed: float,
     workflow_id: str,
     min_lock_sec: float,
-    sandbox_locks: dict[str, threading.Lock],
-    locks_mu: threading.Lock,
     l3: L3Tracker,
 ) -> float:
     """semantic-score path: llm_wait needs no slot until a Worker is held;
@@ -854,8 +832,6 @@ def run_one_session(
     index: int,
     total: int,
     inflight: threading.Semaphore,
-    sandbox_locks: dict[str, threading.Lock],
-    locks_mu: threading.Lock,
     l3: L3Tracker,
     semantic_slots: bool,
 ) -> SessionJob:
@@ -906,8 +882,6 @@ def run_one_session(
                 speed,
                 sid_label,
                 min_lock_sec,
-                sandbox_locks,
-                locks_mu,
                 l3,
             )
             job.resumed = True
@@ -924,20 +898,13 @@ def run_one_session(
                 speed,
                 sid_label,
                 min_lock_sec,
-                sandbox_locks,
-                locks_mu,
             )
-            job.suspended = True
+            # Eviction may have Suspended us; never self-Suspend.
+            job.suspended = _sandbox_state(client, job.sandbox_id) == "suspended"
         log(f"[session {index+1}/{total}] done {sid_label}")
     except Exception as e:  # noqa: BLE001 — per-session errors collected in report
         job.error = f"{sid_label}: {e}"
         log(f"[session] FAIL {job.error}")
-        # Baseline may still try a best-effort Suspend; semantic never self-Suspends.
-        if job.sandbox_id and not semantic_slots:
-            try:
-                _try_suspend(client, job.sandbox_id, sandbox_locks, locks_mu)
-            except RuntimeError:
-                pass
     finally:
         if held:
             inflight.release()
@@ -977,8 +944,6 @@ def run_policy(
     if max_inflight <= 0:
         max_inflight = max(2, worker_count + 1)
     inflight = threading.Semaphore(max_inflight)
-    sandbox_locks: dict[str, threading.Lock] = {}
-    locks_mu = threading.Lock()
     # Pool large enough that arrivals can block on the semaphore without starving.
     pool_n = min(total, max(max_inflight * 2, 8))
     mode = "semantic tool-only slots" if semantic_slots else "hold-all-phases"
@@ -1008,8 +973,6 @@ def run_policy(
                     i,
                     total,
                     inflight,
-                    sandbox_locks,
-                    locks_mu,
                     l3,
                     semantic_slots,
                 )
@@ -1154,7 +1117,7 @@ def write_compare(results: list[PolicyResult], path: Path) -> None:
             "- `evict_llm_wait`: preferred interrupt window for semantic-score.",
             "- `mid_tool_rate = mid_tool / suspend` (0 if no suspends).",
             "- `vic_hard` / `vic_easy` / `hard_rate`: eviction victims attributed via "
-              "running→suspended peers at Resume time (excludes voluntary end Suspend).",
+              "running→suspended peers at Resume time (eviction only; no client self-Suspend).",
             "- `hard_rate = vic_hard / (hard+mid+easy+inactive)`; lower favors semantic-score L3.",
             "- `resume_hard_s` / `resume_easy_s`: mean client Resume RTT for that cohort "
               "(proxy for wait+restore; not OTel resume_wait).",
